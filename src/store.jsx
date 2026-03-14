@@ -4,7 +4,7 @@
    ================================================================ */
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney } from "./constants";
-import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll } from "./services";
+import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
 import { useSupabase } from "./contexts/SupabaseContext";
 
 /* ================================================================
@@ -154,8 +154,7 @@ export function AppProvider({ children, userId }) {
     saveJSON("tasks", allTasks);
     // Push to cloud — but suppress during/after poll to prevent stale data overwriting
     if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
-      scheduleSyncDebounced(null, cloudId, "tasks", allTasks);
-      if (cloudId !== userId) cloudSave(null, userId, "tasks", allTasks);
+      scheduleSyncDebounced(null, userId, "tasks", allTasks);
     }
 
     // Cross-user sync: copy assigned project tasks to assignee's localStorage + cloud
@@ -208,10 +207,10 @@ export function AppProvider({ children, userId }) {
     let cloudHadData = { tasks: false, projects: false };
 
     try {
-      let data = await cloudLoadAll(null, cloudId);
-      if ((!data?.length) && cloudId !== userId) {
-        data = await cloudLoadAll(null, userId);
-      }
+      // Poll: only fetch tasks+projects (fast). Initial: fetch everything.
+      let data = isInitial
+        ? await cloudLoadAll(null, userId)
+        : await cloudLoadKeys(null, userId, ["tasks", "projects"]);
       if (data?.length) {
         for (const row of data) {
           if (!row.data) continue;
@@ -311,20 +310,15 @@ export function AppProvider({ children, userId }) {
       setTimeout(() => { suppressPushRef.current = false; }, 3000);
     }
 
-    // On initial load: mark done + push merged data up
+    // On initial load: mark done + push merged data up (only if local had extra data to merge)
     if (isInitial) {
       cloudPullDoneRef.current = true;
-      if (localTasks.length > 0 || cloudHadData.tasks) {
-        cloudSave(null, cloudId, "tasks", localTasks);
-        if (cloudId !== userId) cloudSave(null, userId, "tasks", localTasks);
+      // Only push back if local had data that wasn't in cloud (actual merge happened)
+      if (localTasks.length > 0 && !cloudHadData.tasks) {
+        cloudSave(null, userId, "tasks", localTasks);
       }
-      if (localProjects.length > 0 || cloudHadData.projects) {
-        cloudSave(null, cloudId, "projects", localProjects);
-        if (cloudId !== userId) cloudSave(null, userId, "projects", localProjects);
-      }
-      if (localExpenses.length > 0) {
-        cloudSave(null, cloudId, "expenses", localExpenses);
-        if (cloudId !== userId) cloudSave(null, userId, "expenses", localExpenses);
+      if (localProjects.length > 0 && !cloudHadData.projects) {
+        cloudSave(null, userId, "projects", localProjects);
       }
     }
   }, [cloudId, userId]);
@@ -350,8 +344,7 @@ export function AppProvider({ children, userId }) {
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("expenses", expenses);
     if (cloudId && cloudPullDoneRef.current) {
-      scheduleSyncDebounced(null, cloudId, "expenses", expenses);
-      if (cloudId !== userId) cloudSave(null, userId, "expenses", expenses);
+      scheduleSyncDebounced(null, userId, "expenses", expenses);
     }
   }, [expenses, userId, cloudId]);
 
@@ -363,8 +356,7 @@ export function AppProvider({ children, userId }) {
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("projects", projects);
     if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
-      scheduleSyncDebounced(null, cloudId, "projects", projects);
-      if (cloudId !== userId) cloudSave(null, userId, "projects", projects);
+      scheduleSyncDebounced(null, userId, "projects", projects);
     }
 
     // Cross-user sync: share projects with all members (localStorage only — cloud handled separately)
@@ -421,15 +413,23 @@ export function AppProvider({ children, userId }) {
           if (lid && lid !== userId) memberTargets.add(lid);
         }
 
-        // Sync all members in parallel
+        // Sync all members in parallel — load both keys at once per member
         await Promise.all([...memberTargets].map(async (localId) => {
           const memberName = Object.entries(DEV_NAME_TO_LOCAL_ID).find(([,v]) => v === localId)?.[0];
-          // Push projects
           const memberProjs = projects.filter(p =>
             p.members?.some(m => m.name === memberName || DEV_NAME_TO_LOCAL_ID[m.name] === localId)
           );
+          const assigneeTasks = tasksByAssignee[memberName] || [];
+          if (!memberProjs.length && !assigneeTasks.length) return;
+
+          // Load both keys in parallel (1 call instead of 2 sequential)
+          const [exP, exT] = await Promise.all([
+            memberProjs.length ? cloudLoad(null, localId, "projects") : null,
+            assigneeTasks.length ? cloudLoad(null, localId, "tasks") : null,
+          ]);
+
+          const saves = [];
           if (memberProjs.length) {
-            const exP = await cloudLoad(null, localId, "projects");
             const cP = (exP?.data && Array.isArray(exP.data)) ? exP.data : [];
             let mP = [...cP];
             for (const pr of memberProjs) {
@@ -437,12 +437,9 @@ export function AppProvider({ children, userId }) {
               if (i >= 0) mP[i] = { ...mP[i], ...pr };
               else mP.push(pr);
             }
-            await cloudSave(null, localId, "projects", mP);
+            saves.push(cloudSave(null, localId, "projects", mP));
           }
-          // Push assigned tasks
-          const assigneeTasks = tasksByAssignee[memberName] || [];
           if (assigneeTasks.length) {
-            const exT = await cloudLoad(null, localId, "tasks");
             const cT = (exT?.data && Array.isArray(exT.data)) ? exT.data : [];
             let mT = [...cT];
             for (const t of assigneeTasks) {
@@ -450,8 +447,9 @@ export function AppProvider({ children, userId }) {
               if (i >= 0) mT[i] = { ...mT[i], ...t };
               else mT.push(t);
             }
-            await cloudSave(null, localId, "tasks", mT);
+            saves.push(cloudSave(null, localId, "tasks", mT));
           }
+          await Promise.all(saves);
         }));
       } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
     }, 1000); // 1s debounce — fast enough to complete before user closes app
@@ -493,8 +491,7 @@ export function AppProvider({ children, userId }) {
       const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
       persistSettings(next);
       if (cloudId) {
-        scheduleSyncDebounced(null, cloudId, "settings", next);
-        if (cloudId !== userId) cloudSave(null, userId, "settings", next);
+        scheduleSyncDebounced(null, userId, "settings", next);
       }
       return next;
     });

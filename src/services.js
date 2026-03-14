@@ -105,6 +105,19 @@ export async function cloudLoadAll(_supabase, userId) {
   } catch { return null; }
 }
 
+// Load only specific keys (for polling — avoids fetching settings/memory/knowledge)
+export async function cloudLoadKeys(_supabase, userId, keys) {
+  if (!userId || !keys?.length) return null;
+  try {
+    const results = await Promise.all(keys.map(key =>
+      fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}&key=${encodeURIComponent(key)}`)
+        .then(r => r.json())
+        .then(r => r.data?.[0] || null)
+    ));
+    return results.filter(Boolean);
+  } catch { return null; }
+}
+
 export function scheduleSyncDebounced(_supabase, userId, key, data) {
   if (!userId) return;
   clearTimeout(_syncTimers[key]);
