@@ -173,6 +173,56 @@ export function AppProvider({ children, userId }) {
     dispatch({ type: "ROLL_OVERDUE" });
   }, []);
 
+  // Auto cloud load on new device (localStorage empty + Supabase connected)
+  const cloudLoadedRef = useRef(false);
+  useEffect(() => {
+    if (cloudLoadedRef.current || !supabase || !userId) return;
+    cloudLoadedRef.current = true;
+    const localTasks = loadJSON("tasks", []);
+    const localProjects = loadJSON("projects", []);
+    // Only auto-load if this device has no data
+    if (localTasks.length > 0 || localProjects.length > 0) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("user_data").select("key, data").eq("user_id", userId);
+        if (error || !data?.length) return;
+        let loaded = 0;
+        for (const row of data) {
+          if (!row.data) continue;
+          if (row.key === "tasks" && Array.isArray(row.data) && row.data.length > 0) {
+            dispatch({ type: "LOAD", tasks: row.data });
+            saveJSON("tasks", row.data);
+            loaded++;
+          } else if (row.key === "projects" && Array.isArray(row.data) && row.data.length > 0) {
+            projDispatch({ type: "PROJ_LOAD", items: row.data });
+            saveJSON("projects", row.data);
+            loaded++;
+          } else if (row.key === "expenses" && Array.isArray(row.data)) {
+            row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+            saveJSON("expenses", row.data);
+            loaded++;
+          } else if (row.key === "settings" && typeof row.data === "object") {
+            setSettingsState(prev => {
+              const merged = { ...prev, ...row.data };
+              persistSettings(merged);
+              return merged;
+            });
+            loaded++;
+          } else if (row.key === "memory") {
+            setMemory(row.data);
+            saveJSON("memory", row.data);
+            loaded++;
+          } else if (row.key === "wory_knowledge") {
+            setKnowledge(row.data);
+            saveJSON("wory_knowledge", row.data);
+            loaded++;
+          }
+        }
+        if (loaded > 0) console.log(`Cloud sync: loaded ${loaded} items from cloud`);
+      } catch (e) { console.warn("Cloud auto-load failed:", e); }
+    })();
+  }, [userId]);
+
   // --- Expenses (standalone ledger) ---
   const [expenses, expenseDispatch] = useReducer(expenseReducer, [], () => loadJSON("expenses", []));
   const expLoadedRef = useRef(false);
