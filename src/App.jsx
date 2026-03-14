@@ -990,7 +990,7 @@ LAM LUON, tra loi ≤15 tu. Dung lenh:
     <div className="app-container" style={fontScale !== 1 ? { zoom: fontScale } : undefined}>
 
       {/* ── HEADER ── */}
-      <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 6, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1", overflow:"hidden" }}>
+      <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 6, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
         <UserMenu user={{ ...user, name: settings.displayName || user.name }} onLogout={onLogout} onSettings={() => setSettingsOpen(true)} />
         <div style={{ flex: 1, minWidth:4 }} />
         {/* Quick expense / QR scan */}
