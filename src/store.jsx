@@ -404,20 +404,19 @@ export function AppProvider({ children, userId }) {
             if (lid && lid !== userId) memberTargets.add(lid);
           });
         });
-        // Also add assignees from tasks
         const tasksByAssignee = crossUserTasksRef.current;
         for (const name of Object.keys(tasksByAssignee)) {
           const lid = DEV_NAME_TO_LOCAL_ID[name];
           if (lid && lid !== userId) memberTargets.add(lid);
         }
 
-        for (const localId of memberTargets) {
-          // Find projects this member belongs to
+        // Sync all members in parallel
+        await Promise.all([...memberTargets].map(async (localId) => {
           const memberName = Object.entries(DEV_NAME_TO_LOCAL_ID).find(([,v]) => v === localId)?.[0];
+          // Push projects
           const memberProjs = projects.filter(p =>
             p.members?.some(m => m.name === memberName || DEV_NAME_TO_LOCAL_ID[m.name] === localId)
           );
-          // Merge projects into member's cloud
           if (memberProjs.length) {
             const exP = await cloudLoad(null, localId, "projects");
             const cP = (exP?.data && Array.isArray(exP.data)) ? exP.data : [];
@@ -429,7 +428,7 @@ export function AppProvider({ children, userId }) {
             }
             await cloudSave(null, localId, "projects", mP);
           }
-          // Merge assigned tasks
+          // Push assigned tasks
           const assigneeTasks = tasksByAssignee[memberName] || [];
           if (assigneeTasks.length) {
             const exT = await cloudLoad(null, localId, "tasks");
@@ -442,9 +441,9 @@ export function AppProvider({ children, userId }) {
             }
             await cloudSave(null, localId, "tasks", mT);
           }
-        }
+        }));
       } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
-    }, 5000);
+    }, 1000); // 1s debounce — fast enough to complete before user closes app
   }, [allTasks, projects, cloudId, userId]);
 
   const addProject = useCallback((item) => { projDispatch({ type: "PROJ_ADD", item }); }, []);
