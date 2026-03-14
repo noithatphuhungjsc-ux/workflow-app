@@ -675,10 +675,8 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
             {project.archived ? "📂 Mở lại" : "📦 Lưu trữ"}
           </button>}
           {!isStaff && <button className="tap" onClick={async () => {
-            const choice = prompt("Xoá dự án \"" + project.name + "\"?\n\n1 = Xóa dự án, giữ công việc (thành Việc chung)\n2 = Xóa dự án + xóa luôn công việc\n\nNhập 1 hoặc 2:");
-            if (choice !== "1" && choice !== "2") return;
-            if (choice === "1") { projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); }
-            else { projTasks.forEach(t => hardDelete?.(t.id)); }
+            if (!confirm("Xoá dự án \"" + project.name + "\"?\nCông việc sẽ được giữ lại thành Việc chung.")) return;
+            projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
             deleteProject(project.id);
             // Clean up all members' cloud storage
             for (const m of members) {
@@ -689,12 +687,6 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                 const cp = Array.isArray(ep?.data) ? ep.data : [];
                 const filtered = cp.filter(p => p.id !== project.id);
                 if (filtered.length !== cp.length) await cloudSave(null, lid, "projects", filtered);
-                if (choice === "2") {
-                  const et = await cloudLoad(null, lid, "tasks");
-                  const ct = Array.isArray(et?.data) ? et.data : [];
-                  const filteredT = ct.filter(t => t.projectId !== project.id);
-                  if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
-                }
               } catch {}
             }
             // Delete Supabase conversation
