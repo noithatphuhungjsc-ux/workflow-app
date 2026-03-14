@@ -12,6 +12,28 @@ function getSupabase() {
   return _supa;
 }
 
+// Map local IDs to Supabase auth emails for UUID lookup
+const LOCAL_ID_TO_EMAIL = {
+  trinh: "trinh@workflow.vn", lien: "lien@workflow.vn",
+  hung: "hung@workflow.vn", mai: "mai@workflow.vn", duc: "duc@workflow.vn",
+};
+const _uuidCache = {};
+async function resolveUserId(supa, localId) {
+  // Already a UUID
+  if (localId && localId.includes("-") && localId.length > 30) return localId;
+  // Check cache
+  if (_uuidCache[localId]) return _uuidCache[localId];
+  // Lookup by email
+  const email = LOCAL_ID_TO_EMAIL[localId];
+  if (!email) return localId;
+  try {
+    const { data: { users } } = await supa.auth.admin.listUsers({ filter: email });
+    const match = (users || []).find(u => u.email === email);
+    if (match) { _uuidCache[localId] = match.id; return match.id; }
+  } catch {}
+  return localId;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -23,16 +45,19 @@ export default async function handler(req, res) {
 
   // GET: load user data
   if (req.method === "GET") {
-    const { userId, key } = req.query;
-    if (!userId) return res.status(400).json({ error: "Missing userId" });
+    const { userId: rawUserId, key } = req.query;
+    if (!rawUserId) return res.status(400).json({ error: "Missing userId" });
+    const userId = await resolveUserId(supa, rawUserId);
 
-    const query = supa.from("user_data").select("key, data");
+    const query = supa.from("user_data").select("key, value");
     query.eq("user_id", userId);
     if (key) query.eq("key", key);
 
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ data: data || [] });
+    // Map 'value' column back to 'data' for client compatibility
+    const mapped = (data || []).map(r => ({ key: r.key, data: r.value }));
+    return res.json({ data: mapped });
   }
 
   // POST: save user data OR ensure profile
@@ -118,10 +143,11 @@ export default async function handler(req, res) {
 
     // Default: save user data
     if (!userId || !key) return res.status(400).json({ error: "Missing userId or key" });
+    const resolvedId = await resolveUserId(supa, userId);
     const { error } = await supa.from("user_data").upsert({
-      user_id: userId,
+      user_id: resolvedId,
       key,
-      data,
+      value: data,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,key" });
 
