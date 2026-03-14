@@ -52,13 +52,15 @@ export function SupabaseProvider({ children }) {
   const fetchProfile = async (uid) => {
     const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
     if (data) {
-      // Update email if missing (for existing profiles created before email was saved)
+      // Update email if missing (safe — ignores if column doesn't exist)
       if (!data.email) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.email) {
-          await supabase.from("profiles").update({ email: user.email }).eq("id", uid);
-          data.email = user.email;
-        }
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.email) {
+            await supabase.from("profiles").update({ email: user.email }).eq("id", uid);
+            data.email = user.email;
+          }
+        } catch {}
       }
       setProfile(data);
       return;
@@ -68,11 +70,19 @@ export function SupabaseProvider({ children }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "User";
-      const { data: newProfile } = await supabase.from("profiles").upsert({
-        id: uid,
-        display_name: name,
-        email: user.email || null,
+      // Try with email first, fallback without
+      let newProfile;
+      const { data: p1, error: e1 } = await supabase.from("profiles").upsert({
+        id: uid, display_name: name, email: user.email || null,
       }, { onConflict: "id" }).select().single();
+      if (e1) {
+        const { data: p2 } = await supabase.from("profiles").upsert({
+          id: uid, display_name: name,
+        }, { onConflict: "id" }).select().single();
+        newProfile = p2;
+      } else {
+        newProfile = p1;
+      }
       if (newProfile) setProfile(newProfile);
     }
   };

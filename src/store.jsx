@@ -172,8 +172,16 @@ export function AppProvider({ children, userId }) {
     if (supabase && Object.keys(tasksByAssignee).length > 0) {
       (async () => {
         try {
-          // Fetch profiles (with email) for matching
-          const { data: profiles } = await supabase.from("profiles").select("id, display_name, email");
+          // Fetch profiles for matching (try with email, fallback without)
+          let profiles;
+          const { data: pData, error: pErr } = await supabase.from("profiles").select("id, display_name, email");
+          if (pErr) {
+            // email column might not exist yet — fallback
+            const { data: pFallback } = await supabase.from("profiles").select("id, display_name");
+            profiles = pFallback;
+          } else {
+            profiles = pData;
+          }
           if (!profiles) return;
           // Known assignee name → email mapping
           const DEV_EMAIL_MAP = {
