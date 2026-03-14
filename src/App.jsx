@@ -1440,7 +1440,7 @@ LAM LUON, tra loi ≤15 tu. Dung lenh:
       }} onClose={() => setNewProjOpen(false)} />}
 
       {/* ── PROJECT DETAIL ── */}
-      {projDetail && <ProjectDetailSheet project={projects.find(p => p.id === projDetail.id) || projDetail} tasks={tasks} patchTask={patchTask} patchProject={patchProject} hardDelete={hardDelete} deleteProject={async (id) => {
+      {projDetail && <ProjectDetailSheet project={projects.find(p => p.id === projDetail.id) || projDetail} tasks={tasks} patchTask={patchTask} addTask={addTask} patchProject={patchProject} hardDelete={hardDelete} deleteProject={async (id) => {
         const proj = projects.find(p => p.id === id);
         if (supabase && proj?.chatId) {
           await supabase.from("messages").delete().eq("conversation_id", proj.chatId);

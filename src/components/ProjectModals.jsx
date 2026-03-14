@@ -249,7 +249,7 @@ export function NewProjectModal({ onAdd, onClose }) {
    Tasks sorted by step (top→down), assignee, chat link
    Members synced to Supabase group chat
    ================================================================ */
-export function ProjectDetailSheet({ project, tasks, patchTask, patchProject, hardDelete, deleteProject, onClose, onOpenChat, isStaff, myName }) {
+export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchProject, hardDelete, deleteProject, onClose, onOpenChat, isStaff, myName }) {
   const { session } = useSupabase();
   const userId = session?.user?.id;
   const [editName, setEditName] = useState(false);
@@ -259,6 +259,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, patchProject, ha
   const [editStepText, setEditStepText] = useState("");
   const [assigningId, setAssigningId] = useState(null);
   const [viewMode, setViewMode] = useState("steps");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
 
   // Supabase profiles for member picker
   const [teamProfiles, setTeamProfiles] = useState([]);
@@ -603,6 +604,28 @@ export function ProjectDetailSheet({ project, tasks, patchTask, patchProject, ha
                   style={{ fontSize:10, color:C.red, cursor:"pointer", padding:"2px 6px" }}>gỡ</span>}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Create new task for project ── */}
+        {!isStaff && addTask && (
+          <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+            <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && newTaskTitle.trim()) {
+                  addTask({ title: newTaskTitle.trim(), projectId: project.id, category: "work" });
+                  setNewTaskTitle("");
+                }
+              }}
+              placeholder="Tạo việc mới cho dự án..."
+              style={{ flex:1, padding:"8px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, fontSize:12, color:C.text }} />
+            <button className="tap" onClick={() => {
+              if (!newTaskTitle.trim()) return;
+              addTask({ title: newTaskTitle.trim(), projectId: project.id, category: "work" });
+              setNewTaskTitle("");
+            }}
+              disabled={!newTaskTitle.trim()}
+              style={{ padding:"8px 14px", borderRadius:8, border:"none", background: newTaskTitle.trim() ? project.color : C.border, color:"#fff", fontSize:12, fontWeight:700 }}>+</button>
           </div>
         )}
 
