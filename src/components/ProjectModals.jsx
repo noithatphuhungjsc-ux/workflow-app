@@ -688,11 +688,11 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
             <div style={{ fontSize:11, color:C.sub, marginBottom:10 }}>Chọn cách xử lý công việc trong dự án:</div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               <button className="tap" onClick={async () => {
-                projTasks.forEach(t => hardDelete?.(t.id));
-                deleteProject(project.id);
-                for (const m of members) {
-                  const lid = DEV_NAME_TO_LOCAL[m.name];
-                  if (!lid || lid === localSession.id) continue;
+                // 1. Clean ALL members' cloud (including self) BEFORE unmounting
+                const allLids = members.map(m => DEV_NAME_TO_LOCAL[m.name]).filter(Boolean);
+                // Also add self if not in members list
+                if (localSession.id && !allLids.includes(localSession.id)) allLids.push(localSession.id);
+                const cleanupPromises = allLids.map(async (lid) => {
                   try {
                     const ep = await cloudLoad(null, lid, "projects");
                     const cp = Array.isArray(ep?.data) ? ep.data : [];
@@ -703,37 +703,51 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                     const filteredT = ct.filter(t => t.projectId !== project.id);
                     if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
                   } catch {}
-                }
-                if (supabase && project.chatId) {
+                });
+                // 2. Clean chat
+                const chatCleanup = (supabase && project.chatId) ? (async () => {
                   try {
                     await supabase.from("messages").delete().eq("conversation_id", project.chatId);
                     await supabase.from("conversation_members").delete().eq("conversation_id", project.chatId);
                     await supabase.from("conversations").delete().eq("id", project.chatId);
                   } catch {}
-                }
+                })() : Promise.resolve();
+                // 3. Wait for ALL cleanup to finish
+                await Promise.all([...cleanupPromises, chatCleanup]);
+                // 4. THEN delete locally + close (triggers unmount)
+                projTasks.forEach(t => hardDelete?.(t.id));
+                deleteProject(project.id);
                 onClose();
               }}
                 style={{ padding:"10px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:12, fontWeight:700 }}>Xoá dự án + xoá luôn công việc</button>
               <button className="tap" onClick={async () => {
-                projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
-                deleteProject(project.id);
-                for (const m of members) {
-                  const lid = DEV_NAME_TO_LOCAL[m.name];
-                  if (!lid || lid === localSession.id) continue;
+                // 1. Clean ALL members' cloud (including self)
+                const allLids = members.map(m => DEV_NAME_TO_LOCAL[m.name]).filter(Boolean);
+                if (localSession.id && !allLids.includes(localSession.id)) allLids.push(localSession.id);
+                const cleanupPromises = allLids.map(async (lid) => {
                   try {
                     const ep = await cloudLoad(null, lid, "projects");
                     const cp = Array.isArray(ep?.data) ? ep.data : [];
                     const filtered = cp.filter(p => p.id !== project.id);
                     if (filtered.length !== cp.length) await cloudSave(null, lid, "projects", filtered);
+                    // Keep tasks but remove project association
+                    const et = await cloudLoad(null, lid, "tasks");
+                    const ct = Array.isArray(et?.data) ? et.data : [];
+                    const updated = ct.map(t => t.projectId === project.id ? { ...t, projectId: null, stepIndex: null, assignee: null } : t);
+                    if (JSON.stringify(updated) !== JSON.stringify(ct)) await cloudSave(null, lid, "tasks", updated);
                   } catch {}
-                }
-                if (supabase && project.chatId) {
+                });
+                const chatCleanup = (supabase && project.chatId) ? (async () => {
                   try {
                     await supabase.from("messages").delete().eq("conversation_id", project.chatId);
                     await supabase.from("conversation_members").delete().eq("conversation_id", project.chatId);
                     await supabase.from("conversations").delete().eq("id", project.chatId);
                   } catch {}
-                }
+                })() : Promise.resolve();
+                await Promise.all([...cleanupPromises, chatCleanup]);
+                // 2. THEN delete locally + close
+                projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
+                deleteProject(project.id);
                 onClose();
               }}
                 style={{ padding:"10px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.sub, fontSize:12, fontWeight:600 }}>Xoá dự án, giữ lại công việc</button>
