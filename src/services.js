@@ -662,7 +662,8 @@ export function processTaskCommands(text, tasks, handlers, hasPermission) {
           const newItem = { id: Date.now(), desc, amount, category: cat, paid: false };
           const newItems = [...items, newItem];
           const total = newItems.reduce((s, e) => s + (e.amount || 0), 0);
-          actions.push({ type: "patch", id: found.id, data: { expense: { ...expense, items: newItems, amount: total, category: newItems[0]?.category || "other" } } });
+          const descAll = newItems.map(i => i.desc).filter(Boolean).join(", ");
+          actions.push({ type: "patch", id: found.id, data: { expense: { ...expense, items: newItems, amount: total, description: descAll, category: newItems[0]?.category || "other" } } });
           return `Đã thêm chi tiêu "${desc}" ${amount.toLocaleString()}đ!`;
         }
         return amount <= 0 ? `Số tiền không hợp lệ.` : `Không tìm thấy công việc.`;

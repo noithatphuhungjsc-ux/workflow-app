@@ -217,7 +217,7 @@ export default function SettingsModal({ user, onClose }) {
 
           {/* Tabs */}
           <div className="no-scrollbar" style={{ display:"flex", gap:4, marginBottom:16, overflowX:"auto" }}>
-            {TABS.filter(t => settings.userRole === "staff" ? !["workflow","connect","data"].includes(t.id) : true).map(t => (
+            {TABS.filter(t => settings.userRole === "staff" ? ["profile","ai","ui"].includes(t.id) : true).map(t => (
               <button key={t.id} className="tap" onClick={() => { setTab(t.id); setMsg(""); }}
                 style={{ flexShrink:0, background: tab === t.id ? C.accent : C.card, color: tab === t.id ? "#fff" : C.sub, border:`1px solid ${tab === t.id ? C.accent : C.border}`, borderRadius:12, padding:"7px 12px", fontSize:11, fontWeight:600 }}>
                 {t.label}
@@ -248,7 +248,7 @@ export default function SettingsModal({ user, onClose }) {
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>SỐ ĐIỆN THOẠI</div>
               <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)} style={IS} placeholder="0912 345 678" type="tel" />
             </div>
-            <div style={{ marginBottom:14 }}>
+            {settings.userRole !== "staff" && <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:6 }}>VAI TRÒ</div>
               <div style={{ display:"flex", gap:8 }}>
                 {[["manager","👔 Quản lý","Tạo dự án, giao việc, xem tất cả"],["staff","🔧 Thực thi","Xem việc được giao, báo cáo tiến độ"]].map(([k,label,desc]) => (
@@ -259,7 +259,7 @@ export default function SettingsModal({ user, onClose }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:8 }}>AVATAR</div>
               
@@ -862,6 +862,29 @@ function WorkflowTab({ settings, setSettings, showMsg }) {
   const [editSteps, setEditSteps] = useState([]);
   const [newStep, setNewStep] = useState("");
   const fileRef = useRef(null);
+  const rulesFileRef = useRef(null);
+  const rulesFiles = settings.staffRulesFiles || [];
+
+  const handleRulesUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { showMsg("File không được quá 5MB", "error"); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const newFile = { id: Date.now(), name: file.name, size: file.size, type: file.type, data: ev.target.result, uploadedAt: new Date().toISOString() };
+      setSettings(s => ({ ...s, staffRulesFiles: [...(s.staffRulesFiles || []), newFile] }));
+      showMsg(`Đã tải lên: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+  const deleteRulesFile = (id) => {
+    setSettings(s => ({ ...s, staffRulesFiles: (s.staffRulesFiles || []).filter(f => f.id !== id) }));
+    showMsg("Đã xóa file quy định");
+  };
+  const viewRulesFile = (file) => {
+    const a = document.createElement("a"); a.href = file.data; a.download = file.name; a.click();
+  };
 
   const saveCustoms = (list) => setSettings(s => ({ ...s, customWorkflows: list }));
 
@@ -924,6 +947,28 @@ function WorkflowTab({ settings, setSettings, showMsg }) {
   };
 
   return (<>
+    {/* ── Staff Rules Files ── */}
+    <div style={{ marginBottom:18 }}>
+      <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:8 }}>Quy định nhân viên</div>
+      <div style={{ fontSize:11, color:C.muted, marginBottom:8 }}>Upload file quy định, nội quy, chính sách cho nhân viên (PDF, DOCX, TXT, hình ảnh)</div>
+      {rulesFiles.map(f => (
+        <div key={f.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", marginBottom:4, background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
+          <span style={{ fontSize:16 }}>{f.type?.includes("pdf") ? "📄" : f.type?.includes("image") ? "🖼️" : f.type?.includes("word") || f.type?.includes("document") ? "📝" : "📎"}</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</div>
+            <div style={{ fontSize:10, color:C.muted }}>{(f.size / 1024).toFixed(0)}KB — {new Date(f.uploadedAt).toLocaleDateString("vi-VN")}</div>
+          </div>
+          <span className="tap" onClick={() => viewRulesFile(f)} style={{ fontSize:11, color:C.accent, cursor:"pointer", padding:"2px 6px" }}>Tải</span>
+          <span className="tap" onClick={() => deleteRulesFile(f.id)} style={{ fontSize:11, color:C.red, cursor:"pointer", padding:"2px 6px" }}>Xóa</span>
+        </div>
+      ))}
+      <button className="tap" onClick={() => rulesFileRef.current?.click()}
+        style={{ width:"100%", padding:"10px", borderRadius:10, border:`1px dashed ${C.accent}44`, background:C.accentD, color:C.accent, fontSize:12, fontWeight:700, marginTop:4 }}>
+        + Tải lên file quy định
+      </button>
+      <input ref={rulesFileRef} type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp" onChange={handleRulesUpload} style={{ display:"none" }} />
+    </div>
+
     {/* Edit mode */}
     {editId && (
       <div style={{ marginBottom:16, padding:14, background:C.card, borderRadius:14, border:`1px solid ${C.accent}44` }}>

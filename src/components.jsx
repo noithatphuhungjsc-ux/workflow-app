@@ -169,7 +169,24 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
   const expense = task.expense || {};
   const hasDetails = subtasks.length > 0 || notes.length > 0 || expense.amount > 0;
 
+  const expenseItems = expense.items || [];
   const patchExpense = (data) => onPatchTask?.(task.id, { expense: { ...expense, ...data } });
+  const addExpenseItem = () => {
+    const items = [...expenseItems, { id: Date.now(), desc: "", amount: 0, category: "other", paid: false }];
+    patchExpense({ items, amount: items.reduce((s, e) => s + (e.amount || 0), 0) });
+  };
+  const patchExpenseItem = (itemId, data) => {
+    const items = expenseItems.map(i => i.id === itemId ? { ...i, ...data } : i);
+    const total = items.reduce((s, e) => s + (e.amount || 0), 0);
+    const descAll = items.map(i => i.desc).filter(Boolean).join(", ");
+    patchExpense({ items, amount: total, description: descAll });
+  };
+  const deleteExpenseItem = (itemId) => {
+    const items = expenseItems.filter(i => i.id !== itemId);
+    const total = items.reduce((s, e) => s + (e.amount || 0), 0);
+    const descAll = items.map(i => i.desc).filter(Boolean).join(", ");
+    patchExpense({ items, amount: total, description: descAll });
+  };
 
   const updateNotes = (newNotes) => onPatchTask?.(task.id, { notes: newNotes });
   const cycleNoteStatus = (n) => {
@@ -374,30 +391,44 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
             </div>
           </div>
 
-          {/* ── Inline Expense editing ── */}
+          {/* ── Inline Expense editing (multi-item) ── */}
           <div style={{ marginTop:8 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
               <span style={{ fontSize:10, color:C.muted, fontWeight:600 }}>CHI TIÊU</span>
-              <span className="tap" onClick={() => { if (!expense.amount) patchExpense({ amount: 0, description: "" }); }}
+              {expense.amount > 0 && <span style={{ fontSize:10, color:C.gold, fontWeight:700 }}>{expense.amount.toLocaleString()}đ</span>}
+              <span className="tap" onClick={addExpenseItem}
                 style={{ fontSize:10, padding:"1px 6px", borderRadius:4, background:C.goldD, color:C.gold, fontWeight:700, cursor:"pointer" }}>+ Thêm</span>
             </div>
-            {/* Amount + reason on same row */}
-            <div style={{ display:"flex", gap:4, alignItems:"center", marginBottom:4 }}>
-              <input value={expense.description || ""} onChange={e => patchExpense({ description: e.target.value })}
-                placeholder="Lý do..." style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, minWidth:0 }} />
-              <input type="number" value={expense.amount || ""} onChange={e => patchExpense({ amount: Number(e.target.value) || 0 })}
-                placeholder="Số tiền" style={{ flex:1, fontSize:12, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 6px", outline:"none", background:C.bg, minWidth:0 }} />
-              <span style={{ fontSize:10, color:C.muted, flexShrink:0 }}>đ</span>
-              <span className="tap" onClick={openQR}
-                style={{ width:24, height:24, borderRadius:"50%", background:`${C.accent}12`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:`1.5px solid ${C.accent}44`, flexShrink:0 }}
-                title="QR thanh toán">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2">
-                  <rect x="2" y="2" width="7" height="7" rx="1"/><rect x="15" y="2" width="7" height="7" rx="1"/><rect x="2" y="15" width="7" height="7" rx="1"/>
-                  <rect x="4.5" y="4.5" width="2" height="2" fill={C.accent} stroke="none"/><rect x="17.5" y="4.5" width="2" height="2" fill={C.accent} stroke="none"/><rect x="4.5" y="17.5" width="2" height="2" fill={C.accent} stroke="none"/>
-                  <path d="M15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2zM17 17h2v2h-2z" fill={C.accent} stroke="none"/>
-                </svg>
-              </span>
-            </div>
+            {/* Expense items list */}
+            {expenseItems.length > 0 ? expenseItems.map((item, idx) => (
+              <div key={item.id} style={{ display:"flex", gap:4, alignItems:"center", marginBottom:3 }}>
+                <span style={{ fontSize:9, color:C.muted, width:14, textAlign:"center", flexShrink:0 }}>{idx+1}</span>
+                <input value={item.desc || ""} onChange={e => patchExpenseItem(item.id, { desc: e.target.value })}
+                  placeholder="Lý do..." style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, minWidth:0 }} />
+                <input type="number" value={item.amount || ""} onChange={e => patchExpenseItem(item.id, { amount: Number(e.target.value) || 0 })}
+                  placeholder="Số tiền" style={{ flex:1, fontSize:12, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 6px", outline:"none", background:C.bg, minWidth:0 }} />
+                <span style={{ fontSize:10, color:C.muted, flexShrink:0 }}>đ</span>
+                <span className="tap" onClick={() => deleteExpenseItem(item.id)}
+                  style={{ fontSize:12, color:C.red, cursor:"pointer", padding:"0 2px", flexShrink:0 }}>×</span>
+              </div>
+            )) : (
+              <div style={{ display:"flex", gap:4, alignItems:"center", marginBottom:3 }}>
+                <input value={expense.description || ""} onChange={e => patchExpense({ description: e.target.value })}
+                  placeholder="Lý do..." style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, minWidth:0 }} />
+                <input type="number" value={expense.amount || ""} onChange={e => patchExpense({ amount: Number(e.target.value) || 0 })}
+                  placeholder="Số tiền" style={{ flex:1, fontSize:12, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 6px", outline:"none", background:C.bg, minWidth:0 }} />
+                <span style={{ fontSize:10, color:C.muted, flexShrink:0 }}>đ</span>
+                <span className="tap" onClick={openQR}
+                  style={{ width:24, height:24, borderRadius:"50%", background:`${C.accent}12`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:`1.5px solid ${C.accent}44`, flexShrink:0 }}
+                  title="QR thanh toán">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2">
+                    <rect x="2" y="2" width="7" height="7" rx="1"/><rect x="15" y="2" width="7" height="7" rx="1"/><rect x="2" y="15" width="7" height="7" rx="1"/>
+                    <rect x="4.5" y="4.5" width="2" height="2" fill={C.accent} stroke="none"/><rect x="17.5" y="4.5" width="2" height="2" fill={C.accent} stroke="none"/><rect x="4.5" y="17.5" width="2" height="2" fill={C.accent} stroke="none"/>
+                    <path d="M15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2zM17 17h2v2h-2z" fill={C.accent} stroke="none"/>
+                  </svg>
+                </span>
+              </div>
+            )}
             {/* Source + paid */}
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <select value={expense.source || ""} onChange={e => patchExpense({ source: e.target.value })}

@@ -425,7 +425,11 @@ Ban CO QUYEN them/sua/xoa cong viec. QUY TRINH BAT BUOC:
    - Sua deadline: [TASK_DEADLINE:ten_task:YYYY-MM-DD]
    - Sua ghi chu: [TASK_NOTES:ten_task:noi_dung_ghi_chu]
    - Them chi tieu: [TASK_EXPENSE:ten_task:ly_do|so_tien|danh_muc] (danh_muc: work/relationship/family/personal/other)
+   - NHIEU KHOAN CHI: moi khoan 1 lenh rieng biet. VD: nguoi dung noi "mua van phong pham 200k, taxi 150k" → GUI 2 LENH:
+     [TASK_EXPENSE:ten_task:Van phong pham|200000|work]
+     [TASK_EXPENSE:ten_task:Taxi|150000|work]
    - Neu nguoi dung noi ve chi tieu/tien → dung TASK_EXPENSE. Neu khong phai chi tieu → dung TASK_NOTES
+   - PHAI dien DAY DU ly_do va so_tien. KHONG de trong ly_do hoac so_tien = 0
 4. KHONG BAO GIO thuc hien ma chua duoc ${shortName} xac nhan
 5. Ten task dung de tim kiem — khong can chinh xac 100%, chi can du nhan ra
 6. Khi ${shortName} noi "u", "ok", "duoc", "dung roi" sau khi ban hoi xac nhan → THUC HIEN NGAY, khong hoi lai
@@ -607,7 +611,7 @@ ${sum}`;
       const isProjectTask = t?.projectId;
       const taskCtx = t ? `[NHANH — Task: "${t.title}" | ${STATUSES[t.status]?.label} | ${PRIORITIES[t.priority]?.label?.replace("\n",", ")}${t.deadline ? ` | ${t.deadline}` : ""}${isProjectTask ? " | DỰ ÁN" : ""}]
 LAM LUON, tra loi ≤15 tu.${isProjectTask ? " KHONG TAO VIEC MOI. Chi cap nhat task hien tai." : ""} Dung lenh:
-[TASK_EXPENSE:ten_task:ly_do|so_tien] — chi tieu
+[TASK_EXPENSE:ten_task:ly_do|so_tien|danh_muc] — chi tieu (moi khoan 1 lenh rieng)
 [TASK_NOTES:ten_task:noi_dung] — ghi chu
 [TASK_PATCH:ten_task:field=value] — doi status/priority/deadline/startTime\n\n` : "";
       const fullText = await callClaudeStream(
