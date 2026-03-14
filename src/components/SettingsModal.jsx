@@ -359,8 +359,8 @@ export default function SettingsModal({ user, onClose }) {
                 <b>Lưu ý:</b> Wory sẽ mô tả hành động và cho bạn xác nhận trước khi thực hiện.
               </div>
             )}
-            {/* Wory tone / personality */}
-            <div style={{ marginBottom:14 }}>
+            {/* Wory tone / personality — only for manager/admin */}
+            {settings.userRole !== "staff" && <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:13, fontWeight:600, color:C.text, marginBottom:6 }}>Phong cách nói của Wory</div>
               <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 {[
@@ -377,7 +377,7 @@ export default function SettingsModal({ user, onClose }) {
                   </button>
                 ))}
               </div>
-            </div>
+            </div>}
 
             <Toggle label="Đọc text (TTS)" desc="Wory đọc câu trả lời bằng giọng nói"
               value={settings.ttsEnabled} onChange={() => setSettings(s => ({ ...s, ttsEnabled: !s.ttsEnabled }))} />

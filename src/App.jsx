@@ -379,7 +379,7 @@ ${noDeadline.length ? `❓ CHUA CO DEADLINE (${noDeadline.length}): ${noDeadline
 - Thuong hoi tham suc khoe, tinh than truoc khi vao viec
 - Khuyen khich khi ${shortName} hoan thanh tot, dong vien khi gap kho`,
     };
-    const tone = toneMap[settings.woryTone] || toneMap.friendly;
+    const tone = settings.userRole === "staff" ? toneMap.strict : (toneMap[settings.woryTone] || toneMap.friendly);
 
     return `Ban la Wory — tro ly than thiet cua ${shortName}. Noi tieng Viet tu nhien.
 Hom nay: ${dayName}, ${today}, ${timeStr}.
