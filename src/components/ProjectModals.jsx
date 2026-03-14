@@ -685,10 +685,35 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
         {confirmDelete && (
           <div style={{ marginTop:12, padding:"12px 14px", background:`${C.red}08`, borderRadius:12, border:`1px solid ${C.red}33` }}>
             <div style={{ fontSize:13, fontWeight:600, color:C.red, marginBottom:8 }}>Xác nhận xoá "{project.name}"?</div>
-            <div style={{ fontSize:11, color:C.sub, marginBottom:10 }}>Công việc sẽ được giữ lại thành Việc chung.</div>
-            <div style={{ display:"flex", gap:8 }}>
-              <button className="tap" onClick={() => setConfirmDelete(false)}
-                style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.sub, fontSize:12, fontWeight:600 }}>Huỷ</button>
+            <div style={{ fontSize:11, color:C.sub, marginBottom:10 }}>Chọn cách xử lý công việc trong dự án:</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <button className="tap" onClick={async () => {
+                projTasks.forEach(t => hardDelete?.(t.id));
+                deleteProject(project.id);
+                for (const m of members) {
+                  const lid = DEV_NAME_TO_LOCAL[m.name];
+                  if (!lid || lid === localSession.id) continue;
+                  try {
+                    const ep = await cloudLoad(null, lid, "projects");
+                    const cp = Array.isArray(ep?.data) ? ep.data : [];
+                    const filtered = cp.filter(p => p.id !== project.id);
+                    if (filtered.length !== cp.length) await cloudSave(null, lid, "projects", filtered);
+                    const et = await cloudLoad(null, lid, "tasks");
+                    const ct = Array.isArray(et?.data) ? et.data : [];
+                    const filteredT = ct.filter(t => t.projectId !== project.id);
+                    if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
+                  } catch {}
+                }
+                if (supabase && project.chatId) {
+                  try {
+                    await supabase.from("messages").delete().eq("conversation_id", project.chatId);
+                    await supabase.from("conversation_members").delete().eq("conversation_id", project.chatId);
+                    await supabase.from("conversations").delete().eq("id", project.chatId);
+                  } catch {}
+                }
+                onClose();
+              }}
+                style={{ padding:"10px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:12, fontWeight:700 }}>Xoá dự án + xoá luôn công việc</button>
               <button className="tap" onClick={async () => {
                 projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
                 deleteProject(project.id);
@@ -711,7 +736,9 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                 }
                 onClose();
               }}
-                style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:12, fontWeight:700 }}>Xoá</button>
+                style={{ padding:"10px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.sub, fontSize:12, fontWeight:600 }}>Xoá dự án, giữ lại công việc</button>
+              <button className="tap" onClick={() => setConfirmDelete(false)}
+                style={{ padding:"8px", borderRadius:8, border:"none", background:"transparent", color:C.muted, fontSize:11, fontWeight:500 }}>Huỷ</button>
             </div>
           </div>
         )}
