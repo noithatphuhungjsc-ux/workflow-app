@@ -23,12 +23,12 @@
     <!-- Recovery: if React doesn't render in 4s, nuke SW cache and reload -->
     <script>
       (function() {
-        var RK = 'wf_recovered_v147';
+        var RK = 'wf_recovered_v148';
         // Step 1: Always proactively clear old caches on load
         if ('caches' in window) {
           caches.keys().then(function(keys) {
             keys.forEach(function(k) {
-              if (k.indexOf('v147') === -1) caches.delete(k);
+              if (k.indexOf('v148') === -1) caches.delete(k);
             });
           });
         }
@@ -68,7 +68,7 @@
           regs.forEach(r => r.update());
         });
         caches.keys().then(keys => keys.forEach(k => {
-          if (!k.includes('v147')) caches.delete(k);
+          if (!k.includes('v148')) caches.delete(k);
         }));
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').catch(() => {});

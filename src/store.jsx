@@ -197,6 +197,7 @@ export function AppProvider({ children, userId }) {
       let localTasks = loadJSON("tasks", []);
       let localProjects = loadJSON("projects", []);
       let localExpenses = loadJSON("expenses", []);
+      let cloudHadData = { tasks: false, projects: false };
 
       // === STEP 1: PULL from cloud FIRST (before pushing) ===
       try {
@@ -217,9 +218,31 @@ export function AppProvider({ children, userId }) {
               if (row.key === "wory_knowledge" && row.data) { setKnowledge(row.data); saveJSON("wory_knowledge", row.data); }
               continue;
             }
-            if (row.data.length === 0) continue;
+            if (row.data.length === 0) {
+              // Cloud is empty → clear local team data too
+              if (row.key === "tasks") {
+                cloudHadData.tasks = true;
+                const kept = localTasks.filter(t => !t.projectId && !t.assignee);
+                if (kept.length !== localTasks.length) {
+                  localTasks = kept;
+                  dispatch({ type: "LOAD", tasks: localTasks });
+                  saveJSON("tasks", localTasks);
+                }
+              }
+              if (row.key === "projects") {
+                cloudHadData.projects = true;
+                const kept = localProjects.filter(p => !p.members || p.members.length === 0);
+                if (kept.length !== localProjects.length) {
+                  localProjects = kept;
+                  projDispatch({ type: "PROJ_LOAD", items: localProjects });
+                  saveJSON("projects", localProjects);
+                }
+              }
+              continue;
+            }
 
             if (row.key === "tasks") {
+              cloudHadData.tasks = true;
               // Cloud is authoritative — merge cloud into local, remove deleted
               const cloudTaskIds = new Set(row.data.map(t => t.id));
               if (localTasks.length === 0) {
@@ -242,6 +265,7 @@ export function AppProvider({ children, userId }) {
               saveJSON("tasks", localTasks);
             }
             if (row.key === "projects") {
+              cloudHadData.projects = true;
               // Filter out projects where user has been removed
               const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
               const myNames = [sess.name, sess.id].filter(Boolean).map(n => (n || "").toLowerCase().replace(/\s+/g, ""));
@@ -282,11 +306,12 @@ export function AppProvider({ children, userId }) {
       } catch (e) { console.warn("Cloud pull failed:", e); }
 
       // === STEP 2: PUSH merged data UP to cloud ===
-      if (localTasks.length > 0) {
+      // Only push if cloud had data (to avoid overwriting admin deletions)
+      if (localTasks.length > 0 || cloudHadData.tasks) {
         cloudSave(null, cloudId, "tasks", localTasks);
         if (cloudId !== userId) cloudSave(null, userId, "tasks", localTasks);
       }
-      if (localProjects.length > 0) {
+      if (localProjects.length > 0 || cloudHadData.projects) {
         cloudSave(null, cloudId, "projects", localProjects);
         if (cloudId !== userId) cloudSave(null, userId, "projects", localProjects);
       }
