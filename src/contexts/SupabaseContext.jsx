@@ -118,7 +118,10 @@ export function SupabaseProvider({ children }) {
     if (!supabase) return { error: "Supabase chưa được cấu hình" };
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { prompt: "select_account" },
+      },
     });
     if (error) return { error: error.message };
     return { data };
@@ -127,7 +130,7 @@ export function SupabaseProvider({ children }) {
   // Sign out
   const signOut = useCallback(async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     setSession(null);
     setProfile(null);
   }, []);
