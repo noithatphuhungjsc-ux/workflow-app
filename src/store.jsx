@@ -374,11 +374,10 @@ export function AppProvider({ children, userId }) {
     });
   }, [projects, userId, cloudId]);
 
-  // Cross-user CLOUD sync: push assigned tasks+projects to assignee's cloud
+  // Cross-user CLOUD sync: push projects+tasks to all members' cloud
   const crossSyncTimerRef = useRef(null);
   useEffect(() => {
-    const tasksByAssignee = crossUserTasksRef.current;
-    if (!cloudId || !Object.keys(tasksByAssignee).length) return;
+    if (!cloudId) return;
     clearTimeout(crossSyncTimerRef.current);
     crossSyncTimerRef.current = setTimeout(async () => {
       try {
@@ -386,24 +385,52 @@ export function AppProvider({ children, userId }) {
           "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
           "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
         };
-        for (const [name, tasks] of Object.entries(tasksByAssignee)) {
-          const localId = DEV_NAME_TO_LOCAL_ID[name];
-          if (!localId || localId === userId) continue;
-          // Load existing cloud data for target via API
-          const exResult = await cloudLoad(null, localId, "tasks");
-          const cloud = (exResult?.data && Array.isArray(exResult.data)) ? exResult.data : [];
-          let merged = [...cloud];
-          for (const t of tasks) { const i = merged.findIndex(e => e.id === t.id); if (i >= 0) merged[i] = { ...merged[i], ...t }; else merged.push(t); }
-          await cloudSave(null, localId, "tasks", merged);
-          // Merge projects
-          const projIds = [...new Set(tasks.map(t => t.projectId))];
-          const projs = projIds.map(pid => projects.find(pr => pr.id === pid)).filter(Boolean);
-          if (projs.length) {
+        // Collect all member localIds that need sync
+        const memberTargets = new Set();
+        projects.forEach(proj => {
+          if (!proj.members?.length) return;
+          proj.members.forEach(m => {
+            const lid = DEV_NAME_TO_LOCAL_ID[m.name];
+            if (lid && lid !== userId) memberTargets.add(lid);
+          });
+        });
+        // Also add assignees from tasks
+        const tasksByAssignee = crossUserTasksRef.current;
+        for (const name of Object.keys(tasksByAssignee)) {
+          const lid = DEV_NAME_TO_LOCAL_ID[name];
+          if (lid && lid !== userId) memberTargets.add(lid);
+        }
+
+        for (const localId of memberTargets) {
+          // Find projects this member belongs to
+          const memberName = Object.entries(DEV_NAME_TO_LOCAL_ID).find(([,v]) => v === localId)?.[0];
+          const memberProjs = projects.filter(p =>
+            p.members?.some(m => m.name === memberName || DEV_NAME_TO_LOCAL_ID[m.name] === localId)
+          );
+          // Merge projects into member's cloud
+          if (memberProjs.length) {
             const exP = await cloudLoad(null, localId, "projects");
             const cP = (exP?.data && Array.isArray(exP.data)) ? exP.data : [];
             let mP = [...cP];
-            for (const pr of projs) { const i = mP.findIndex(e => e.id === pr.id); if (i >= 0) mP[i] = { ...mP[i], ...pr }; else mP.push(pr); }
+            for (const pr of memberProjs) {
+              const i = mP.findIndex(e => e.id === pr.id);
+              if (i >= 0) mP[i] = { ...mP[i], ...pr };
+              else mP.push(pr);
+            }
             await cloudSave(null, localId, "projects", mP);
+          }
+          // Merge assigned tasks
+          const assigneeTasks = tasksByAssignee[memberName] || [];
+          if (assigneeTasks.length) {
+            const exT = await cloudLoad(null, localId, "tasks");
+            const cT = (exT?.data && Array.isArray(exT.data)) ? exT.data : [];
+            let mT = [...cT];
+            for (const t of assigneeTasks) {
+              const i = mT.findIndex(e => e.id === t.id);
+              if (i >= 0) mT[i] = { ...mT[i], ...t };
+              else mT.push(t);
+            }
+            await cloudSave(null, localId, "tasks", mT);
           }
         }
       } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
