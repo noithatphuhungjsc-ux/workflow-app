@@ -401,15 +401,29 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
             </div>
             {/* Expense items list */}
             {expenseItems.length > 0 ? expenseItems.map((item, idx) => (
-              <div key={item.id} style={{ display:"flex", gap:4, alignItems:"center", marginBottom:3 }}>
-                <span style={{ fontSize:9, color:C.muted, width:14, textAlign:"center", flexShrink:0 }}>{idx+1}</span>
-                <input value={item.desc || ""} onChange={e => patchExpenseItem(item.id, { desc: e.target.value })}
-                  placeholder="Lý do..." style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, minWidth:0 }} />
-                <input type="number" value={item.amount || ""} onChange={e => patchExpenseItem(item.id, { amount: Number(e.target.value) || 0 })}
-                  placeholder="Số tiền" style={{ flex:1, fontSize:12, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 6px", outline:"none", background:C.bg, minWidth:0 }} />
-                <span style={{ fontSize:10, color:C.muted, flexShrink:0 }}>đ</span>
-                <span className="tap" onClick={() => deleteExpenseItem(item.id)}
-                  style={{ fontSize:12, color:C.red, cursor:"pointer", padding:"0 2px", flexShrink:0 }}>×</span>
+              <div key={item.id} style={{ marginBottom:4 }}>
+                <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                  <span style={{ fontSize:9, color:C.muted, width:14, textAlign:"center", flexShrink:0 }}>{idx+1}</span>
+                  <input value={item.desc || ""} onChange={e => patchExpenseItem(item.id, { desc: e.target.value })}
+                    placeholder="Lý do..." style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, minWidth:0 }} />
+                  <input type="number" value={item.amount || ""} onChange={e => patchExpenseItem(item.id, { amount: Number(e.target.value) || 0 })}
+                    placeholder="Số tiền" style={{ flex:1, fontSize:12, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 6px", outline:"none", background:C.bg, minWidth:0 }} />
+                  <span style={{ fontSize:10, color:C.muted, flexShrink:0 }}>đ</span>
+                  <span className="tap" onClick={() => deleteExpenseItem(item.id)}
+                    style={{ fontSize:12, color:C.red, cursor:"pointer", padding:"0 2px", flexShrink:0 }}>×</span>
+                </div>
+                <div style={{ display:"flex", gap:4, alignItems:"center", marginTop:2, paddingLeft:18 }}>
+                  <select value={item.category || "other"} onChange={e => patchExpenseItem(item.id, { category: e.target.value })}
+                    style={{ fontSize:10, border:`1px solid ${C.border}`, borderRadius:5, padding:"2px 4px", color:C.text, background:C.bg, outline:"none" }}>
+                    {Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                  </select>
+                  <span className="tap" onClick={() => patchExpenseItem(item.id, { paid: !item.paid })}
+                    style={{ fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:6, cursor:"pointer",
+                      background: item.paid ? C.greenD : C.bg, color: item.paid ? C.green : C.muted,
+                      border: `1px solid ${item.paid ? C.green + "44" : C.border}` }}>
+                    {item.paid ? "✓ Đã chi" : "Chưa chi"}
+                  </span>
+                </div>
               </div>
             )) : (
               <div style={{ display:"flex", gap:4, alignItems:"center", marginBottom:3 }}>

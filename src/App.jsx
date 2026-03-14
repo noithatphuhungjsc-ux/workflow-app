@@ -609,13 +609,26 @@ ${sum}`;
     try {
       const t = miniTask ? tasks.find(x => x.id === miniTask.id) || miniTask : null;
       const isProjectTask = t?.projectId;
-      const taskCtx = t ? `[NHANH — Task: "${t.title}" | ${STATUSES[t.status]?.label} | ${PRIORITIES[t.priority]?.label?.replace("\n",", ")}${t.deadline ? ` | ${t.deadline}` : ""}${isProjectTask ? " | DỰ ÁN" : ""}]
-LAM LUON, tra loi ≤15 tu.${isProjectTask ? " KHONG TAO VIEC MOI. Chi cap nhat task hien tai." : ""} Dung lenh:
-[TASK_EXPENSE:ten_task:ly_do|so_tien|danh_muc] — chi tieu (moi khoan 1 lenh rieng)
-[TASK_NOTES:ten_task:noi_dung] — ghi chu
-[TASK_PATCH:ten_task:field=value] — doi status/priority/deadline/startTime\n\n` : "";
+      const taskName = t ? t.title : "";
+      const taskCtx = t ? `[CHE DO NHANH — KHONG HOI XAC NHAN, LAM NGAY]
+Task dang chon: "${t.title}" | ${STATUSES[t.status]?.label} | ${PRIORITIES[t.priority]?.label?.replace("\n",", ")}${t.deadline ? ` | deadline:${t.deadline}` : ""}${isProjectTask ? " | DU AN — KHONG TAO VIEC MOI" : ""}
+
+QUY TAC BAT BUOC:
+1. KHONG hoi lai, KHONG xac nhan — THUC HIEN NGAY
+2. Chi ap dung cho task "${taskName}" — KHONG chuyen sang task khac
+3. Tra loi ≤15 tu, GUI LENH NGAY:
+   [TASK_EXPENSE:${taskName}:ly_do|so_tien|danh_muc] — them chi tieu
+   [TASK_NOTES:${taskName}:noi_dung] — them ghi chu
+   [TASK_STATUS:${taskName}:trang_thai] — doi status (todo/prepare/inprogress/done)
+   [TASK_PRIORITY:${taskName}:muc] — doi uu tien (cao/trung/thap/none)
+   [TASK_DEADLINE:${taskName}:YYYY-MM-DD] — doi deadline
+4. Neu nguoi dung noi chi tieu → PHAI dung TASK_EXPENSE voi DAY DU ly_do va so_tien
+5. Nhieu khoan chi → moi khoan 1 lenh TASK_EXPENSE rieng
+
+` : "";
+      const miniSystemPrompt = t ? `Ban la Wory — tro ly nhanh. Noi tieng Viet. KHONG hoi xac nhan. LAM NGAY khi nguoi dung yeu cau. Tra loi cuc ngan (≤15 tu). LUON gui lenh thuc thi.` : buildSystemPrompt(msgs);
       const fullText = await callClaudeStream(
-        buildSystemPrompt(msgs),
+        miniSystemPrompt,
         [{ role: "user", content: taskCtx + text }],
         (partial) => setMiniReply(partial),
         400
