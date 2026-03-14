@@ -991,29 +991,29 @@ LAM LUON, tra loi ≤15 tu.${isProjectTask ? " KHONG TAO VIEC MOI. Chi cap nhat 
     <div className="app-container" style={fontScale !== 1 ? { zoom: fontScale } : undefined}>
 
       {/* ── HEADER ── */}
-      <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 6, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
+      <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
         <UserMenu user={{ ...user, name: settings.displayName || user.name }} onLogout={onLogout} onSettings={() => setSettingsOpen(true)} />
-        <span style={{ fontSize:17, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
-        <div style={{ flex: 1, minWidth:4 }} />
+        <span style={{ fontSize:19, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
+        <div style={{ flex: 1, minWidth:2 }} />
         {/* Quick expense / QR scan */}
         <div className="tap" onClick={() => setQrOpen(true)}
-          style={{ width:30, height:30, borderRadius:8, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, lineHeight:1, flexShrink:0 }}
+          style={{ width:26, height:26, borderRadius:6, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, lineHeight:1, flexShrink:0 }}
           title="Chi tiêu nhanh">
           🧾
         </div>
         {/* Email badge */}
         {gmailConnected && (
           <div className="tap" onClick={() => setTab("inbox")}
-            style={{ position:"relative", width:30, height:30, borderRadius:8, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, lineHeight:1, flexShrink:0 }}>
+            style={{ position:"relative", width:26, height:26, borderRadius:6, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, lineHeight:1, flexShrink:0 }}>
             📧
-            {gmailUnread > 0 && <span style={{ position:"absolute", top:-2, right:-2, background:"#e67e22", color:"#fff", fontSize:9, fontWeight:700, borderRadius:10, minWidth:14, height:14, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px" }}>{gmailUnread}</span>}
+            {gmailUnread > 0 && <span style={{ position:"absolute", top:-3, right:-3, background:"#e67e22", color:"#fff", fontSize:8, fontWeight:700, borderRadius:10, minWidth:12, height:12, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 2px" }}>{gmailUnread}</span>}
           </div>
         )}
         <div style={{ position:"relative", flexShrink:0 }}>
           <div className="tap" onClick={() => setBellOpen(v => !v)}
-            style={{ position:"relative", width:30, height:30, borderRadius:8, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, lineHeight:1 }}>
+            style={{ position:"relative", width:26, height:26, borderRadius:6, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, lineHeight:1 }}>
             🔔
-            {alertCount > 0 && <span style={{ position:"absolute", top:-2, right:-2, background:C.red, color:"#fff", fontSize:9, fontWeight:700, borderRadius:10, minWidth:14, height:14, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px", animation:"pulse 1.5s infinite" }}>{alertCount}</span>}
+            {alertCount > 0 && <span style={{ position:"absolute", top:-3, right:-3, background:C.red, color:"#fff", fontSize:8, fontWeight:700, borderRadius:10, minWidth:12, height:12, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 2px", animation:"pulse 1.5s infinite" }}>{alertCount}</span>}
           </div>
           {bellOpen && (
             <>
