@@ -359,6 +359,26 @@ export default function SettingsModal({ user, onClose }) {
                 <b>Lưu ý:</b> Wory sẽ mô tả hành động và cho bạn xác nhận trước khi thực hiện.
               </div>
             )}
+            {/* Wory tone / personality */}
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:C.text, marginBottom:6 }}>Phong cách nói của Wory</div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {[
+                  { key: "friendly", label: "🤝 Thân thiện", desc: "Như bạn bè" },
+                  { key: "professional", label: "💼 Chuyên nghiệp", desc: "Ngắn gọn, lịch sự" },
+                  { key: "funny", label: "😄 Vui vẻ", desc: "Dí dỏm, hài hước" },
+                  { key: "strict", label: "📋 Nghiêm túc", desc: "Tập trung, kỷ luật" },
+                  { key: "caring", label: "💛 Quan tâm", desc: "Ân cần, chu đáo" },
+                ].map(t => (
+                  <button key={t.key} className="tap" onClick={() => setSettings(s => ({ ...s, woryTone: t.key }))}
+                    style={{ padding:"8px 12px", borderRadius:10, fontSize:12, fontWeight:600, border:`1.5px solid ${(settings.woryTone || "friendly") === t.key ? C.accent : C.border}`, background:(settings.woryTone || "friendly") === t.key ? C.accentD : C.card, color:(settings.woryTone || "friendly") === t.key ? C.accent : C.sub, cursor:"pointer" }}>
+                    {t.label}
+                    <div style={{ fontSize:9, fontWeight:400, color:C.muted, marginTop:2 }}>{t.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <Toggle label="Đọc text (TTS)" desc="Wory đọc câu trả lời bằng giọng nói"
               value={settings.ttsEnabled} onChange={() => setSettings(s => ({ ...s, ttsEnabled: !s.ttsEnabled }))} />
             <SliderRow label="Tốc độ đọc" value={settings.ttsSpeed} onChange={v => setSettings({ ttsSpeed: v })}

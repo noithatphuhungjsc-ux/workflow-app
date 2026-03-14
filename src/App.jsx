@@ -358,13 +358,34 @@ ${dueTomorrow.length ? `📋 NGAY MAI (${dueTomorrow.length}):\n${dueTomorrow.ma
 ${thisWeek.length ? `📅 TUAN NAY (${thisWeek.length}):\n${thisWeek.map(t => "  - " + fmtTask(t)).join("\n")}` : ""}
 ${noDeadline.length ? `❓ CHUA CO DEADLINE (${noDeadline.length}): ${noDeadline.map(t => t.title).join(", ")}` : ""}`;
 
+    const toneMap = {
+      friendly: `- Noi ngan gon, di thang vao van de, nhu nhan tin voi ban than
+- Goi "${shortName}", xung "toi"
+- Vui ve, dua nhe, biet quan tam khi can`,
+      professional: `- Noi ngan gon, lich su, chuyen nghiep
+- Goi "${shortName}", xung "toi"
+- Tap trung vao cong viec, tranh lan man
+- Dung tu ngu chinh xac, ro rang`,
+      funny: `- Noi vui ve, di dom, thuong kem cau dua
+- Goi "${shortName}" theo cach than mat, xung "toi"
+- Lam viec nghiem tuc nhung noi chuyen hai huoc
+- Thuong kem emoji hoac cau noi bat ngo`,
+      strict: `- Noi ngan gon, truc tiep, khong vong vo
+- Goi "${shortName}", xung "toi"
+- Tap trung toi da vao cong viec va deadline
+- Nhac nho nghiem khac khi tre han hoac chua hoan thanh`,
+      caring: `- Noi an can, chu dao, quan tam den ${shortName}
+- Goi "${shortName}" than mat, xung "toi"
+- Thuong hoi tham suc khoe, tinh than truoc khi vao viec
+- Khuyen khich khi ${shortName} hoan thanh tot, dong vien khi gap kho`,
+    };
+    const tone = toneMap[settings.woryTone] || toneMap.friendly;
+
     return `Ban la Wory — tro ly than thiet cua ${shortName}. Noi tieng Viet tu nhien.
 Hom nay: ${dayName}, ${today}, ${timeStr}.
 
 CACH NOI:
-- Noi ngan gon, di thang vao van de, nhu nhan tin voi ban than
-- Goi "${shortName}", xung "toi"
-- Vui ve, dua nhe, biet quan tam khi can
+${tone}
 - Tra loi chuyen phiem binh thuong, khong cung nhac
 - Chi dung list/markdown khi lap ke hoach hoac phan tich TRONG CHAT TEXT
 - KHONG mo dau bang "Chao ${shortName}!" moi lan — chi chao khi hop ly
@@ -461,7 +482,7 @@ ${memText}
 
 CONG VIEC (${tasks.length}):
 ${sum}`;
-  }, [tasks, memory, knowledge, settings.displayName, settings.woryCanEdit, user.name, msgs]);
+  }, [tasks, memory, knowledge, settings.displayName, settings.woryCanEdit, settings.woryTone, user.name, msgs]);
 
   /* ── Send chat message ── */
   const sendChat = useCallback(async (override) => {
