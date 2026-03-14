@@ -269,6 +269,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
   const [assigningId, setAssigningId] = useState(null);
   const [viewMode, setViewMode] = useState("steps");
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Supabase profiles for member picker
   const [teamProfiles, setTeamProfiles] = useState([]);
@@ -674,35 +675,46 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
             style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${project.archived ? C.accent : C.green}44`, background: project.archived ? C.accentD : C.greenD, color: project.archived ? C.accent : C.green, fontSize:13, fontWeight:600 }}>
             {project.archived ? "📂 Mở lại" : "📦 Lưu trữ"}
           </button>}
-          {!isStaff && <button className="tap" onClick={async () => {
-            if (!confirm("Xoá dự án \"" + project.name + "\"?\nCông việc sẽ được giữ lại thành Việc chung.")) return;
-            projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
-            deleteProject(project.id);
-            // Clean up all members' cloud storage
-            for (const m of members) {
-              const lid = DEV_NAME_TO_LOCAL[m.name];
-              if (!lid || lid === localSession.id) continue;
-              try {
-                const ep = await cloudLoad(null, lid, "projects");
-                const cp = Array.isArray(ep?.data) ? ep.data : [];
-                const filtered = cp.filter(p => p.id !== project.id);
-                if (filtered.length !== cp.length) await cloudSave(null, lid, "projects", filtered);
-              } catch {}
-            }
-            // Delete Supabase conversation
-            if (supabase && project.chatId) {
-              try {
-                await supabase.from("messages").delete().eq("conversation_id", project.chatId);
-                await supabase.from("conversation_members").delete().eq("conversation_id", project.chatId);
-                await supabase.from("conversations").delete().eq("id", project.chatId);
-              } catch {}
-            }
-            onClose();
-          }}
+          {!isStaff && !confirmDelete && <button className="tap" onClick={() => setConfirmDelete(true)}
             style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:13, fontWeight:600 }}>
             Xoá dự án
           </button>}
         </div>
+
+        {/* ── Delete confirmation ── */}
+        {confirmDelete && (
+          <div style={{ marginTop:12, padding:"12px 14px", background:`${C.red}08`, borderRadius:12, border:`1px solid ${C.red}33` }}>
+            <div style={{ fontSize:13, fontWeight:600, color:C.red, marginBottom:8 }}>Xác nhận xoá "{project.name}"?</div>
+            <div style={{ fontSize:11, color:C.sub, marginBottom:10 }}>Công việc sẽ được giữ lại thành Việc chung.</div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button className="tap" onClick={() => setConfirmDelete(false)}
+                style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.sub, fontSize:12, fontWeight:600 }}>Huỷ</button>
+              <button className="tap" onClick={async () => {
+                projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
+                deleteProject(project.id);
+                for (const m of members) {
+                  const lid = DEV_NAME_TO_LOCAL[m.name];
+                  if (!lid || lid === localSession.id) continue;
+                  try {
+                    const ep = await cloudLoad(null, lid, "projects");
+                    const cp = Array.isArray(ep?.data) ? ep.data : [];
+                    const filtered = cp.filter(p => p.id !== project.id);
+                    if (filtered.length !== cp.length) await cloudSave(null, lid, "projects", filtered);
+                  } catch {}
+                }
+                if (supabase && project.chatId) {
+                  try {
+                    await supabase.from("messages").delete().eq("conversation_id", project.chatId);
+                    await supabase.from("conversation_members").delete().eq("conversation_id", project.chatId);
+                    await supabase.from("conversations").delete().eq("id", project.chatId);
+                  } catch {}
+                }
+                onClose();
+              }}
+                style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:12, fontWeight:700 }}>Xoá</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
