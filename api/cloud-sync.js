@@ -12,26 +12,19 @@ function getSupabase() {
   return _supa;
 }
 
-// Map local IDs to Supabase auth emails for UUID lookup
-const LOCAL_ID_TO_EMAIL = {
-  trinh: "trinh@workflow.vn", lien: "lien@workflow.vn",
-  hung: "hung@workflow.vn", mai: "mai@workflow.vn", duc: "duc@workflow.vn",
+// Hardcoded local ID → Supabase UUID mapping (no dynamic lookup needed)
+const LOCAL_ID_TO_UUID = {
+  trinh: "52bd2c76-6ff0-404c-8900-d05984e9271b",
+  lien:  "8a1fa1fa-e068-4164-981f-fcd20a988744",
+  hung:  "bf3cbd15-a783-420c-91dd-823bc2a23702",
+  mai:   "80fb3b1e-f0ca-4850-bbda-fb6e8cdd25c9",
+  duc:   "516cb441-6615-4df4-9993-0fe16b5acaf0",
 };
-const _uuidCache = {};
-async function resolveUserId(supa, localId) {
+function resolveUserId(_supa, localId) {
   // Already a UUID
   if (localId && localId.includes("-") && localId.length > 30) return localId;
-  // Check cache
-  if (_uuidCache[localId]) return _uuidCache[localId];
-  // Lookup by email
-  const email = LOCAL_ID_TO_EMAIL[localId];
-  if (!email) return localId;
-  try {
-    const { data: { users } } = await supa.auth.admin.listUsers({ filter: email });
-    const match = (users || []).find(u => u.email === email);
-    if (match) { _uuidCache[localId] = match.id; return match.id; }
-  } catch {}
-  return localId;
+  // Direct mapping — no async lookup, no cold start failures
+  return LOCAL_ID_TO_UUID[localId] || localId;
 }
 
 export default async function handler(req, res) {
