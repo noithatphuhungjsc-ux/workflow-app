@@ -193,129 +193,118 @@ export function AppProvider({ children, userId }) {
     dispatch({ type: "ROLL_OVERDUE" });
   }, []);
 
-  // Cloud sync: PULL first → merge → then PUSH merged data up
+  // Cloud sync: PULL → merge → PUSH, then poll every 30s for updates
   const cloudLoadedRef = useRef(false);
-  useEffect(() => {
-    if (cloudLoadedRef.current || !cloudId) return;
-    cloudLoadedRef.current = true;
 
-    (async () => {
-      let localTasks = loadJSON("tasks", []);
-      let localProjects = loadJSON("projects", []);
-      let localExpenses = loadJSON("expenses", []);
-      let cloudHadData = { tasks: false, projects: false };
+  // Reusable pull function — used for initial load + periodic polling
+  const pullFromCloud = useCallback(async (isInitial = false) => {
+    let localTasks = loadJSON("tasks", []);
+    let localProjects = loadJSON("projects", []);
+    let localExpenses = loadJSON("expenses", []);
+    let cloudHadData = { tasks: false, projects: false };
 
-      // === STEP 1: PULL from cloud FIRST (before pushing) ===
-      try {
-        let data = await cloudLoadAll(null, cloudId);
-        if ((!data?.length) && cloudId !== userId) {
-          data = await cloudLoadAll(null, userId);
-        }
-        if (data?.length) {
-          for (const row of data) {
-            if (!row.data) continue;
+    try {
+      let data = await cloudLoadAll(null, cloudId);
+      if ((!data?.length) && cloudId !== userId) {
+        data = await cloudLoadAll(null, userId);
+      }
+      if (data?.length) {
+        for (const row of data) {
+          if (!row.data) continue;
 
-            // Non-array data (settings, memory, knowledge)
-            if (!Array.isArray(row.data)) {
+          // Non-array data (settings, memory, knowledge)
+          if (!Array.isArray(row.data)) {
+            if (isInitial) {
               if (row.key === "settings" && typeof row.data === "object") {
                 setSettingsState(prev => { const m = { ...prev, ...row.data }; persistSettings(m); return m; });
               }
               if (row.key === "memory" && row.data) { setMemory(row.data); saveJSON("memory", row.data); }
               if (row.key === "wory_knowledge" && row.data) { setKnowledge(row.data); saveJSON("wory_knowledge", row.data); }
-              continue;
             }
-            if (row.data.length === 0) {
-              // Cloud is empty → clear local team data too
-              if (row.key === "tasks") {
-                cloudHadData.tasks = true;
-                const kept = localTasks.filter(t => !t.projectId && !t.assignee);
-                if (kept.length !== localTasks.length) {
-                  localTasks = kept;
-                  dispatch({ type: "LOAD", tasks: localTasks });
-                  saveJSON("tasks", localTasks);
-                }
-              }
-              if (row.key === "projects") {
-                cloudHadData.projects = true;
-                const kept = localProjects.filter(p => !p.members || p.members.length === 0);
-                if (kept.length !== localProjects.length) {
-                  localProjects = kept;
-                  projDispatch({ type: "PROJ_LOAD", items: localProjects });
-                  saveJSON("projects", localProjects);
-                }
-              }
-              continue;
-            }
-
+            continue;
+          }
+          if (row.data.length === 0) {
             if (row.key === "tasks") {
               cloudHadData.tasks = true;
-              // Cloud is authoritative — merge cloud into local, remove deleted
-              const cloudTaskIds = new Set(row.data.map(t => t.id));
-              if (localTasks.length === 0) {
-                localTasks = row.data;
-              } else {
-                // Remove local tasks that were deleted from cloud (assigned tasks from deleted projects)
-                localTasks = localTasks.filter(t => {
-                  if (cloudTaskIds.has(t.id)) return true; // exists in cloud
-                  if (!t.projectId && !t.assignee) return true; // personal task, keep
-                  return false; // assigned/project task not in cloud → deleted
-                });
-                // Add new cloud tasks + update existing
-                for (const ct of row.data) {
-                  const li = localTasks.findIndex(t => t.id === ct.id);
-                  if (li >= 0) { localTasks[li] = { ...localTasks[li], ...ct }; }
-                  else { localTasks.push(ct); }
-                }
+              const kept = localTasks.filter(t => !t.projectId && !t.assignee);
+              if (kept.length !== localTasks.length) {
+                localTasks = kept;
+                dispatch({ type: "LOAD", tasks: localTasks });
+                saveJSON("tasks", localTasks);
               }
-              dispatch({ type: "LOAD", tasks: localTasks });
-              saveJSON("tasks", localTasks);
             }
             if (row.key === "projects") {
               cloudHadData.projects = true;
-              // Filter out projects where user has been removed
-              const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
-              const myNames = [sess.name, sess.id].filter(Boolean).map(n => (n || "").toLowerCase().replace(/\s+/g, ""));
-              const validCloud = row.data.filter(p => {
-                if (!p.members || p.members.length === 0) return true;
-                return p.members.some(m => {
-                  if (m.supaId && m.supaId === cloudId) return true;
-                  const mn = (m.name || "").toLowerCase().replace(/\s+/g, "");
-                  return myNames.includes(mn);
-                });
-              });
-              // Cloud is authoritative for team projects (those with members)
-              // Keep local personal projects (no members), replace team projects with cloud
-              const cloudIds = new Set(validCloud.map(p => p.id));
-              const personalLocal = localProjects.filter(p => !p.members || p.members.length === 0);
-              // Merge: cloud team projects + local personal projects (not in cloud)
-              const personalNotInCloud = personalLocal.filter(p => !cloudIds.has(p.id));
-              localProjects = [...validCloud, ...personalNotInCloud];
-              projDispatch({ type: "PROJ_LOAD", items: localProjects });
-              saveJSON("projects", localProjects);
+              const kept = localProjects.filter(p => !p.members || p.members.length === 0);
+              if (kept.length !== localProjects.length) {
+                localProjects = kept;
+                projDispatch({ type: "PROJ_LOAD", items: localProjects });
+                saveJSON("projects", localProjects);
+              }
             }
-            if (row.key === "expenses") {
-              if (localExpenses.length === 0) {
-                localExpenses = row.data;
-                row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
-                saveJSON("expenses", localExpenses);
-              } else {
-                const localIds = new Set(localExpenses.map(e => e.id));
-                const newItems = row.data.filter(e => !localIds.has(e.id));
-                if (newItems.length > 0) {
-                  localExpenses = [...localExpenses, ...newItems];
-                  newItems.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
-                }
+            continue;
+          }
+
+          if (row.key === "tasks") {
+            cloudHadData.tasks = true;
+            const cloudTaskIds = new Set(row.data.map(t => t.id));
+            if (localTasks.length === 0) {
+              localTasks = row.data;
+            } else {
+              localTasks = localTasks.filter(t => {
+                if (cloudTaskIds.has(t.id)) return true;
+                if (!t.projectId && !t.assignee) return true;
+                return false;
+              });
+              for (const ct of row.data) {
+                const li = localTasks.findIndex(t => t.id === ct.id);
+                if (li >= 0) { localTasks[li] = { ...localTasks[li], ...ct }; }
+                else { localTasks.push(ct); }
+              }
+            }
+            dispatch({ type: "LOAD", tasks: localTasks });
+            saveJSON("tasks", localTasks);
+          }
+          if (row.key === "projects") {
+            cloudHadData.projects = true;
+            const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
+            const myNames = [sess.name, sess.id].filter(Boolean).map(n => (n || "").toLowerCase().replace(/\s+/g, ""));
+            const validCloud = row.data.filter(p => {
+              if (!p.members || p.members.length === 0) return true;
+              return p.members.some(m => {
+                if (m.supaId && m.supaId === cloudId) return true;
+                const mn = (m.name || "").toLowerCase().replace(/\s+/g, "");
+                return myNames.includes(mn);
+              });
+            });
+            const cloudIds = new Set(validCloud.map(p => p.id));
+            const personalLocal = localProjects.filter(p => !p.members || p.members.length === 0);
+            const personalNotInCloud = personalLocal.filter(p => !cloudIds.has(p.id));
+            localProjects = [...validCloud, ...personalNotInCloud];
+            projDispatch({ type: "PROJ_LOAD", items: localProjects });
+            saveJSON("projects", localProjects);
+          }
+          if (row.key === "expenses" && isInitial) {
+            if (localExpenses.length === 0) {
+              localExpenses = row.data;
+              row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+              saveJSON("expenses", localExpenses);
+            } else {
+              const localIds = new Set(localExpenses.map(e => e.id));
+              const newItems = row.data.filter(e => !localIds.has(e.id));
+              if (newItems.length > 0) {
+                localExpenses = [...localExpenses, ...newItems];
+                newItems.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
               }
             }
           }
         }
-      } catch (e) { console.warn("Cloud pull failed:", e); }
+      }
+    } catch (e) { console.warn("Cloud pull failed:", e); }
 
-      // Mark cloud pull as done — ungate save/sync effects
+    // On initial load: mark done + push merged data up
+    if (isInitial) {
       cloudPullDoneRef.current = true;
-
-      // === STEP 2: PUSH merged data UP to cloud ===
-      // Only push if cloud had data (to avoid overwriting admin deletions)
       if (localTasks.length > 0 || cloudHadData.tasks) {
         cloudSave(null, cloudId, "tasks", localTasks);
         if (cloudId !== userId) cloudSave(null, userId, "tasks", localTasks);
@@ -328,8 +317,21 @@ export function AppProvider({ children, userId }) {
         cloudSave(null, cloudId, "expenses", localExpenses);
         if (cloudId !== userId) cloudSave(null, userId, "expenses", localExpenses);
       }
-    })();
+    }
   }, [cloudId, userId]);
+
+  // Initial cloud pull + periodic polling every 30s
+  useEffect(() => {
+    if (cloudLoadedRef.current || !cloudId) return;
+    cloudLoadedRef.current = true;
+    pullFromCloud(true);
+
+    // Poll for new data every 30s (projects + tasks only)
+    const pollInterval = setInterval(() => {
+      if (cloudPullDoneRef.current) pullFromCloud(false);
+    }, 30000);
+    return () => clearInterval(pollInterval);
+  }, [cloudId, userId, pullFromCloud]);
 
   // --- Expenses (standalone ledger) ---
   const [expenses, expenseDispatch] = useReducer(expenseReducer, [], () => loadJSON("expenses", []));
