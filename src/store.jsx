@@ -4,7 +4,7 @@
    ================================================================ */
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney } from "./constants";
-import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced } from "./services";
+import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave } from "./services";
 import { supabase } from "./lib/supabase";
 
 /* ================================================================
@@ -173,15 +173,20 @@ export function AppProvider({ children, userId }) {
     dispatch({ type: "ROLL_OVERDUE" });
   }, []);
 
-  // Auto cloud load on new device (localStorage empty + Supabase connected)
+  // Cloud sync: push local data UP + pull missing data DOWN
   const cloudLoadedRef = useRef(false);
   useEffect(() => {
     if (cloudLoadedRef.current || !supabase || !userId) return;
     cloudLoadedRef.current = true;
     const localTasks = loadJSON("tasks", []);
     const localProjects = loadJSON("projects", []);
-    // Only auto-load if this device has no data
-    if (localTasks.length > 0 || localProjects.length > 0) return;
+    const localExpenses = loadJSON("expenses", []);
+    // If local has data → push UP to cloud (ensures cloud is always fresh)
+    if (localTasks.length > 0) cloudSave(supabase, userId, "tasks", localTasks);
+    if (localProjects.length > 0) cloudSave(supabase, userId, "projects", localProjects);
+    if (localExpenses.length > 0) cloudSave(supabase, userId, "expenses", localExpenses);
+    // Load from cloud if ANY key is missing locally
+    if (localTasks.length > 0 && localProjects.length > 0) return;
     (async () => {
       try {
         const { data, error } = await supabase.from("user_data").select("key, data").eq("user_id", userId);
@@ -189,30 +194,36 @@ export function AppProvider({ children, userId }) {
         let loaded = 0;
         for (const row of data) {
           if (!row.data) continue;
-          if (row.key === "tasks" && Array.isArray(row.data) && row.data.length > 0) {
+          // Load each key independently — only if local is empty for that key
+          if (row.key === "tasks" && localTasks.length === 0 && Array.isArray(row.data) && row.data.length > 0) {
             dispatch({ type: "LOAD", tasks: row.data });
             saveJSON("tasks", row.data);
             loaded++;
-          } else if (row.key === "projects" && Array.isArray(row.data) && row.data.length > 0) {
+          }
+          if (row.key === "projects" && localProjects.length === 0 && Array.isArray(row.data) && row.data.length > 0) {
             projDispatch({ type: "PROJ_LOAD", items: row.data });
             saveJSON("projects", row.data);
             loaded++;
-          } else if (row.key === "expenses" && Array.isArray(row.data)) {
+          }
+          if (row.key === "expenses" && localExpenses.length === 0 && Array.isArray(row.data) && row.data.length > 0) {
             row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
             saveJSON("expenses", row.data);
             loaded++;
-          } else if (row.key === "settings" && typeof row.data === "object") {
+          }
+          if (row.key === "settings" && typeof row.data === "object") {
             setSettingsState(prev => {
               const merged = { ...prev, ...row.data };
               persistSettings(merged);
               return merged;
             });
             loaded++;
-          } else if (row.key === "memory") {
+          }
+          if (row.key === "memory" && row.data) {
             setMemory(row.data);
             saveJSON("memory", row.data);
             loaded++;
-          } else if (row.key === "wory_knowledge") {
+          }
+          if (row.key === "wory_knowledge" && row.data) {
             setKnowledge(row.data);
             saveJSON("wory_knowledge", row.data);
             loaded++;

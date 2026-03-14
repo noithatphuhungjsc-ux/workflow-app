@@ -52,8 +52,8 @@ export function saveJSON(key, data) {
 /* ================================================================
    CLOUD SYNC — Supabase backup & restore
    ================================================================ */
-let _syncTimer = null;
-const SYNC_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat"];
+const _syncTimers = {};
+const SYNC_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
 
 export async function cloudSave(supabase, userId, key, data) {
   if (!supabase || !userId) return null;
@@ -110,10 +110,10 @@ export async function cloudLoadAll(supabase, userId) {
 
 export function scheduleSyncDebounced(supabase, userId, key, data) {
   if (!supabase || !userId) return;
-  clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(() => {
+  clearTimeout(_syncTimers[key]);
+  _syncTimers[key] = setTimeout(() => {
     cloudSave(supabase, userId, key, data);
-  }, 3000); // Debounce 3s
+  }, 3000); // Debounce 3s per key
 }
 
 /* -- History log -- */
