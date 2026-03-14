@@ -138,7 +138,7 @@ export { getAlertLevel };
 
 const PRIO_ORDER = ["cao","trung","thap","none"];
 
-export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, onPriorityChange, onAdjust, onPatchTask, timerTick, handSide }) {
+export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, onPriorityChange, onAdjust, onPatchTask, timerTick, handSide, projectName }) {
   const wf = WORKFLOWS.find(w => w.id === task.workflow);
   const over = isOverdue(task);
   const alert = getAlertLevel(task);
@@ -268,6 +268,7 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
             {task.deadline && <span style={{ background:`${over ? C.red : C.muted}18`, color: over ? C.red : C.muted, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{over ? "! " : ""}{fmtDD(task.deadline)}</span>}
             {task.originalDeadline && <span style={{ background:`${C.red}12`, color:C.red, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>từ {fmtDD(task.originalDeadline)}</span>}
             {task.assignee && <span style={{ background:`${C.purple}18`, color:C.purple, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{task.assignee}</span>}
+            {projectName && <span style={{ background:`${C.accent}15`, color:C.accent, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:600 }}>📁 {projectName}</span>}
             {task.timerState === "running" && <span style={{ background:`${C.green}18`, color:C.green, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{formatTimer(elapsed)}</span>}
             {task.timerState === "paused" && elapsed > 0 && <span style={{ background:`${C.gold}18`, color:C.gold, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{formatTimer(elapsed)}</span>}
           </div>
@@ -380,18 +381,9 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
                 </svg>
               </span>
             </div>
-            {/* Category pills */}
-            <div className="no-scrollbar" style={{ display:"flex", gap:3, marginBottom:6, overflowX:"auto" }}>
-              {Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => (
-                <span key={k} className="tap" onClick={() => patchExpense({ category: k })}
-                  style={{ flexShrink:0, padding:"2px 8px", borderRadius:12, fontSize:9, fontWeight:600, cursor:"pointer",
-                    background: expense.category === k ? v.color + "20" : C.bg,
-                    color: expense.category === k ? v.color : C.muted,
-                    border: `1px solid ${expense.category === k ? v.color + "66" : C.border}` }}>
-                  {v.icon} {v.label}
-                </span>
-              ))}
-            </div>
+            {/* Reason input */}
+            <input value={expense.description || ""} onChange={e => patchExpense({ description: e.target.value })}
+              placeholder="Lý do chi tiêu..." style={{ width:"100%", fontSize:12, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, marginBottom:6, boxSizing:"border-box" }} />
             {/* Source + paid */}
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <select value={expense.source || ""} onChange={e => patchExpense({ source: e.target.value })}
@@ -410,11 +402,6 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
             </div>
           </div>
 
-          {/* Open full detail button */}
-          <button className="tap" onClick={onPress}
-            style={{ width:"100%", marginTop:8, background:C.accentD, color:C.accent, border:`1px solid ${C.accent}33`, borderRadius:8, padding:"7px", fontSize:11, fontWeight:600 }}>
-            Mở chi tiết đầy đủ →
-          </button>
         </div>
       )}
     </div>

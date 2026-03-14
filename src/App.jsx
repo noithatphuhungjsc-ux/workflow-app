@@ -1149,6 +1149,7 @@ LAM LUON, tra loi ≤15 tu. Dung lenh:
                     </div>
                     <div style={{ flex:1, minWidth:0, marginBottom: isLast ? 0 : 6 }}>
                       <TaskRow task={t} onPress={() => setSel(t)}
+                        projectName={t.projectId ? projects.find(p => p.id === t.projectId)?.name : null}
                         onStatusChange={(tk, s) => patchTask(tk.id, { status: s })}
                         onPriorityChange={(tk, p) => patchTask(tk.id, { priority: p })}
                         onPatchTask={(id, data) => patchTask(id, data)}
