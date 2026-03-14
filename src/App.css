@@ -1,0 +1,424 @@
+/* ================================================================
+   APP.CSS — All styles extracted from inline
+   ================================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Fraunces:wght@600;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: #f5f4f0; height: 100%; }
+body { background: #f5f4f0; height: 100%; margin: 0; overscroll-behavior: none; }
+input, select, textarea { outline: none; font-family: inherit; color: inherit; }
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-thumb { background: #e8e5de; }
+
+/* -- Tap feedback -- */
+.tap {
+  cursor: pointer;
+  transition: .15s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.tap:active { opacity: .75; transform: scale(.97); }
+
+/* -- Animations -- */
+@keyframes ping      { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.4);opacity:0} }
+@keyframes breathe   { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:1;transform:scale(1.15)} }
+@keyframes triggered { 0%{transform:scale(1)} 30%{transform:scale(1.35)} 100%{transform:scale(1)} }
+@keyframes ripple    { 0%{transform:scale(1);opacity:.7} 100%{transform:scale(2.8);opacity:0} }
+@keyframes slideUp   { from{transform:translateY(28px);opacity:0} to{transform:translateY(0);opacity:1} }
+@keyframes slideDown { from{transform:translateY(-40px);opacity:0} to{transform:translateY(0);opacity:1} }
+@keyframes fadeIn    { from{opacity:0} to{opacity:1} }
+@keyframes spin      { to{transform:rotate(360deg)} }
+@keyframes blink     { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes waveBar   { 0%,100%{height:4px} 50%{height:18px} }
+@keyframes slideRight { from{transform:translateX(100%)} to{transform:translateX(0)} }
+@keyframes pulse     { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+@keyframes heyPulse  { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(144,117,212,.35)} 50%{transform:scale(1.08);box-shadow:0 6px 28px rgba(144,117,212,.55)} }
+@keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:.5} }
+@keyframes overduePulse { 0%,100%{ background:#ffe0e0; opacity:.88 } 50%{ background:#ffcdd2; opacity:1 } }
+
+/* -- Overdue task highlight -- */
+.overdue-pulse { animation: overduePulse 2s ease-in-out infinite; }
+
+/* -- Dots typing indicator -- */
+.dots span {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #6a7fd4;
+  margin: 0 2px;
+  animation: breathe .9s infinite;
+}
+.dots span:nth-child(2) { animation-delay: .15s; }
+.dots span:nth-child(3) { animation-delay: .3s; }
+
+/* -- Message animation -- */
+.msg { animation: slideUp .22s ease; }
+
+/* -- Undo toast -- */
+.undo-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2b2d35;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 200;
+  animation: slideUp .25s ease;
+  box-shadow: 0 8px 32px rgba(0,0,0,.25);
+  max-width: 400px;
+}
+.undo-toast button {
+  background: none;
+  border: 1px solid rgba(255,255,255,.3);
+  color: #6a7fd4;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* -- Settings grid -- */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* -- Accessibility: focus visible -- */
+*:focus-visible {
+  outline: 2px solid #6a7fd4;
+  outline-offset: 2px;
+}
+
+/* -- Hide scrollbar for horizontal scroll -- */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* -- Container -- */
+.app-container {
+  font-family: 'Nunito', 'Segoe UI', sans-serif;
+  background: #f5f4f0;
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* -- Responsive cho desktop/tablet -- */
+@media (min-width: 768px) {
+  .app-container {
+    max-width: 480px;
+    border-radius: 20px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.1);
+    margin: 20px auto;
+    height: calc(100vh - 40px);
+    border: 1px solid #e8e5de;
+    position: relative;
+  }
+
+  .bottom-nav {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    transform: none;
+    border-top: 1px solid #e8e5de;
+    border-radius: 0 0 20px 20px;
+    box-shadow: none;
+  }
+
+  .ai-input-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    width: 100%;
+    max-width: none;
+    border-top: 1px solid #e8e5de;
+    border-radius: 0;
+  }
+}
+
+/* -- Responsive cho màn hình lớn -- */
+@media (min-width: 1024px) {
+  .app-container {
+    max-width: 520px;
+  }
+
+  .bottom-nav {
+    border-radius: 0 0 20px 20px;
+  }
+}
+
+/* -- Bottom nav -- */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background: #fff;
+  border-top: 1px solid #eae7e1;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.04);
+  display: flex;
+  align-items: center;
+  z-index: 50;
+}
+
+/* -- Modal overlay -- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn .2s;
+}
+
+/* -- Mobile first, touch optimized -- */
+@media (max-width: 767px) {
+  .tap {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .input-base {
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 12px 16px;
+  }
+  
+  .card {
+    margin-bottom: 12px;
+    padding: 16px;
+  }
+}
+
+/* -- Touch gestures -- */
+.swipe-left {
+  transform: translateX(-100px);
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+
+.swipe-right {
+  transform: translateX(100px);
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+
+/* -- Keyboard shortcuts -- */
+.keyboard-shortcuts {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(43, 45, 53, 0.9);
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 12px;
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.keyboard-shortcuts.show {
+  opacity: 1;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  margin: 0 2px;
+}
+
+/* -- Code editor styles for DevTab -- */
+.code-editor {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  background: #2d3748 !important;
+  color: #e2e8f0 !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  overflow-x: auto;
+}
+
+.code-editor::-webkit-scrollbar {
+  height: 8px;
+}
+
+.code-editor::-webkit-scrollbar-track {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+.code-editor::-webkit-scrollbar-thumb {
+  background: #718096;
+  border-radius: 4px;
+}
+
+/* -- Developer tools -- */
+.dev-terminal {
+  background: #1a202c;
+  color: #68d391;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  padding: 16px;
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  border: 1px solid #2d3748;
+}
+
+.dev-terminal::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dev-terminal::-webkit-scrollbar-track {
+  background: #2d3748;
+}
+
+.dev-terminal::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 3px;
+}
+
+/* -- Multi-platform adaptations -- */
+@media (max-device-width: 768px) and (orientation: landscape) {
+  .app-container {
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  .bottom-nav {
+    position: fixed;
+    left: 0;
+    width: 100%;
+    z-index: 100;
+  }
+  
+  /* Landscape phone optimization */
+  .task-row {
+    padding: 8px 12px;
+  }
+  
+  .modal-overlay {
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .sheet {
+    max-height: 90vh;
+    max-width: 90vw;
+    margin: 0;
+    border-radius: 16px;
+  }
+}
+
+/* -- iOS Safari specific fixes -- */
+@supports (-webkit-touch-callout: none) {
+  .app-container {
+    height: -webkit-fill-available;
+  }
+  
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  /* Fix iOS zoom on input focus */
+  input, select, textarea {
+    font-size: 16px;
+  }
+}
+
+.modal-dark-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn .15s;
+  padding: 20px;
+}
+
+/* -- Sheet base -- */
+.sheet {
+  background: #ffffff;
+  border-radius: 20px 20px 0 0;
+  border: 1px solid #e8e5de;
+  border-bottom: none;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  max-height: 88dvh;
+  overflow-y: auto;
+  animation: slideUp .25s;
+  padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+/* -- Input base -- */
+.input-base {
+  background: #fafaf8;
+  border: 1px solid #e8e5de;
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: #2b2d35;
+  font-size: 15px;
+  width: 100%;
+}
+
+/* -- Card base -- */
+.card {
+  background: #fafaf8;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  border: 1px solid #e8e5de;
+  padding: 13px 14px;
+  margin-bottom: 6px;
+  position: relative;
+}
+
+/* -- AI input bar -- */
+.ai-input-bar {
+  position: fixed;
+  bottom: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background: #ffffff;
+  border-top: 1px solid #e8e5de;
+  z-index: 50;
+}

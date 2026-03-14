@@ -1,0 +1,344 @@
+/* ================================================================
+   STORE — Context + useReducer for Tasks, Settings, History
+   Solves: prop drilling, stale closure, centralized state
+   ================================================================ */
+import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
+import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney } from "./constants";
+import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced } from "./services";
+import { supabase } from "./lib/supabase";
+
+/* ================================================================
+   TASK REDUCER — immutable updates, soft delete support
+   ================================================================ */
+function taskReducer(state, action) {
+  switch (action.type) {
+    case "LOAD":
+      return action.tasks;
+
+    case "ADD":
+      return [...state, {
+        ...action.task,
+        id: Date.now() + Math.random(),
+        createdAt: action.task.createdAt || new Date().toISOString().split("T")[0],
+        status: "todo",
+        step: 0,
+        timerState: "idle",
+        timerStart: null,
+        timerTotal: 0,
+        deleted: false,
+        expense: action.task.expense || null,
+        billPhotos: action.task.billPhotos || [],
+        notes: Array.isArray(action.task.notes)
+          ? action.task.notes
+          : action.task.notes
+            ? [{ id: Date.now(), text: action.task.notes, status: "pending", priority: "normal" }]
+            : [],
+      }];
+
+    case "ROLL_OVERDUE": {
+      const today = new Date().toISOString().split("T")[0];
+      return state.map(t => {
+        if (t.deleted || t.status === "done") return t;
+        if (!t.deadline || t.deadline >= today) return t;
+        // Task quá hạn → dồn sang hôm nay, lưu deadline gốc
+        return {
+          ...t,
+          originalDeadline: t.originalDeadline || t.deadline,
+          deadline: today,
+        };
+      });
+    }
+
+    case "SOFT_DELETE":
+      return state.map(t =>
+        t.id === action.id
+          ? { ...t, deleted: true, deletedAt: Date.now() }
+          : t
+      );
+
+    case "HARD_DELETE":
+      return state.filter(t => t.id !== action.id);
+
+    case "UNDO_DELETE":
+      return state.map(t =>
+        t.id === action.id
+          ? { ...t, deleted: false, deletedAt: null }
+          : t
+      );
+
+    case "PATCH":
+      return state.map(t =>
+        t.id === action.id ? { ...t, ...action.data } : t
+      );
+
+    case "PURGE_DELETED": {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000; // 30 days
+      return state.filter(t => !t.deleted || (t.deletedAt && t.deletedAt > cutoff));
+    }
+
+    default:
+      return state;
+  }
+}
+
+/* ================================================================
+   EXPENSE REDUCER — standalone expense ledger
+   ================================================================ */
+function expenseReducer(state, action) {
+  switch (action.type) {
+    case "EXP_LOAD": return action.items;
+    case "EXP_ADD": return [...state, { ...action.item, id: Date.now() + Math.random() }];
+    case "EXP_PATCH": return state.map(e => e.id === action.id ? { ...e, ...action.data } : e);
+    case "EXP_DELETE": return state.filter(e => e.id !== action.id);
+    default: return state;
+  }
+}
+
+/* ================================================================
+   PROJECT REDUCER — project groups
+   ================================================================ */
+function projectReducer(state, action) {
+  switch (action.type) {
+    case "PROJ_LOAD": return action.items;
+    case "PROJ_ADD": return [...state, { ...action.item, id: action.item.id || (Date.now() + Math.random()), createdAt: action.item.createdAt || new Date().toISOString().split("T")[0] }];
+    case "PROJ_PATCH": return state.map(p => p.id === action.id ? { ...p, ...action.data } : p);
+    case "PROJ_DELETE": return state.filter(p => p.id !== action.id);
+    default: return state;
+  }
+}
+
+/* ================================================================
+   CONTEXTS
+   ================================================================ */
+const TaskContext   = createContext(null);
+const SettingsCtx   = createContext(null);
+
+/* ================================================================
+   TASK PROVIDER
+   ================================================================ */
+export function AppProvider({ children, userId }) {
+  // --- Tasks ---
+  const [allTasks, dispatch] = useReducer(taskReducer, [], () => {
+    const saved = loadJSON("tasks", []);
+    return saved.map(t => ({
+      deleted: false, deletedAt: null, timerState: "idle", timerStart: null, timerTotal: 0,
+      expense: null, billPhotos: [],
+      ...t,
+      createdAt: t.createdAt || t.deadline || new Date().toISOString().split("T")[0],
+      notes: Array.isArray(t.notes) ? t.notes
+        : t.notes ? [{ id: Date.now() + Math.random(), text: t.notes, status: "pending", priority: "normal" }]
+        : [],
+    }));
+  });
+
+  // Active tasks = not soft-deleted
+  const tasks = allTasks.filter(t => !t.deleted);
+  const deletedTasks = allTasks.filter(t => t.deleted);
+
+  // Auto-save + cloud sync
+  const hasLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
+    if (!userKey("").startsWith("wf_")) return;
+    saveJSON("tasks", allTasks);
+    if (supabase && userId) scheduleSyncDebounced(supabase, userId, "tasks", allTasks);
+  }, [allTasks, userId]);
+
+  // Purge old deleted + roll overdue tasks on mount
+  useEffect(() => {
+    dispatch({ type: "PURGE_DELETED" });
+    dispatch({ type: "ROLL_OVERDUE" });
+  }, []);
+
+  // --- Expenses (standalone ledger) ---
+  const [expenses, expenseDispatch] = useReducer(expenseReducer, [], () => loadJSON("expenses", []));
+  const expLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!expLoadedRef.current) { expLoadedRef.current = true; return; }
+    if (!userKey("").startsWith("wf_")) return;
+    saveJSON("expenses", expenses);
+    if (supabase && userId) scheduleSyncDebounced(supabase, userId, "expenses", expenses);
+  }, [expenses, userId]);
+
+  // --- Projects ---
+  const [projects, projDispatch] = useReducer(projectReducer, [], () => loadJSON("projects", []));
+  const projLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!projLoadedRef.current) { projLoadedRef.current = true; return; }
+    if (!userKey("").startsWith("wf_")) return;
+    saveJSON("projects", projects);
+    if (supabase && userId) scheduleSyncDebounced(supabase, userId, "projects", projects);
+  }, [projects, userId]);
+
+  const addProject = useCallback((item) => { projDispatch({ type: "PROJ_ADD", item }); }, []);
+  const patchProject = useCallback((id, data) => { projDispatch({ type: "PROJ_PATCH", id, data }); }, []);
+  const deleteProject = useCallback((id) => { projDispatch({ type: "PROJ_DELETE", id }); }, []);
+
+  const addExpense = useCallback((item) => {
+    expenseDispatch({ type: "EXP_ADD", item });
+    log("expense", item.description || "Chi tiêu", fmtMoney(item.amount));
+  }, []);
+  const patchExpense = useCallback((id, data) => { expenseDispatch({ type: "EXP_PATCH", id, data }); }, []);
+  const deleteExpense = useCallback((id) => { expenseDispatch({ type: "EXP_DELETE", id }); }, []);
+
+  // --- History ---
+  const [history, setHistory] = useState(loadHistory);
+  const log = useCallback((action, title, detail = "") => {
+    setHistory(prev => {
+      const entry = { id: Date.now(), ts: new Date().toISOString(), action, taskTitle: title, detail };
+      const next = [...prev, entry];
+      saveHistory(next);
+      return next;
+    });
+  }, []);
+
+  // --- Memory ---
+  const [memory, setMemory] = useState(loadMemory);
+
+  // --- Knowledge (Wory Training) ---
+  const [knowledge, setKnowledge] = useState(() => loadKnowledge());
+  const pendingKnowledge = knowledge.entries.filter(e => !e.approved);
+
+  // --- Settings ---
+  const [settings, setSettingsState] = useState(() => loadSettings(DEFAULT_SETTINGS));
+  const setSettings = useCallback((updater) => {
+    setSettingsState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+      persistSettings(next);
+      if (supabase && userId) scheduleSyncDebounced(supabase, userId, "settings", next);
+      return next;
+    });
+  }, [userId]);
+
+  // --- Undo toast ---
+  const [undoToast, setUndoToast] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  // --- Task actions ---
+  const addTask = useCallback((taskData) => {
+    dispatch({ type: "ADD", task: taskData });
+    log("add", taskData.title || "Cong viec moi");
+  }, [log]);
+
+  const deleteTask = useCallback((id) => {
+    const t = allTasks.find(x => x.id === id);
+    dispatch({ type: "SOFT_DELETE", id });
+    log("delete", t?.title || "?");
+
+    // Show undo toast
+    clearTimeout(undoTimerRef.current);
+    setUndoToast({ id, title: t?.title || "Công việc" });
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), 5000);
+  }, [allTasks, log]);
+
+  const undoDelete = useCallback(() => {
+    if (!undoToast) return;
+    dispatch({ type: "UNDO_DELETE", id: undoToast.id });
+    setUndoToast(null);
+    clearTimeout(undoTimerRef.current);
+  }, [undoToast]);
+
+  const hardDelete = useCallback((id) => {
+    dispatch({ type: "HARD_DELETE", id });
+  }, []);
+
+  const patchTask = useCallback((id, data) => {
+    dispatch({ type: "PATCH", id, data });
+    const t = allTasks.find(x => x.id === id);
+    if (data.status) log("status", t?.title || "?", STATUSES[data.status]?.label || data.status);
+    if (data.timerState) log("timer", t?.title || "?", data.timerState === "running" ? "Bắt đầu" : data.timerState === "paused" ? "Tạm dừng" : "Hoàn thành");
+  }, [allTasks, log]);
+
+  // Timer actions
+  const timerStart = useCallback((id) => {
+    patchTask(id, { timerState: "running", timerStart: Date.now(), timerTotal: 0, status: "inprogress" });
+  }, [patchTask]);
+
+  const timerPause = useCallback((id) => {
+    const t = allTasks.find(x => x.id === id);
+    if (!t) return;
+    patchTask(id, { timerState: "paused", timerStart: null, timerTotal: getElapsed(t) });
+  }, [allTasks, patchTask]);
+
+  const timerResume = useCallback((id) => {
+    patchTask(id, { timerState: "running", timerStart: Date.now() });
+  }, [patchTask]);
+
+  const timerDone = useCallback((id) => {
+    const t = allTasks.find(x => x.id === id);
+    if (!t) return;
+    patchTask(id, { timerState: "idle", timerStart: null, timerTotal: getElapsed(t), status: "done" });
+  }, [allTasks, patchTask]);
+
+  // Timer tick
+  const [timerTick, setTimerTick] = useState(0);
+  useEffect(() => {
+    const hasRunning = tasks.some(t => t.timerState === "running");
+    if (!hasRunning) return;
+    const iv = setInterval(() => setTimerTick(k => k + 1), 1000);
+    return () => clearInterval(iv);
+  }, [tasks]);
+
+  const value = {
+    tasks,
+    allTasks,
+    deletedTasks,
+    dispatch,
+    addTask,
+    deleteTask,
+    undoDelete,
+    hardDelete,
+    patchTask,
+    expenses,
+    addExpense,
+    patchExpense,
+    deleteExpense,
+    projects,
+    addProject,
+    patchProject,
+    deleteProject,
+    timerStart,
+    timerPause,
+    timerResume,
+    timerDone,
+    timerTick,
+    history,
+    setHistory,
+    log,
+    memory,
+    setMemory,
+    knowledge,
+    setKnowledge,
+    pendingKnowledge,
+    undoToast,
+    setUndoToast,
+    settings,
+    setSettings,
+    userId,
+  };
+
+  return (
+    <TaskContext.Provider value={value}>
+      {children}
+    </TaskContext.Provider>
+  );
+}
+
+/* ================================================================
+   HOOKS to consume context
+   ================================================================ */
+export function useStore() {
+  const ctx = useContext(TaskContext);
+  if (!ctx) throw new Error("useStore must be inside AppProvider");
+  return ctx;
+}
+
+export function useTasks() {
+  const { tasks, addTask, deleteTask, undoDelete, patchTask, timerStart, timerPause, timerResume, timerDone, timerTick } = useStore();
+  return { tasks, addTask, deleteTask, undoDelete, patchTask, timerStart, timerPause, timerResume, timerDone, timerTick };
+}
+
+export function useSettings() {
+  const { settings, setSettings } = useStore();
+  return { settings, setSettings };
+}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkFlow — Chính sách Quyền riêng tư</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f4f0; color: #2b2d35; line-height: 1.8; padding: 20px; }
+    .container { max-width: 700px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    h1 { font-size: 24px; color: #6a7fd4; margin-bottom: 8px; }
+    h2 { font-size: 18px; color: #2b2d35; margin: 24px 0 8px; border-bottom: 1px solid #e8e5de; padding-bottom: 6px; }
+    h3 { font-size: 15px; color: #6b6e7e; margin: 16px 0 6px; }
+    p, li { font-size: 14px; color: #6b6e7e; margin-bottom: 8px; }
+    ul { padding-left: 20px; }
+    .badge { display: inline-block; background: #3aaa7218; color: #3aaa72; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; }
+    .update { font-size: 12px; color: #7b7d8e; margin-top: 24px; text-align: center; }
+    a { color: #6a7fd4; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>WorkFlow — Chính sách Quyền riêng tư</h1>
+    <span class="badge">Cập nhật: Tháng 3/2026</span>
+
+    <p>WorkFlow ("ứng dụng") cam kết bảo vệ quyền riêng tư của người dùng. Chính sách này mô tả cách chúng tôi thu thập, sử dụng và bảo vệ dữ liệu của bạn.</p>
+
+    <h2>1. Dữ liệu thu thập</h2>
+    <h3>1.1. Dữ liệu lưu cục bộ (trên thiết bị của bạn)</h3>
+    <ul>
+      <li>Danh sách công việc, ghi chú, trạng thái</li>
+      <li>Cài đặt cá nhân (tên, avatar, tùy chọn)</li>
+      <li>Lịch sử hoạt động</li>
+      <li>Lịch sử chat với trợ lý AI Wory</li>
+      <li>Ghi nhớ AI</li>
+    </ul>
+    <p><strong>Tất cả dữ liệu trên được lưu hoàn toàn trên thiết bị của bạn (localStorage).</strong> Chúng tôi không có quyền truy cập vào dữ liệu này từ server.</p>
+
+    <h3>1.2. Dữ liệu xử lý qua server</h3>
+    <ul>
+      <li><strong>Chat AI:</strong> Nội dung tin nhắn được gửi đến Anthropic API (Claude) để xử lý. Anthropic áp dụng chính sách zero-retention — không lưu trữ dữ liệu người dùng.</li>
+      <li><strong>Email (nếu kết nối):</strong> Chỉ đọc tiêu đề, người gửi và tóm tắt email qua Google Gmail API. Nội dung email không được lưu trên server.</li>
+    </ul>
+
+    <h2>2. Tích hợp Gmail</h2>
+    <ul>
+      <li>WorkFlow sử dụng Google OAuth 2.0 để kết nối Gmail.</li>
+      <li>Chỉ yêu cầu quyền <code>gmail.readonly</code> — chỉ đọc, không bao giờ gửi, xóa hoặc chỉnh sửa email.</li>
+      <li>Refresh token được mã hóa AES-256-GCM trước khi lưu trên thiết bị.</li>
+      <li>Bạn có thể ngắt kết nối Gmail bất cứ lúc nào trong Cài đặt.</li>
+      <li>Khi ngắt kết nối, tất cả dữ liệu email và token sẽ bị xóa hoàn toàn.</li>
+    </ul>
+
+    <h2>3. Bảo mật</h2>
+    <ul>
+      <li><strong>HTTPS/TLS:</strong> Mọi kết nối được mã hóa.</li>
+      <li><strong>HSTS Preload:</strong> Buộc sử dụng HTTPS.</li>
+      <li><strong>Mật khẩu:</strong> Hash SHA-256 với salt, không lưu plaintext.</li>
+      <li><strong>Token:</strong> Mã hóa AES-256-GCM (Web Crypto API).</li>
+      <li><strong>API Key:</strong> Chỉ lưu trên server, không lộ phía client.</li>
+      <li><strong>Security Headers:</strong> Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, Referrer-Policy.</li>
+      <li><strong>Rate Limiting:</strong> Giới hạn 30 request/phút/IP.</li>
+    </ul>
+
+    <h2>4. Chia sẻ dữ liệu</h2>
+    <p>Chúng tôi <strong>không chia sẻ, bán hoặc cho thuê</strong> dữ liệu cá nhân của bạn cho bất kỳ bên thứ 3 nào. Dữ liệu chỉ được xử lý bởi:</p>
+    <ul>
+      <li><strong>Anthropic (Claude API):</strong> Xử lý chat AI — áp dụng zero-retention.</li>
+      <li><strong>Google (Gmail API):</strong> Đọc email — chỉ khi bạn cho phép.</li>
+      <li><strong>Vercel:</strong> Hosting — không truy cập dữ liệu người dùng.</li>
+    </ul>
+
+    <h2>5. Quyền của bạn</h2>
+    <ul>
+      <li>Xóa toàn bộ dữ liệu bất cứ lúc nào (Cài đặt → Dữ liệu → Xóa toàn bộ).</li>
+      <li>Xuất dữ liệu dạng JSON (Cài đặt → Dữ liệu → Xuất).</li>
+      <li>Ngắt kết nối Gmail bất cứ lúc nào.</li>
+      <li>Xóa lịch sử chat, ghi nhớ AI riêng biệt.</li>
+      <li>Thay đổi mật khẩu bất cứ lúc nào.</li>
+    </ul>
+
+    <h2>6. Cookie & Theo dõi</h2>
+    <p>WorkFlow <strong>không sử dụng cookie</strong> và <strong>không theo dõi</strong> hành vi người dùng. Không có Google Analytics, Facebook Pixel hay bất kỳ công cụ tracking nào.</p>
+
+    <h2>7. Trẻ em</h2>
+    <p>WorkFlow không hướng đến người dùng dưới 13 tuổi. Chúng tôi không cố ý thu thập dữ liệu từ trẻ em.</p>
+
+    <h2>8. Thay đổi chính sách</h2>
+    <p>Chúng tôi có thể cập nhật chính sách này. Mọi thay đổi sẽ được thông báo trong ứng dụng và cập nhật ngày trên trang này.</p>
+
+    <h2>9. Liên hệ</h2>
+    <p>Nếu có câu hỏi về quyền riêng tư, vui lòng liên hệ qua ứng dụng hoặc gửi phản hồi trong phần Cài đặt.</p>
+
+    <div class="update">
+      WorkFlow v2.1 — Tháng 3/2026<br>
+      Chính sách này có hiệu lực từ ngày 01/03/2026.
+    </div>
+  </div>
+</body>
+</html>
