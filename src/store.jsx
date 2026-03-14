@@ -220,32 +220,26 @@ export function AppProvider({ children, userId }) {
             if (row.data.length === 0) continue;
 
             if (row.key === "tasks") {
+              // Cloud is authoritative — merge cloud into local, remove deleted
+              const cloudTaskIds = new Set(row.data.map(t => t.id));
               if (localTasks.length === 0) {
                 localTasks = row.data;
-                dispatch({ type: "LOAD", tasks: localTasks });
-                saveJSON("tasks", localTasks);
               } else {
-                const localIds = new Set(localTasks.map(t => t.id));
-                const newItems = row.data.filter(t => !localIds.has(t.id));
-                if (newItems.length > 0) {
-                  localTasks = [...localTasks, ...newItems];
-                  dispatch({ type: "LOAD", tasks: localTasks });
-                  saveJSON("tasks", localTasks);
-                }
-                // Also update existing tasks with newer cloud data
-                let updated = false;
+                // Remove local tasks that were deleted from cloud (assigned tasks from deleted projects)
+                localTasks = localTasks.filter(t => {
+                  if (cloudTaskIds.has(t.id)) return true; // exists in cloud
+                  if (!t.projectId && !t.assignee) return true; // personal task, keep
+                  return false; // assigned/project task not in cloud → deleted
+                });
+                // Add new cloud tasks + update existing
                 for (const ct of row.data) {
                   const li = localTasks.findIndex(t => t.id === ct.id);
-                  if (li >= 0 && ct.status !== localTasks[li].status) {
-                    localTasks[li] = { ...localTasks[li], ...ct };
-                    updated = true;
-                  }
-                }
-                if (updated) {
-                  dispatch({ type: "LOAD", tasks: [...localTasks] });
-                  saveJSON("tasks", localTasks);
+                  if (li >= 0) { localTasks[li] = { ...localTasks[li], ...ct }; }
+                  else { localTasks.push(ct); }
                 }
               }
+              dispatch({ type: "LOAD", tasks: localTasks });
+              saveJSON("tasks", localTasks);
             }
             if (row.key === "projects") {
               // Filter out projects where user has been removed
@@ -259,28 +253,15 @@ export function AppProvider({ children, userId }) {
                   return myNames.includes(mn);
                 });
               });
-              if (localProjects.length === 0) {
-                localProjects = validCloud;
-                projDispatch({ type: "PROJ_LOAD", items: localProjects });
-                saveJSON("projects", localProjects);
-              } else {
-                // Also filter local projects by membership
-                localProjects = localProjects.filter(p => {
-                  if (!p.members || p.members.length === 0) return true;
-                  return p.members.some(m => {
-                    if (m.supaId && m.supaId === cloudId) return true;
-                    const mn = (m.name || "").toLowerCase().replace(/\s+/g, "");
-                    return myNames.includes(mn);
-                  });
-                });
-                const localIds = new Set(localProjects.map(p => p.id));
-                const newItems = validCloud.filter(p => !localIds.has(p.id));
-                if (newItems.length > 0) {
-                  localProjects = [...localProjects, ...newItems];
-                }
-                projDispatch({ type: "PROJ_LOAD", items: localProjects });
-                saveJSON("projects", localProjects);
-              }
+              // Cloud is authoritative for team projects (those with members)
+              // Keep local personal projects (no members), replace team projects with cloud
+              const cloudIds = new Set(validCloud.map(p => p.id));
+              const personalLocal = localProjects.filter(p => !p.members || p.members.length === 0);
+              // Merge: cloud team projects + local personal projects (not in cloud)
+              const personalNotInCloud = personalLocal.filter(p => !cloudIds.has(p.id));
+              localProjects = [...validCloud, ...personalNotInCloud];
+              projDispatch({ type: "PROJ_LOAD", items: localProjects });
+              saveJSON("projects", localProjects);
             }
             if (row.key === "expenses") {
               if (localExpenses.length === 0) {
