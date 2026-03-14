@@ -260,6 +260,7 @@ export function NewProjectModal({ onAdd, onClose }) {
 export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchProject, hardDelete, deleteProject, onClose, onOpenChat, isStaff, myName }) {
   const { session } = useSupabase();
   const userId = session?.user?.id;
+  const localSession = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
   const [editName, setEditName] = useState(false);
   const [name, setName] = useState(project.name);
   const [newStep, setNewStep] = useState("");
