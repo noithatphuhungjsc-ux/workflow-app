@@ -143,29 +143,72 @@ export function AppProvider({ children, userId }) {
     saveJSON("tasks", allTasks);
     if (supabase && userId) scheduleSyncDebounced(supabase, userId, "tasks", allTasks);
 
-    // Cross-user sync: copy assigned project tasks to assignee's localStorage
+    // Cross-user sync: copy assigned project tasks to assignee's localStorage + cloud
     const DEV_NAME_TO_ID = {
       "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
       "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
     };
     const currentPrefix = userKey("");
+    // Group tasks by assignee for cloud sync
+    const tasksByAssignee = {};
     allTasks.filter(t => t.assignee && t.projectId && !t.deleted).forEach(t => {
       const targetId = DEV_NAME_TO_ID[t.assignee];
       if (!targetId) return;
       const targetKey = `wf_${targetId}_tasks`;
-      if (targetKey === currentPrefix + "tasks") return; // same user
+      if (targetKey === currentPrefix + "tasks") return;
+      // localStorage sync (same device)
       try {
         const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
         const idx = existing.findIndex(e => e.id === t.id);
-        if (idx >= 0) {
-          existing[idx] = { ...existing[idx], ...t };
-        } else {
-          existing.push(t);
-        }
+        if (idx >= 0) { existing[idx] = { ...existing[idx], ...t }; }
+        else { existing.push(t); }
         localStorage.setItem(targetKey, JSON.stringify(existing));
       } catch {}
+      // Collect for cloud sync
+      if (!tasksByAssignee[t.assignee]) tasksByAssignee[t.assignee] = [];
+      tasksByAssignee[t.assignee].push(t);
     });
-  }, [allTasks, userId]);
+    // Cloud sync: push assigned tasks to assignee's Supabase user_data
+    if (supabase && Object.keys(tasksByAssignee).length > 0) {
+      (async () => {
+        try {
+          const { data: profiles } = await supabase.from("profiles").select("id, display_name");
+          if (!profiles) return;
+          for (const [assigneeName, assignedTasks] of Object.entries(tasksByAssignee)) {
+            const profile = profiles.find(p => p.display_name === assigneeName);
+            if (!profile || profile.id === userId) continue;
+            // Get existing cloud tasks for this assignee
+            const { data: existing } = await supabase.from("user_data")
+              .select("data").eq("user_id", profile.id).eq("key", "tasks").maybeSingle();
+            const cloudTasks = (existing?.data && Array.isArray(existing.data)) ? existing.data : [];
+            // Merge: update existing, add new
+            let merged = [...cloudTasks];
+            for (const t of assignedTasks) {
+              const idx = merged.findIndex(e => e.id === t.id);
+              if (idx >= 0) { merged[idx] = { ...merged[idx], ...t }; }
+              else { merged.push(t); }
+            }
+            await cloudSave(supabase, profile.id, "tasks", merged);
+            // Also sync projects
+            const assigneeProjects = [...new Set(assignedTasks.map(t => t.projectId))];
+            const projsToSync = assigneeProjects.map(pid => projects.find(p => p.id === pid)).filter(Boolean);
+            if (projsToSync.length > 0) {
+              const { data: existingProj } = await supabase.from("user_data")
+                .select("data").eq("user_id", profile.id).eq("key", "projects").maybeSingle();
+              const cloudProjs = (existingProj?.data && Array.isArray(existingProj.data)) ? existingProj.data : [];
+              let mergedProjs = [...cloudProjs];
+              for (const p of projsToSync) {
+                const idx = mergedProjs.findIndex(e => e.id === p.id);
+                if (idx >= 0) { mergedProjs[idx] = { ...mergedProjs[idx], ...p }; }
+                else { mergedProjs.push(p); }
+              }
+              await cloudSave(supabase, profile.id, "projects", mergedProjs);
+            }
+          }
+        } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
+      })();
+    }
+  }, [allTasks, userId, projects]);
 
   // Purge old deleted + roll overdue tasks on mount
   useEffect(() => {
