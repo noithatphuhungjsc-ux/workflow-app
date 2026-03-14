@@ -51,16 +51,28 @@ export function SupabaseProvider({ children }) {
 
   const fetchProfile = async (uid) => {
     const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
-    if (data) { setProfile(data); return; }
+    if (data) {
+      // Update email if missing (for existing profiles created before email was saved)
+      if (!data.email) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email) {
+          await supabase.from("profiles").update({ email: user.email }).eq("id", uid);
+          data.email = user.email;
+        }
+      }
+      setProfile(data);
+      return;
+    }
 
     // Auto-create profile for OAuth users (Google, etc.)
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "User";
-      const { data: newProfile } = await supabase.from("profiles").insert({
+      const { data: newProfile } = await supabase.from("profiles").upsert({
         id: uid,
         display_name: name,
-      }).select().single();
+        email: user.email || null,
+      }, { onConflict: "id" }).select().single();
       if (newProfile) setProfile(newProfile);
     }
   };

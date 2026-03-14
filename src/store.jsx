@@ -172,10 +172,25 @@ export function AppProvider({ children, userId }) {
     if (supabase && Object.keys(tasksByAssignee).length > 0) {
       (async () => {
         try {
-          const { data: profiles } = await supabase.from("profiles").select("id, display_name");
+          // Fetch profiles (with email) for matching
+          const { data: profiles } = await supabase.from("profiles").select("id, display_name, email");
           if (!profiles) return;
+          // Known assignee name → email mapping
+          const DEV_EMAIL_MAP = {
+            "Tran Thi Mai": "noithatphuhung.jsc@gmail.com",
+          };
+          const normalize = s => (s || "").toLowerCase().trim();
           for (const [assigneeName, assignedTasks] of Object.entries(tasksByAssignee)) {
-            const profile = profiles.find(p => p.display_name === assigneeName);
+            const knownEmail = DEV_EMAIL_MAP[assigneeName];
+            // Match by: 1) display_name exact, 2) email, 3) partial name match
+            let profile = profiles.find(p => normalize(p.display_name) === normalize(assigneeName));
+            if (!profile && knownEmail) {
+              profile = profiles.find(p => normalize(p.email) === normalize(knownEmail));
+            }
+            if (!profile) {
+              const parts = assigneeName.toLowerCase().split(" ");
+              profile = profiles.find(p => parts.some(part => part.length > 2 && normalize(p.display_name).includes(part)));
+            }
             if (!profile || profile.id === userId) continue;
             // Get existing cloud tasks for this assignee
             const { data: existing } = await supabase.from("user_data")
