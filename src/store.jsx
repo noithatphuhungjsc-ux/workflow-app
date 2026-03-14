@@ -140,6 +140,9 @@ export function AppProvider({ children, userId }) {
   const tasks = allTasks.filter(t => !t.deleted);
   const deletedTasks = allTasks.filter(t => t.deleted);
 
+  // Gate: don't push to cloud until cloud pull has completed
+  const cloudPullDoneRef = useRef(!cloudId); // if no cloudId, no pull needed
+
   // Auto-save + cloud sync + cross-user task sync
   const crossUserTasksRef = useRef({});
   const hasLoadedRef = useRef(false);
@@ -147,7 +150,8 @@ export function AppProvider({ children, userId }) {
     if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("tasks", allTasks);
-    if (cloudId) {
+    // Only push to cloud AFTER cloud pull is done (prevent stale data overwriting)
+    if (cloudId && cloudPullDoneRef.current) {
       scheduleSyncDebounced(null, cloudId, "tasks", allTasks);
       if (cloudId !== userId) cloudSave(null, userId, "tasks", allTasks);
     }
@@ -166,13 +170,15 @@ export function AppProvider({ children, userId }) {
       const targetKey = `wf_${targetId}_tasks`;
       if (targetKey === currentPrefix + "tasks") return;
       // localStorage sync (same device)
-      try {
-        const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
-        const idx = existing.findIndex(e => e.id === t.id);
-        if (idx >= 0) { existing[idx] = { ...existing[idx], ...t }; }
-        else { existing.push(t); }
-        localStorage.setItem(targetKey, JSON.stringify(existing));
-      } catch {}
+      if (cloudPullDoneRef.current) {
+        try {
+          const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
+          const idx = existing.findIndex(e => e.id === t.id);
+          if (idx >= 0) { existing[idx] = { ...existing[idx], ...t }; }
+          else { existing.push(t); }
+          localStorage.setItem(targetKey, JSON.stringify(existing));
+        } catch {}
+      }
       // Collect for cloud sync
       if (!tasksByAssignee[t.assignee]) tasksByAssignee[t.assignee] = [];
       tasksByAssignee[t.assignee].push(t);
@@ -305,6 +311,9 @@ export function AppProvider({ children, userId }) {
         }
       } catch (e) { console.warn("Cloud pull failed:", e); }
 
+      // Mark cloud pull as done — ungate save/sync effects
+      cloudPullDoneRef.current = true;
+
       // === STEP 2: PUSH merged data UP to cloud ===
       // Only push if cloud had data (to avoid overwriting admin deletions)
       if (localTasks.length > 0 || cloudHadData.tasks) {
@@ -329,7 +338,7 @@ export function AppProvider({ children, userId }) {
     if (!expLoadedRef.current) { expLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("expenses", expenses);
-    if (cloudId) {
+    if (cloudId && cloudPullDoneRef.current) {
       scheduleSyncDebounced(null, cloudId, "expenses", expenses);
       if (cloudId !== userId) cloudSave(null, userId, "expenses", expenses);
     }
@@ -342,42 +351,43 @@ export function AppProvider({ children, userId }) {
     if (!projLoadedRef.current) { projLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("projects", projects);
-    if (cloudId) {
+    if (cloudId && cloudPullDoneRef.current) {
       scheduleSyncDebounced(null, cloudId, "projects", projects);
       if (cloudId !== userId) cloudSave(null, userId, "projects", projects);
     }
 
-    // Cross-user sync: share projects with all members
-    const DEV_NAME_MAP = {
-      "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
-      "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
-    };
-    const currentPrefix = userKey("");
-    projects.forEach(proj => {
-      if (!proj.members?.length) return;
-      proj.members.forEach(m => {
-        // Match by member name → local user ID
-        const devId = DEV_NAME_MAP[m.name];
-        if (!devId || `wf_${devId}_` === currentPrefix) return;
-        const targetKey = `wf_${devId}_projects`;
-        try {
-          const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
-          const idx = existing.findIndex(e => e.id === proj.id);
-          if (idx >= 0) {
-            existing[idx] = { ...existing[idx], ...proj };
-          } else {
-            existing.push(proj);
-          }
-          localStorage.setItem(targetKey, JSON.stringify(existing));
-        } catch {}
+    // Cross-user sync: share projects with all members (localStorage only — cloud handled separately)
+    if (cloudPullDoneRef.current) {
+      const DEV_NAME_MAP = {
+        "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
+        "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+      };
+      const currentPrefix = userKey("");
+      projects.forEach(proj => {
+        if (!proj.members?.length) return;
+        proj.members.forEach(m => {
+          const devId = DEV_NAME_MAP[m.name];
+          if (!devId || `wf_${devId}_` === currentPrefix) return;
+          const targetKey = `wf_${devId}_projects`;
+          try {
+            const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
+            const idx = existing.findIndex(e => e.id === proj.id);
+            if (idx >= 0) {
+              existing[idx] = { ...existing[idx], ...proj };
+            } else {
+              existing.push(proj);
+            }
+            localStorage.setItem(targetKey, JSON.stringify(existing));
+          } catch {}
+        });
       });
-    });
+    }
   }, [projects, userId, cloudId]);
 
   // Cross-user CLOUD sync: push projects+tasks to all members' cloud
   const crossSyncTimerRef = useRef(null);
   useEffect(() => {
-    if (!cloudId) return;
+    if (!cloudId || !cloudPullDoneRef.current) return;
     clearTimeout(crossSyncTimerRef.current);
     crossSyncTimerRef.current = setTimeout(async () => {
       try {
