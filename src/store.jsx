@@ -142,6 +142,8 @@ export function AppProvider({ children, userId }) {
 
   // Gate: don't push to cloud until cloud pull has completed
   const cloudPullDoneRef = useRef(!cloudId); // if no cloudId, no pull needed
+  // Suppress push during/after poll (prevent stale data overwriting admin deletions)
+  const suppressPushRef = useRef(false);
 
   // Auto-save + cloud sync + cross-user task sync
   const crossUserTasksRef = useRef({});
@@ -150,8 +152,8 @@ export function AppProvider({ children, userId }) {
     if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("tasks", allTasks);
-    // Only push to cloud AFTER cloud pull is done (prevent stale data overwriting)
-    if (cloudId && cloudPullDoneRef.current) {
+    // Push to cloud — but suppress during/after poll to prevent stale data overwriting
+    if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
       scheduleSyncDebounced(null, cloudId, "tasks", allTasks);
       if (cloudId !== userId) cloudSave(null, userId, "tasks", allTasks);
     }
@@ -198,6 +200,8 @@ export function AppProvider({ children, userId }) {
 
   // Reusable pull function — used for initial load + periodic polling
   const pullFromCloud = useCallback(async (isInitial = false) => {
+    // Suppress save effects from pushing during poll (prevents stale data overwriting)
+    if (!isInitial) suppressPushRef.current = true;
     let localTasks = loadJSON("tasks", []);
     let localProjects = loadJSON("projects", []);
     let localExpenses = loadJSON("expenses", []);
@@ -302,6 +306,11 @@ export function AppProvider({ children, userId }) {
       }
     } catch (e) { console.warn("Cloud pull failed:", e); }
 
+    // Unsuppress push after poll — delay to let React process dispatches first
+    if (!isInitial) {
+      setTimeout(() => { suppressPushRef.current = false; }, 3000);
+    }
+
     // On initial load: mark done + push merged data up
     if (isInitial) {
       cloudPullDoneRef.current = true;
@@ -353,7 +362,7 @@ export function AppProvider({ children, userId }) {
     if (!projLoadedRef.current) { projLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("projects", projects);
-    if (cloudId && cloudPullDoneRef.current) {
+    if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
       scheduleSyncDebounced(null, cloudId, "projects", projects);
       if (cloudId !== userId) cloudSave(null, userId, "projects", projects);
     }
