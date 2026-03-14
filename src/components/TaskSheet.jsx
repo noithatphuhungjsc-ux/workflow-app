@@ -99,8 +99,15 @@ export default function TaskSheet({ task, onClose }) {
             </div>
             <div>
               <div style={{ fontSize:11, color:C.muted, marginBottom:3 }}>GIAO CHO</div>
-              <input defaultValue={task.assignee || ""} onChange={e => patchTask(task.id, { assignee: e.target.value })}
-                placeholder="Tên người nhận..." style={IS} />
+              <select value={task.assignee || ""} onChange={e => patchTask(task.id, { assignee: e.target.value })}
+                style={{ ...IS, color: task.assignee ? C.text : C.muted }}>
+                <option value="">— Chưa giao —</option>
+                <option value="Nguyen Duy Trinh">Nguyen Duy Trinh (Dev)</option>
+                <option value="Lientran">Lientran (GĐ)</option>
+                <option value="Pham Van Hung">Pham Van Hung (QL)</option>
+                <option value="Tran Thi Mai">Tran Thi Mai (NV)</option>
+                <option value="Le Minh Duc">Le Minh Duc (NV)</option>
+              </select>
             </div>
           </div>
 

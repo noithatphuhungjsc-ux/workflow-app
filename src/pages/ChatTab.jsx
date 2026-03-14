@@ -7,7 +7,7 @@ import NewChatModal, { decodeGroupName, getCategoryInfo, GROUP_CATEGORIES } from
 import { supabase } from "../lib/supabase";
 
 export default function ChatTab({ openConvId, projects, tasks, patchTask, addTask }) {
-  const { session, profile, isConnected, signUp, signIn, signInWithGoogle, signOut } = useSupabase();
+  const { session, isConnected, loading: supaLoading } = useSupabase();
   const userId = session?.user?.id;
   const { conversations, loading, totalUnread, refresh, createDM, createGroup } = useConversations(userId);
   const [activeConv, _setActiveConv] = useState(() => sessionStorage.getItem("wf_activeConv") || null);
@@ -21,7 +21,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const setActiveConv = useCallback(async (id) => {
     if (id) {
       sessionStorage.setItem("wf_activeConv", id);
-      // Auto-ensure user is a member of this conversation (fixes project chats)
       if (supabase && userId) {
         try {
           const { data: existing } = await supabase.from("conversation_members")
@@ -36,19 +35,22 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     }
     _setActiveConv(id);
   }, [userId]);
-  const [showNew, setShowNew] = useState(null); // null | "dm" | "group"
-  const [profiles, setProfiles] = useState([]);
-  const [contextMenu, setContextMenu] = useState(null); // { id }
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [filter, setFilter] = useState("all"); // "all" | "dm" | "work" | "family" | ...
-  // Auth form state
-  const [authMode, setAuthMode] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState("");
 
+  const [showNew, setShowNew] = useState(null);
+  const [profiles, setProfiles] = useState([]);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [filter, setFilter] = useState("all");
+
+  // Role check — only manager/admin/dev can create groups
+  const canCreateGroup = (() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("wf_session") || "{}");
+      return (s.role || "staff") !== "staff";
+    } catch { return false; }
+  })();
+
+  // Load profiles for ChatRoom
   useEffect(() => {
     if (!supabase || !userId) return;
     (async () => {
@@ -70,7 +72,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
 
   const deleteConversation = async (convId) => {
     if (!supabase || !userId) return;
-    // Check: nhóm chat chỉ admin (người tạo) mới được xóa
     const conv = conversations.find(c => c.id === convId);
     if (conv?.type === "group" && conv.created_by !== userId) {
       alert("Chỉ người tạo nhóm mới có quyền xóa cuộc trò chuyện này.");
@@ -87,16 +88,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     setConfirmDelete(null);
     setContextMenu(null);
     refresh();
-  };
-
-  const handleAuth = async () => {
-    setAuthLoading(true);
-    setAuthError("");
-    const result = authMode === "register"
-      ? await signUp(email, password, displayName)
-      : await signIn(email, password);
-    if (result.error) setAuthError(result.error);
-    setAuthLoading(false);
   };
 
   // Long-press for context menu
@@ -120,35 +111,28 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     setActiveConv(convId);
   }, []);
 
-  // Merge project chats that might not be in conversation_members
+  // Merge project chats
   const mergedConversations = (() => {
     if (!projects?.length) return conversations;
     const existingIds = new Set(conversations.map(c => c.id));
     const projectChats = projects
       .filter(p => p.chatId && !existingIds.has(p.chatId))
       .map(p => ({
-        id: p.chatId,
-        type: "group",
-        name: `[project]${p.name}`,
-        displayName: `[project]${p.name}`,
-        created_by: userId,
-        lastMessage: null,
-        unreadCount: 0,
-        _isProjectChat: true,
+        id: p.chatId, type: "group", name: `[project]${p.name}`,
+        displayName: `[project]${p.name}`, created_by: userId,
+        lastMessage: null, unreadCount: 0, _isProjectChat: true,
       }));
     return projectChats.length > 0 ? [...conversations, ...projectChats] : conversations;
   })();
 
-  // Filter conversations
+  // Filter
   const filtered = mergedConversations.filter(c => {
     if (filter === "all") return true;
     if (filter === "dm") return c.type === "dm";
     if (c.type !== "group") return false;
-    const decoded = decodeGroupName(c.displayName || c.name);
-    return decoded.category === filter;
+    return decodeGroupName(c.displayName || c.name).category === filter;
   });
 
-  // Count groups by category for filter badges
   const groupCounts = {};
   mergedConversations.forEach(c => {
     if (c.type === "group") {
@@ -158,56 +142,13 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   });
   const dmCount = mergedConversations.filter(c => c.type === "dm").length;
 
-  // Not connected — show auth form
-  if (!isConnected) {
+  // Not connected yet — auto-login runs at App level, just show loading
+  if (supaLoading || !isConnected) {
     return (
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-        <div style={{ fontSize: 40, marginTop: 20 }}>💬</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.text, textAlign: "center" }}>Nhắn tin Team</div>
-        <div style={{ fontSize: 13, color: C.muted, textAlign: "center", maxWidth: 280 }}>
-          Đăng nhập hoặc đăng ký để bắt đầu nhắn tin với đồng nghiệp
-        </div>
-
-        <button className="tap" onClick={signInWithGoogle}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", maxWidth: 300, padding: "11px", borderRadius: 10, border: `1px solid ${C.border}`, background: "#fff", fontSize: 14, fontWeight: 600, color: "#333", cursor: "pointer" }}>
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.01 24.01 0 0 0 0 21.56l7.98-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          Đăng nhập bằng Google
-        </button>
-
-        <div style={{ fontSize: 12, color: C.muted }}>hoặc</div>
-
-        <div style={{ display: "flex", gap: 0, background: C.bg, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
-          {[["login", "Đăng nhập"], ["register", "Đăng ký"]].map(([m, label]) => (
-            <button key={m} className="tap" onClick={() => { setAuthMode(m); setAuthError(""); }}
-              style={{ padding: "8px 20px", fontSize: 13, fontWeight: 600, border: "none",
-                background: authMode === m ? C.accent : "transparent",
-                color: authMode === m ? "#fff" : C.muted }}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ width: "100%", maxWidth: 300, display: "flex", flexDirection: "column", gap: 10 }}>
-          {authMode === "register" && (
-            <input value={displayName} onChange={e => setDisplayName(e.target.value)}
-              placeholder="Tên hiển thị"
-              style={{ fontSize: 14, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px", outline: "none", color: C.text, background: C.bg }} />
-          )}
-          <input value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="Email" type="email"
-            style={{ fontSize: 14, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px", outline: "none", color: C.text, background: C.bg }} />
-          <input value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="Mật khẩu" type="password"
-            onKeyDown={e => { if (e.key === "Enter") handleAuth(); }}
-            style={{ fontSize: 14, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px", outline: "none", color: C.text, background: C.bg }} />
-
-          {authError && <div style={{ fontSize: 12, color: C.red, textAlign: "center" }}>{authError}</div>}
-
-          <button className="tap" onClick={handleAuth} disabled={authLoading || !email || !password}
-            style={{ padding: "11px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", fontSize: 14, fontWeight: 700, opacity: authLoading ? 0.6 : 1 }}>
-            {authLoading ? "Đang xử lý..." : authMode === "register" ? "Đăng ký" : "Đăng nhập"}
-          </button>
-        </div>
+      <div style={{ padding: 40, textAlign: "center", color: C.muted }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>💬</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Đang kết nối...</div>
+        <div style={{ fontSize: 12, marginTop: 6 }}>Tự động đăng nhập từ tài khoản của bạn</div>
       </div>
     );
   }
@@ -218,9 +159,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     const rawName = conv?.displayName || "Trò chuyện";
     const decoded = conv?.type === "group" ? decodeGroupName(rawName) : null;
     const name = decoded ? decoded.name : rawName;
-    // Detect project chat → find linked project & tasks
-    const isProjectChat = decoded?.category === "project";
-    // Also try to find project by chatId even if category is not "project"
     const linkedProject = (projects || []).find(p => p.chatId === activeConv) || null;
     const projectTasks = linkedProject ? (tasks || []).filter(t => t.projectId === linkedProject.id && !t.deleted)
       .sort((a, b) => (a.stepIndex ?? 999) - (b.stepIndex ?? 999)) : [];
@@ -232,7 +170,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     );
   }
 
-  // Build filter pills
+  // Filter pills
   const filterPills = [
     { key: "all", label: "Tất cả", count: mergedConversations.length, color: C.text },
     { key: "dm", label: "Cá nhân", count: dmCount, color: C.accent },
@@ -254,14 +192,12 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
           style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>
           + Nhắn tin
         </button>
-        <button className="tap" onClick={() => setShowNew("group")}
-          style={{ background: C.purple, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>
-          + Nhóm
-        </button>
-        <button className="tap" onClick={signOut}
-          style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 12, color: C.red, padding: "6px 10px", fontWeight: 600, cursor: "pointer" }}>
-          Thoát
-        </button>
+        {canCreateGroup && (
+          <button className="tap" onClick={() => setShowNew("group")}
+            style={{ background: C.purple, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>
+            + Nhóm
+          </button>
+        )}
       </div>
 
       {/* Filter pills */}
@@ -286,7 +222,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
         {loading && <div style={{ textAlign: "center", padding: 20, color: C.muted, fontSize: 12 }}>Đang tải...</div>}
         {!loading && filtered.length === 0 && (
           <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 13 }}>
-            {filter === "all" ? <>Chưa có cuộc trò chuyện nào.<br />Bấm "+ Nhắn tin" hoặc "+ Nhóm" để bắt đầu.</> : "Không có cuộc trò chuyện nào trong mục này."}
+            {filter === "all" ? <>Chưa có cuộc trò chuyện nào.<br />Bấm "+ Nhắn tin" để bắt đầu.</> : "Không có cuộc trò chuyện nào trong mục này."}
           </div>
         )}
         {filtered.map(c => {

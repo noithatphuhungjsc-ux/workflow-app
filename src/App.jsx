@@ -31,6 +31,63 @@ import { NewProjectModal, ProjectDetailSheet } from "./components/ProjectModals"
 
 
 /* ================================================================
+   AUTO-LOGIN — Supabase auth from local session (runs once at app start)
+   ================================================================ */
+const TEAM_ACCOUNTS = [
+  { id: "trinh", email: "trinh@workflow.vn", name: "Nguyen Duy Trinh" },
+  { id: "lien",  email: "lien@workflow.vn",  name: "Lientran" },
+  { id: "hung",  email: "hung@workflow.vn",  name: "Pham Van Hung" },
+  { id: "mai",   email: "mai@workflow.vn",   name: "Tran Thi Mai" },
+  { id: "duc",   email: "duc@workflow.vn",   name: "Le Minh Duc" },
+];
+const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
+
+function SupabaseAutoLogin() {
+  const { isConnected, signIn, signUp, loading } = useSupabase();
+  const tried = useRef(false);
+
+  useEffect(() => {
+    // Auto sign-in to Supabase from local session
+    if (loading || isConnected || tried.current) return;
+    tried.current = true;
+    try {
+      const s = JSON.parse(localStorage.getItem("wf_session") || "{}");
+      const email = TEAM_EMAILS[s.id];
+      if (!email) return;
+      const pw = "111111";
+      const name = s.name || email.split("@")[0];
+      (async () => {
+        const r = await signIn(email, pw);
+        if (r.error) await signUp(email, pw, name);
+      })();
+    } catch {}
+  }, [loading, isConnected]);
+
+  // One-time: ensure all team members have Supabase auth accounts
+  useEffect(() => {
+    if (localStorage.getItem("wf_auth_synced_v3")) return;
+    TEAM_ACCOUNTS.forEach(a => {
+      fetch("/api/cloud-sync", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ensure_auth", email: a.email, password: "111111", displayName: a.name }),
+      }).catch(() => {});
+    });
+    localStorage.setItem("wf_auth_synced_v3", "1");
+  }, []);
+
+  // One-time: cleanup old OAuth profiles
+  useEffect(() => {
+    if (localStorage.getItem("wf_cleanup_v2")) return;
+    fetch("/api/cloud-sync", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cleanup_profiles" }),
+    }).then(() => localStorage.setItem("wf_cleanup_v2", "1")).catch(() => {});
+  }, []);
+
+  return null;
+}
+
+/* ================================================================
    ROOT — Auth wrapper
    ================================================================ */
 export default function App() {
@@ -43,6 +100,7 @@ export default function App() {
       if (s) {
         const parsed = JSON.parse(s);
         setUserPrefix(parsed.id); // sync — before any store init
+        document.title = `WorkFlow — ${parsed.name}`;
         return parsed;
       }
       return null;
@@ -53,12 +111,14 @@ export default function App() {
     localStorage.removeItem("wf_session");
     setUser(null);
     setUserPrefix("");
+    document.title = "WorkFlow";
   };
 
-  if (!user) return <LoginScreen onLogin={(acc) => { setUserPrefix(acc.id); setUser(acc); }} />;
+  if (!user) return <LoginScreen onLogin={(acc) => { setUserPrefix(acc.id); setUser(acc); document.title = `WorkFlow — ${acc.name}`; }} />;
 
   return (
     <SupabaseProvider>
+      <SupabaseAutoLogin />
       <AppProvider userId={user.id}>
         <MainApp user={user} onLogout={handleLogout} />
       </AppProvider>
@@ -1456,7 +1516,7 @@ QUY TAC BAT BUOC:
           ["inbox","\u{1F4AC}","Trao đổi"],
           ["expense","\u{1F4B0}","Chi tiêu"],
           (user?.role === "admin" || user?.role === "manager") && ["report","\u{1F4CA}","Báo cáo"],
-          user?.role === "dev" && ["dev","\u{1F4BB}","Dev"],
+          user?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && ["dev","\u{1F4BB}","Dev"],
           ["ai","\u2726","Wory"],
         ].filter(Boolean).map(([key, icon, label]) => {
           const active = tab === key;

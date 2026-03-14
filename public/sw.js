@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workflow-v130';
+const CACHE_NAME = 'workflow-v139';
 const ASSETS = [
   '/',
   '/index.html',
@@ -25,7 +25,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = e.request.url;
-  if (!url.startsWith(self.location.origin) || url.includes('/api/')) return;
+  if (!url.startsWith(self.location.origin) || url.includes('/api/') || url.includes('/reset')) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {

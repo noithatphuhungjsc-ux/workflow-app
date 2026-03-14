@@ -55,64 +55,61 @@ export function saveJSON(key, data) {
 const _syncTimers = {};
 const SYNC_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
 
-export async function cloudSave(supabase, userId, key, data) {
-  if (!supabase || !userId) return null;
+// Cloud sync via API (bypasses Supabase RLS using service role key)
+export async function cloudSave(_supabase, userId, key, data) {
+  if (!userId) return null;
   try {
-    const { error } = await supabase.from("user_data").upsert({
-      user_id: userId,
-      key,
-      data,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id,key" });
-    if (error) console.warn("Cloud save error:", key, error.message);
-    return !error;
+    const res = await fetch("/api/cloud-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, key, data }),
+    });
+    const result = await res.json();
+    if (!res.ok) console.warn("Cloud save error:", key, result.error);
+    return res.ok;
   } catch (e) { console.warn("Cloud save failed:", e); return false; }
 }
 
-export async function cloudLoad(supabase, userId, key) {
-  if (!supabase || !userId) return null;
+export async function cloudLoad(_supabase, userId, key) {
+  if (!userId) return null;
   try {
-    const { data, error } = await supabase
-      .from("user_data")
-      .select("data, updated_at")
-      .eq("user_id", userId)
-      .eq("key", key)
-      .single();
-    if (error || !data) return null;
-    return data;
+    const url = `/api/cloud-sync?userId=${encodeURIComponent(userId)}${key ? `&key=${encodeURIComponent(key)}` : ""}`;
+    const res = await fetch(url);
+    const result = await res.json();
+    if (!res.ok) return null;
+    if (key && result.data?.length) return result.data[0];
+    return result.data?.length ? result.data : null;
   } catch { return null; }
 }
 
-export async function cloudSaveAll(supabase, userId) {
-  if (!supabase || !userId) return false;
+export async function cloudSaveAll(_supabase, userId) {
+  if (!userId) return false;
   let ok = 0;
   for (const key of SYNC_KEYS) {
     const localData = loadJSON(key, null);
     if (localData !== null) {
-      const result = await cloudSave(supabase, userId, key, localData);
+      const result = await cloudSave(null, userId, key, localData);
       if (result) ok++;
     }
   }
   return ok;
 }
 
-export async function cloudLoadAll(supabase, userId) {
-  if (!supabase || !userId) return null;
+export async function cloudLoadAll(_supabase, userId) {
+  if (!userId) return null;
   try {
-    const { data, error } = await supabase
-      .from("user_data")
-      .select("key, data, updated_at")
-      .eq("user_id", userId);
-    if (error || !data) return null;
-    return data;
+    const res = await fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}`);
+    const result = await res.json();
+    if (!res.ok) return null;
+    return result.data || null;
   } catch { return null; }
 }
 
-export function scheduleSyncDebounced(supabase, userId, key, data) {
-  if (!supabase || !userId) return;
+export function scheduleSyncDebounced(_supabase, userId, key, data) {
+  if (!userId) return;
   clearTimeout(_syncTimers[key]);
   _syncTimers[key] = setTimeout(() => {
-    cloudSave(supabase, userId, key, data);
+    cloudSave(null, userId, key, data);
   }, 3000); // Debounce 3s per key
 }
 

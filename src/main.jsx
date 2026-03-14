@@ -9,6 +9,8 @@ try {
       <App />
     </StrictMode>,
   )
+  // Cancel recovery watchdog — React mounted successfully
+  if (window.__wfRecoveryTimer) clearTimeout(window.__wfRecoveryTimer);
 } catch (e) {
   document.getElementById('root').innerHTML = '<pre style="color:red;padding:20px">' + e.message + '\n' + e.stack + '</pre>';
 }

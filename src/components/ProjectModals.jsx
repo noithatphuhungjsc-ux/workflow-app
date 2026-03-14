@@ -43,26 +43,25 @@ export function NewProjectModal({ onAdd, onClose }) {
     });
   };
 
-  // Dev accounts as fallback when no Supabase profiles
-  const DEV_STAFF_NEW = [
-    { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
-    { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
-    { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db" },
-    { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
-    { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
+  // Team accounts — authoritative list (only these show in member picker)
+  const TEAM_STAFF = [
+    { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6", role: "dev",     title: "Developer" },
+    { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c", role: "admin",   title: "Giám đốc" },
+    { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db", role: "manager", title: "Quản lý" },
+    { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60", role: "staff",   title: "Nhân viên" },
+    { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad", role: "staff",   title: "Nhân viên" },
   ];
-  // Merge: Supabase profiles first, then DEV accounts (skip if name matches existing)
-  const allProfiles = [...teamProfiles];
   const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
-  DEV_STAFF_NEW.forEach(d => {
-    if (!allProfiles.some(p => p.id === d.id || normalize(p.display_name) === normalize(d.display_name)))
-      allProfiles.push(d);
+  // Use team list as base, enrich with Supabase profile IDs if matched
+  const allProfiles = TEAM_STAFF.map(d => {
+    const supaMatch = teamProfiles.find(p => normalize(p.display_name) === normalize(d.display_name));
+    return supaMatch ? { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color } : d;
   });
-  // Filter out current user (Supabase id or localStorage dev id)
+  // Filter out current user
   const localSession = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
   const myName = normalize(localSession.name);
   const filteredProfiles = allProfiles.filter(p =>
-    p.id !== userId && p.id !== localSession.id && normalize(p.display_name) !== myName &&
+    p.id !== localSession.id && normalize(p.display_name) !== myName &&
     (!memberSearch || p.display_name?.toLowerCase().includes(memberSearch.toLowerCase()))
   );
 
@@ -367,9 +366,23 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
 
   const statusDot = (s) => s === "done" ? C.green : s === "inprogress" ? "#e67e22" : C.border;
 
-  // Profiles not yet in project
-  const availableProfiles = teamProfiles.filter(p =>
-    !members.some(m => m.supaId === p.id) &&
+  // Team accounts — authoritative list (filter out random OAuth profiles)
+  const TEAM_STAFF_EDIT = [
+    { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
+    { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
+    { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db" },
+    { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
+    { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
+  ];
+  const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
+  // Build clean profile list from team + enrich with Supabase IDs
+  const teamList = TEAM_STAFF_EDIT.map(d => {
+    const supaMatch = teamProfiles.find(p => norm(p.display_name) === norm(d.display_name));
+    return supaMatch ? { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color } : d;
+  });
+  // Profiles not yet in project (from team only)
+  const availableProfiles = teamList.filter(p =>
+    !members.some(m => (m.supaId && m.supaId === p.supaId) || norm(m.name) === norm(p.display_name)) &&
     (!memberSearch || p.display_name?.toLowerCase().includes(memberSearch.toLowerCase()))
   );
 
@@ -408,29 +421,21 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
         <div style={{ marginBottom:12, padding:"8px 10px", background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
           <div style={{ fontSize:11, fontWeight:700, color:C.text, marginBottom:6 }}>👥 Nhân sự ({members.length})</div>
           {(() => {
-            const DEV_STAFF = [
-              { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
-              { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
-              { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db" },
-              { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
-              { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
-            ];
-            const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
-            const allPeople = [...teamProfiles];
-            DEV_STAFF.forEach(d => { if (!allPeople.some(p => p.id === d.id || norm(p.display_name) === norm(d.display_name))) allPeople.push(d); });
+            // Use team list only — no random OAuth profiles
+            const allPeople = teamList;
             const isDevMode = teamProfiles.length === 0;
 
             return (
               <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
                 {allPeople.map(p => {
-                  const isMember = members.some(m => (m.supaId === p.id) || norm(m.name) === norm(p.display_name));
+                  const isMember = members.some(m => (p.supaId && m.supaId === p.supaId) || norm(m.name) === norm(p.display_name));
                   const isMe = norm(p.display_name) === norm(myName);
                   return (
                     <div key={p.id} className={isStaff ? "" : "tap"} onClick={() => {
                       if (isStaff) return;
                       if (isMember) {
                         if (isMe) return; // can't remove self
-                        const m = members.find(m => (m.supaId === p.id) || norm(m.name) === norm(p.display_name));
+                        const m = members.find(m => (p.supaId && m.supaId === p.supaId) || norm(m.name) === norm(p.display_name));
                         if (m) removeMember(m);
                       } else {
                         if (isDevMode) {

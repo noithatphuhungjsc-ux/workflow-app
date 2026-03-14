@@ -4,8 +4,8 @@
    ================================================================ */
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney } from "./constants";
-import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave } from "./services";
-import { supabase } from "./lib/supabase";
+import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll } from "./services";
+import { useSupabase } from "./contexts/SupabaseContext";
 
 /* ================================================================
    TASK REDUCER — immutable updates, soft delete support
@@ -117,6 +117,11 @@ const SettingsCtx   = createContext(null);
    TASK PROVIDER
    ================================================================ */
 export function AppProvider({ children, userId }) {
+  // Cloud operations use Supabase UUID (matches cross-user sync target IDs)
+  // localStorage operations keep using local userId ("mai", "hung", etc.)
+  const { session, loading: supaLoading } = useSupabase();
+  const cloudId = session?.user?.id || (!supaLoading ? userId : null);
+
   // --- Tasks ---
   const [allTasks, dispatch] = useReducer(taskReducer, [], () => {
     const saved = loadJSON("tasks", []);
@@ -142,7 +147,10 @@ export function AppProvider({ children, userId }) {
     if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("tasks", allTasks);
-    if (supabase && userId) scheduleSyncDebounced(supabase, userId, "tasks", allTasks);
+    if (cloudId) {
+      scheduleSyncDebounced(null, cloudId, "tasks", allTasks);
+      if (cloudId !== userId) cloudSave(null, userId, "tasks", allTasks);
+    }
 
     // Cross-user sync: copy assigned project tasks to assignee's localStorage + cloud
     const DEV_NAME_TO_ID = {
@@ -152,7 +160,7 @@ export function AppProvider({ children, userId }) {
     const currentPrefix = userKey("");
     // Group tasks by assignee for cloud sync
     const tasksByAssignee = {};
-    allTasks.filter(t => t.assignee && t.projectId && !t.deleted).forEach(t => {
+    allTasks.filter(t => t.assignee && !t.deleted).forEach(t => {
       const targetId = DEV_NAME_TO_ID[t.assignee];
       if (!targetId) return;
       const targetKey = `wf_${targetId}_tasks`;
@@ -171,7 +179,7 @@ export function AppProvider({ children, userId }) {
     });
     // Store tasksByAssignee for cloud sync in separate effect (after projects is declared)
     crossUserTasksRef.current = tasksByAssignee;
-  }, [allTasks, userId]);
+  }, [allTasks, userId, cloudId]);
 
   // Purge old deleted + roll overdue tasks on mount
   useEffect(() => {
@@ -182,63 +190,95 @@ export function AppProvider({ children, userId }) {
   // Cloud sync: push local data UP + pull missing data DOWN
   const cloudLoadedRef = useRef(false);
   useEffect(() => {
-    if (cloudLoadedRef.current || !supabase || !userId) return;
+    if (cloudLoadedRef.current || !cloudId) return;
     cloudLoadedRef.current = true;
     const localTasks = loadJSON("tasks", []);
     const localProjects = loadJSON("projects", []);
     const localExpenses = loadJSON("expenses", []);
-    // If local has data → push UP to cloud (ensures cloud is always fresh)
-    if (localTasks.length > 0) cloudSave(supabase, userId, "tasks", localTasks);
-    if (localProjects.length > 0) cloudSave(supabase, userId, "projects", localProjects);
-    if (localExpenses.length > 0) cloudSave(supabase, userId, "expenses", localExpenses);
-    // Load from cloud if ANY key is missing locally
-    if (localTasks.length > 0 && localProjects.length > 0) return;
+    // If local has data → push UP to cloud (save under BOTH cloudId and local userId)
+    if (localTasks.length > 0) {
+      cloudSave(null, cloudId, "tasks", localTasks);
+      if (cloudId !== userId) cloudSave(null, userId, "tasks", localTasks);
+    }
+    if (localProjects.length > 0) {
+      cloudSave(null, cloudId, "projects", localProjects);
+      if (cloudId !== userId) cloudSave(null, userId, "projects", localProjects);
+    }
+    if (localExpenses.length > 0) {
+      cloudSave(null, cloudId, "expenses", localExpenses);
+      if (cloudId !== userId) cloudSave(null, userId, "expenses", localExpenses);
+    }
+    // Always pull from cloud and MERGE (not replace) — ensures cross-user synced data arrives
     (async () => {
       try {
-        const { data, error } = await supabase.from("user_data").select("key, data").eq("user_id", userId);
-        if (error || !data?.length) return;
+        // Query by cloudId — also try local userId
+        let data = await cloudLoadAll(null, cloudId);
+        if ((!data?.length) && cloudId !== userId) {
+          data = await cloudLoadAll(null, userId);
+        }
+        if (!data?.length) return;
         let loaded = 0;
         for (const row of data) {
-          if (!row.data) continue;
-          // Load each key independently — only if local is empty for that key
-          if (row.key === "tasks" && localTasks.length === 0 && Array.isArray(row.data) && row.data.length > 0) {
-            dispatch({ type: "LOAD", tasks: row.data });
-            saveJSON("tasks", row.data);
+          if (!row.data || !Array.isArray(row.data)) {
+            // Non-array data (settings, memory, knowledge)
+            if (row.key === "settings" && typeof row.data === "object") {
+              setSettingsState(prev => { const m = { ...prev, ...row.data }; persistSettings(m); return m; });
+              loaded++;
+            }
+            if (row.key === "memory" && row.data) { setMemory(row.data); saveJSON("memory", row.data); loaded++; }
+            if (row.key === "wory_knowledge" && row.data) { setKnowledge(row.data); saveJSON("wory_knowledge", row.data); loaded++; }
+            continue;
+          }
+          if (row.data.length === 0) continue;
+
+          if (row.key === "tasks") {
+            if (localTasks.length === 0) {
+              // Empty local → full load
+              dispatch({ type: "LOAD", tasks: row.data });
+              saveJSON("tasks", row.data);
+            } else {
+              // Merge: add cloud items that don't exist locally (by id)
+              const localIds = new Set(localTasks.map(t => t.id));
+              const newItems = row.data.filter(t => !localIds.has(t.id));
+              if (newItems.length > 0) {
+                const merged = [...localTasks, ...newItems];
+                dispatch({ type: "LOAD", tasks: merged });
+                saveJSON("tasks", merged);
+              }
+            }
             loaded++;
           }
-          if (row.key === "projects" && localProjects.length === 0 && Array.isArray(row.data) && row.data.length > 0) {
-            projDispatch({ type: "PROJ_LOAD", items: row.data });
-            saveJSON("projects", row.data);
+          if (row.key === "projects") {
+            if (localProjects.length === 0) {
+              projDispatch({ type: "PROJ_LOAD", items: row.data });
+              saveJSON("projects", row.data);
+            } else {
+              const localIds = new Set(localProjects.map(p => p.id));
+              const newItems = row.data.filter(p => !localIds.has(p.id));
+              if (newItems.length > 0) {
+                const merged = [...localProjects, ...newItems];
+                projDispatch({ type: "PROJ_LOAD", items: merged });
+                saveJSON("projects", merged);
+              }
+            }
             loaded++;
           }
-          if (row.key === "expenses" && localExpenses.length === 0 && Array.isArray(row.data) && row.data.length > 0) {
-            row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
-            saveJSON("expenses", row.data);
-            loaded++;
-          }
-          if (row.key === "settings" && typeof row.data === "object") {
-            setSettingsState(prev => {
-              const merged = { ...prev, ...row.data };
-              persistSettings(merged);
-              return merged;
-            });
-            loaded++;
-          }
-          if (row.key === "memory" && row.data) {
-            setMemory(row.data);
-            saveJSON("memory", row.data);
-            loaded++;
-          }
-          if (row.key === "wory_knowledge" && row.data) {
-            setKnowledge(row.data);
-            saveJSON("wory_knowledge", row.data);
+          if (row.key === "expenses") {
+            if (localExpenses.length === 0) {
+              row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+              saveJSON("expenses", row.data);
+            } else {
+              const localIds = new Set(localExpenses.map(e => e.id));
+              const newItems = row.data.filter(e => !localIds.has(e.id));
+              newItems.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+            }
             loaded++;
           }
         }
-        if (loaded > 0) console.log(`Cloud sync: loaded ${loaded} items from cloud`);
+        if (loaded > 0) console.log(`Cloud sync: merged ${loaded} keys from cloud`);
       } catch (e) { console.warn("Cloud auto-load failed:", e); }
     })();
-  }, [userId]);
+  }, [cloudId, userId]);
 
   // --- Expenses (standalone ledger) ---
   const [expenses, expenseDispatch] = useReducer(expenseReducer, [], () => loadJSON("expenses", []));
@@ -247,8 +287,11 @@ export function AppProvider({ children, userId }) {
     if (!expLoadedRef.current) { expLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("expenses", expenses);
-    if (supabase && userId) scheduleSyncDebounced(supabase, userId, "expenses", expenses);
-  }, [expenses, userId]);
+    if (cloudId) {
+      scheduleSyncDebounced(null, cloudId, "expenses", expenses);
+      if (cloudId !== userId) cloudSave(null, userId, "expenses", expenses);
+    }
+  }, [expenses, userId, cloudId]);
 
   // --- Projects ---
   const [projects, projDispatch] = useReducer(projectReducer, [], () => loadJSON("projects", []));
@@ -257,17 +300,22 @@ export function AppProvider({ children, userId }) {
     if (!projLoadedRef.current) { projLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("projects", projects);
-    if (supabase && userId) scheduleSyncDebounced(supabase, userId, "projects", projects);
+    if (cloudId) {
+      scheduleSyncDebounced(null, cloudId, "projects", projects);
+      if (cloudId !== userId) cloudSave(null, userId, "projects", projects);
+    }
 
     // Cross-user sync: share projects with all members
-    const DEV_IDS = ["trinh", "lien", "hung", "mai", "duc"];
+    const DEV_NAME_MAP = {
+      "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
+      "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+    };
     const currentPrefix = userKey("");
     projects.forEach(proj => {
       if (!proj.members?.length) return;
       proj.members.forEach(m => {
-        const targetId = DEV_IDS.find(id => id === m.id || `wf_${id}_` === currentPrefix);
-        const memberId = m.id || m.supaId;
-        const devId = DEV_IDS.find(id => id === memberId);
+        // Match by member name → local user ID
+        const devId = DEV_NAME_MAP[m.name];
         if (!devId || `wf_${devId}_` === currentPrefix) return;
         const targetKey = `wf_${devId}_projects`;
         try {
@@ -282,48 +330,43 @@ export function AppProvider({ children, userId }) {
         } catch {}
       });
     });
-  }, [projects, userId]);
+  }, [projects, userId, cloudId]);
 
-  // Cross-user CLOUD sync: push assigned tasks+projects to assignee's Supabase
+  // Cross-user CLOUD sync: push assigned tasks+projects to assignee's cloud
   const crossSyncTimerRef = useRef(null);
   useEffect(() => {
     const tasksByAssignee = crossUserTasksRef.current;
-    if (!supabase || !userId || !Object.keys(tasksByAssignee).length) return;
+    if (!cloudId || !Object.keys(tasksByAssignee).length) return;
     clearTimeout(crossSyncTimerRef.current);
     crossSyncTimerRef.current = setTimeout(async () => {
       try {
-        let profs;
-        const { data: pD, error: pE } = await supabase.from("profiles").select("id, display_name, email");
-        profs = pE ? (await supabase.from("profiles").select("id, display_name")).data : pD;
-        if (!profs) return;
-        const DEV_EMAIL_MAP = { "Tran Thi Mai": "noithatphuhung.jsc@gmail.com" };
-        const norm = s => (s || "").toLowerCase().trim();
+        const DEV_NAME_TO_LOCAL_ID = {
+          "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
+          "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+        };
         for (const [name, tasks] of Object.entries(tasksByAssignee)) {
-          const email = DEV_EMAIL_MAP[name];
-          let p = profs.find(x => norm(x.display_name) === norm(name));
-          if (!p && email) p = profs.find(x => norm(x.email) === norm(email));
-          if (!p) { const parts = name.toLowerCase().split(" "); p = profs.find(x => parts.some(pt => pt.length > 2 && norm(x.display_name).includes(pt))); }
-          if (!p || p.id === userId) continue;
-          // Merge tasks
-          const { data: ex } = await supabase.from("user_data").select("data").eq("user_id", p.id).eq("key", "tasks").maybeSingle();
-          const cloud = (ex?.data && Array.isArray(ex.data)) ? ex.data : [];
+          const localId = DEV_NAME_TO_LOCAL_ID[name];
+          if (!localId || localId === userId) continue;
+          // Load existing cloud data for target via API
+          const exResult = await cloudLoad(null, localId, "tasks");
+          const cloud = (exResult?.data && Array.isArray(exResult.data)) ? exResult.data : [];
           let merged = [...cloud];
           for (const t of tasks) { const i = merged.findIndex(e => e.id === t.id); if (i >= 0) merged[i] = { ...merged[i], ...t }; else merged.push(t); }
-          await cloudSave(supabase, p.id, "tasks", merged);
+          await cloudSave(null, localId, "tasks", merged);
           // Merge projects
           const projIds = [...new Set(tasks.map(t => t.projectId))];
           const projs = projIds.map(pid => projects.find(pr => pr.id === pid)).filter(Boolean);
           if (projs.length) {
-            const { data: exP } = await supabase.from("user_data").select("data").eq("user_id", p.id).eq("key", "projects").maybeSingle();
+            const exP = await cloudLoad(null, localId, "projects");
             const cP = (exP?.data && Array.isArray(exP.data)) ? exP.data : [];
             let mP = [...cP];
             for (const pr of projs) { const i = mP.findIndex(e => e.id === pr.id); if (i >= 0) mP[i] = { ...mP[i], ...pr }; else mP.push(pr); }
-            await cloudSave(supabase, p.id, "projects", mP);
+            await cloudSave(null, localId, "projects", mP);
           }
         }
       } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
     }, 5000);
-  }, [allTasks, projects, userId]);
+  }, [allTasks, projects, cloudId, userId]);
 
   const addProject = useCallback((item) => { projDispatch({ type: "PROJ_ADD", item }); }, []);
   const patchProject = useCallback((id, data) => { projDispatch({ type: "PROJ_PATCH", id, data }); }, []);
@@ -360,10 +403,13 @@ export function AppProvider({ children, userId }) {
     setSettingsState(prev => {
       const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
       persistSettings(next);
-      if (supabase && userId) scheduleSyncDebounced(supabase, userId, "settings", next);
+      if (cloudId) {
+        scheduleSyncDebounced(null, cloudId, "settings", next);
+        if (cloudId !== userId) cloudSave(null, userId, "settings", next);
+      }
       return next;
     });
-  }, [userId]);
+  }, [cloudId]);
 
   // --- Undo toast ---
   const [undoToast, setUndoToast] = useState(null);

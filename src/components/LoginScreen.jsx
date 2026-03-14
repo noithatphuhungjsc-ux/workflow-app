@@ -5,13 +5,13 @@ import { useState, useEffect } from "react";
 import { C } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
-const ACCOUNTS_VERSION = 5; // bump to force re-init passwords
+const ACCOUNTS_VERSION = 6; // bump to force re-init (added email)
 const DEFAULT_ACCOUNTS = [
-  { id: "trinh", name: "Nguyen Duy Trinh", phone: "+84983523868", pw: "111111", role: "dev",     title: "Developer" },
-  { id: "lien",  name: "Lientran",         phone: "+84931512984", pw: "111111", role: "admin",   title: "Giám đốc" },
-  { id: "hung",  name: "Pham Van Hung",    phone: "+84901234567", pw: "111111", role: "manager", title: "Quản lý dự án" },
-  { id: "mai",   name: "Tran Thi Mai",     phone: "+84912345678", pw: "111111", role: "staff",   title: "Nhân viên" },
-  { id: "duc",   name: "Le Minh Duc",      phone: "+84923456789", pw: "111111", role: "staff",   title: "Nhân viên" },
+  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn",  phone: "+84983523868", pw: "111111", role: "dev",     title: "Developer" },
+  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",   phone: "+84931512984", pw: "111111", role: "admin",   title: "Giám đốc" },
+  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",   phone: "+84901234567", pw: "111111", role: "manager", title: "Quản lý dự án" },
+  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",    phone: "+84912345678", pw: "111111", role: "staff",   title: "Nhân viên" },
+  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",    phone: "+84923456789", pw: "111111", role: "staff",   title: "Nhân viên" },
 ];
 
 // Init default accounts with hashed passwords
@@ -24,6 +24,7 @@ async function initAccounts() {
     accounts[a.id] = {
       id: a.id,
       name: a.name,
+      email: a.email || "",
       pwHash: await hashPassword(a.pw),
       twoFA: accounts[a.id]?.twoFA || false,
       phone: a.phone,
@@ -45,9 +46,13 @@ export default function LoginScreen({ onLogin }) {
   const [pendingUser, setPendingUser] = useState(null);
   const [otpSent, setOtpSent]        = useState("");
   const [otpInput, setOtpInput]      = useState("");
+  // Dev mode: ONLY accessible via ?dev URL param — no other way
+  const devMode = new URLSearchParams(window.location.search).has("dev");
   const [otpCountdown, setOtpCountdown] = useState(0);
 
-  useEffect(() => { initAccounts().then(setAccounts); }, []);
+  useEffect(() => {
+    initAccounts().then(accs => setAccounts(accs));
+  }, []);
 
   useEffect(() => {
     if (otpCountdown <= 0) return;
@@ -57,16 +62,18 @@ export default function LoginScreen({ onLogin }) {
 
   const handleLogin = async () => {
     if (!accounts) return;
-    if (!username.trim() || !password.trim()) { setError("Vui lòng nhập đầy đủ."); return; }
+    if (!username.trim() || !password.trim()) { setError("Vui lòng nhập email và mật khẩu."); return; }
     setLoading(true);
     setError("");
     const pwHash = await hashPassword(password);
+    const input = username.trim().toLowerCase();
+    // Match by email (primary), also fallback to id/name for dev mode
     const account = Object.values(accounts).find(a => {
-      const nameMatch = a.name.toLowerCase() === username.trim().toLowerCase() || a.id === username.trim().toLowerCase();
-      return nameMatch && a.pwHash === pwHash;
+      const match = (a.email && a.email.toLowerCase() === input) || a.id === input || a.name.toLowerCase() === input;
+      return match && a.pwHash === pwHash;
     });
     setLoading(false);
-    if (!account) { setError("Sai tên đăng nhập hoặc mật khẩu."); return; }
+    if (!account) { setError("Sai email hoặc mật khẩu."); return; }
 
     if (account.twoFA && account.phone) {
       const otp = generateOTP();
@@ -89,7 +96,7 @@ export default function LoginScreen({ onLogin }) {
   };
 
   const completeLogin = (account) => {
-    localStorage.setItem("wf_session", JSON.stringify({ id: account.id, name: account.name, role: account.role || "staff", title: account.title || "", loginAt: Date.now() }));
+    localStorage.setItem("wf_session", JSON.stringify({ id: account.id, name: account.name, email: account.email || "", phone: account.phone || "", role: account.role || "staff", title: account.title || "", loginAt: Date.now() }));
     // Auto-set userRole in settings for this account (admin uses manager UI)
     const settingsKey = `wf_${account.id}_settings`;
     try {
@@ -98,6 +105,12 @@ export default function LoginScreen({ onLogin }) {
       s.displayName = s.displayName || account.name;
       localStorage.setItem(settingsKey, JSON.stringify(s));
     } catch {}
+    // Auto-create Supabase profile for local accounts (non-blocking)
+    fetch("/api/cloud-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "ensure_profile", userId: account.id, displayName: account.name }),
+    }).catch(() => {});
     onLogin(account);
   };
 
@@ -177,7 +190,7 @@ export default function LoginScreen({ onLogin }) {
           {/* Inputs */}
           <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:20 }}>
             <input value={username} onChange={e => setUsername(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()}
-              placeholder="Tên đăng nhập" aria-label="Tên đăng nhập"
+              placeholder="Email công ty" aria-label="Email" type="email" autoComplete="email"
               onFocus={e => e.target.style.borderColor = "#c8956c"}
               onBlur={e => e.target.style.borderColor = C.border}
               style={inputStyle} />
@@ -200,14 +213,14 @@ export default function LoginScreen({ onLogin }) {
             {loading ? "Đang xác thực..." : "Đăng Nhập →"}
           </button>
 
-          {/* Divider */}
+          {/* Dev quick login — hidden by default, show with ?dev or 5x logo tap */}
+          {devMode && <>
           <div style={{ display:"flex", alignItems:"center", gap:12, margin:"18px 0" }}>
             <div style={{ flex:1, height:1, background:C.border }} />
             <span style={{ fontSize:12, color:C.muted }}>hoặc</span>
             <div style={{ flex:1, height:1, background:C.border }} />
           </div>
 
-          {/* Quick dev login — all test accounts */}
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             <div style={{ fontSize:10, color:C.muted, fontWeight:600, textAlign:"center", letterSpacing:.5 }}>CHỌN NHANH (DEV)</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
@@ -224,12 +237,14 @@ export default function LoginScreen({ onLogin }) {
                     <div style={{ flex:1, minWidth:0, textAlign:"left" }}>
                       <div style={{ fontSize:12, fontWeight:700, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.name.split(" ").pop()}</div>
                       <div style={{ fontSize:9, color:roleColors[role], fontWeight:700 }}>{roleLabels[role]} · {a.title || role}</div>
+                      {a.email && <div style={{ fontSize:8, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.email}</div>}
                     </div>
                   </button>
                 );
               })}
             </div>
           </div>
+          </>}
 
         </div>
 

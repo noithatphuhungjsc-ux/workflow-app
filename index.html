@@ -19,6 +19,47 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Recovery: if React doesn't render in 4s, nuke SW cache and reload -->
+    <script>
+      (function() {
+        var RK = 'wf_recovered_v139';
+        // Step 1: Always proactively clear old caches on load
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) {
+              if (k.indexOf('v139') === -1) caches.delete(k);
+            });
+          });
+        }
+        // Step 2: If already recovered this session, skip timeout check
+        if (sessionStorage.getItem(RK)) return;
+        // Step 3: Set a 4s watchdog — if React mounts, it cancels this
+        window.__wfRecoveryTimer = setTimeout(function() {
+          // React didn't mount → app is stuck/crashed
+          if (document.getElementById('root') && document.getElementById('root').childNodes.length > 0) return;
+          console.warn('[WF] App failed to load, clearing all caches...');
+          sessionStorage.setItem(RK, '1');
+          var tasks = [];
+          if ('serviceWorker' in navigator) {
+            tasks.push(
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                return Promise.all(regs.map(function(r) { return r.unregister(); }));
+              })
+            );
+          }
+          if ('caches' in window) {
+            tasks.push(
+              caches.keys().then(function(keys) {
+                return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+              })
+            );
+          }
+          Promise.all(tasks).then(function() { location.reload(); }).catch(function() { location.reload(); });
+        }, 4000);
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
@@ -27,7 +68,7 @@
           regs.forEach(r => r.update());
         });
         caches.keys().then(keys => keys.forEach(k => {
-          if (!k.includes('v64')) caches.delete(k);
+          if (!k.includes('v139')) caches.delete(k);
         }));
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').catch(() => {});

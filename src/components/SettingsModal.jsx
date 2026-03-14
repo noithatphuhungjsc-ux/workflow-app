@@ -45,9 +45,11 @@ export default function SettingsModal({ user, onClose }) {
     })();
   }, [user.id, user.name]);
 
+  // Auto-populate from session (email, phone, title stored at login)
+  const sessionData = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
   const [displayName, setDisplayName] = useState(settings.displayName || user.name);
-  const [email, setEmail] = useState(settings.email || "");
-  const [profilePhone, setProfilePhone] = useState(settings.profilePhone || "");
+  const [email, setEmail] = useState(settings.email || sessionData.email || myAcc?.email || "");
+  const [profilePhone, setProfilePhone] = useState(settings.profilePhone || sessionData.phone || myAcc?.phone || "");
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [cfmPw, setCfmPw] = useState("");
@@ -59,7 +61,7 @@ export default function SettingsModal({ user, onClose }) {
   const IS = { width:"100%", background:C.card, border:`1.5px solid ${C.border}`, borderRadius:12, padding:"12px 16px", fontSize:15, color:C.text };
 
   const saveProfile = () => {
-    setSettings({ displayName: displayName.trim(), email: email.trim(), profilePhone: profilePhone.trim() });
+    setSettings({ displayName: displayName.trim(), email: email.trim() || sessionData.email || "", profilePhone: profilePhone.trim() });
     showMsg("Đã lưu hồ sơ!");
   };
 
@@ -233,16 +235,16 @@ export default function SettingsModal({ user, onClose }) {
           {/* ======== HỒ SƠ ======== */}
           {tab === "profile" && (<>
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>TÀI KHOẢN</div>
-              <div style={{ ...IS, background:C.bg, color:C.sub }}>@{user.id}</div>
+              <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>EMAIL (TÀI KHOẢN CÔNG TY)</div>
+              <div style={{ ...IS, background:C.bg, color:C.sub }}>{email || sessionData.email || "Chưa có"}</div>
             </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>TÊN HIỂN THỊ</div>
               <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={IS} placeholder="Tên của bạn..." />
             </div>
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>EMAIL</div>
-              <input value={email} onChange={e => setEmail(e.target.value)} style={IS} placeholder="example@email.com" type="email" />
+              <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>CHỨC DANH</div>
+              <div style={{ ...IS, background:C.bg, color:C.sub }}>{sessionData.title || user.title || "Nhân viên"}</div>
             </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>SỐ ĐIỆN THOẠI</div>

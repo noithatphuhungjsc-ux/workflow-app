@@ -68,7 +68,12 @@ export function useConversations(userId) {
       };
     });
 
-    setConversations(enriched);
+    // Only update state if data actually changed (prevents flicker from polling)
+    setConversations(prev => {
+      const prevKey = JSON.stringify(prev.map(c => ({ id: c.id, lm: c.lastMessage?.created_at, u: c.unreadCount })));
+      const nextKey = JSON.stringify(enriched.map(c => ({ id: c.id, lm: c.lastMessage?.created_at, u: c.unreadCount })));
+      return prevKey === nextKey ? prev : enriched;
+    });
     setLoading(false);
     initialLoadDone.current = true;
   }, [userId]);

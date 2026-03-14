@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkFlow - Reset Cache</title>
+  <style>
+    body { font-family: system-ui; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #1a1a2e; color: #e0e0e0; }
+    .box { text-align: center; padding: 2rem; max-width: 400px; }
+    h2 { color: #6a7fd4; }
+    .status { margin: 1rem 0; padding: 1rem; background: #2a2a3e; border-radius: 8px; font-size: 14px; }
+    .ok { color: #4caf50; }
+    .err { color: #f44336; }
+    button { background: #6a7fd4; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Reset Cache</h2>
+    <div class="status" id="status">Dang xoa cache...</div>
+    <button onclick="location.href='/'" id="btn" style="display:none">Mo lai app</button>
+  </div>
+  <script>
+    (async function() {
+      var el = document.getElementById('status');
+      var btn = document.getElementById('btn');
+      var steps = [];
+      try {
+        // 1. Unregister all service workers
+        if ('serviceWorker' in navigator) {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          for (var r of regs) { await r.unregister(); }
+          steps.push('Service Workers: da xoa (' + regs.length + ')');
+        }
+        // 2. Clear all caches
+        if ('caches' in window) {
+          var keys = await caches.keys();
+          for (var k of keys) { await caches.delete(k); }
+          steps.push('Cache Storage: da xoa (' + keys.length + ')');
+        }
+        // 3. Clear sessionStorage
+        sessionStorage.clear();
+        steps.push('Session Storage: da xoa');
+
+        el.innerHTML = '<span class="ok">Thanh cong!</span><br><br>' + steps.join('<br>');
+        btn.style.display = 'inline-block';
+      } catch(e) {
+        el.innerHTML = '<span class="err">Loi: ' + e.message + '</span>';
+        btn.style.display = 'inline-block';
+      }
+    })();
+  </script>
+</body>
+</html>

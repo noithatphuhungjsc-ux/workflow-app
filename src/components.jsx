@@ -477,17 +477,17 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
 
 /* -- UserMenu -- */
 const DEV_ROLES = [
-  { id: "trinh", name: "Nguyen Duy Trinh", role: "dev",     title: "Developer",     color: "#9b59b6" },
-  { id: "lien",  name: "Lientran",         role: "admin",   title: "Giám đốc",      color: "#e74c3c" },
-  { id: "hung",  name: "Pham Van Hung",    role: "manager", title: "Quản lý dự án", color: "#3498db" },
-  { id: "mai",   name: "Tran Thi Mai",     role: "staff",   title: "Nhân viên",     color: "#27ae60" },
-  { id: "duc",   name: "Le Minh Duc",      role: "staff",   title: "Nhân viên",     color: "#8e44ad" },
+  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn", phone: "+84983523868", role: "dev",     title: "Developer",     color: "#9b59b6" },
+  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",  phone: "+84931512984", role: "admin",   title: "Giám đốc",      color: "#e74c3c" },
+  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",  phone: "+84901234567", role: "manager", title: "Quản lý dự án", color: "#3498db" },
+  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",   phone: "+84912345678", role: "staff",   title: "Nhân viên",     color: "#27ae60" },
+  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",   phone: "+84923456789", role: "staff",   title: "Nhân viên",     color: "#8e44ad" },
 ];
 const ROLE_LABELS = { dev: "DEV", admin: "AD", manager: "QL", staff: "NV" };
 const ROLE_COLORS = { dev: "#9b59b6", admin: "#e74c3c", manager: "#c8956c", staff: "#27ae60" };
 
 function switchToAccount(acc) {
-  localStorage.setItem("wf_session", JSON.stringify({ id: acc.id, name: acc.name, role: acc.role, title: acc.title, loginAt: Date.now() }));
+  localStorage.setItem("wf_session", JSON.stringify({ id: acc.id, name: acc.name, email: acc.email || "", phone: acc.phone || "", role: acc.role, title: acc.title, loginAt: Date.now() }));
   const settingsKey = `wf_${acc.id}_settings`;
   try {
     const s = JSON.parse(localStorage.getItem(settingsKey) || "{}");
@@ -545,88 +545,46 @@ export function UserMenu({ user, onLogout, onSettings }) {
             </button>
           </div>
 
-          {/* Dev role switcher */}
-          <div style={{ padding:"6px 10px 4px", fontSize:9, fontWeight:700, color:C.muted, letterSpacing:.5 }}>CHUYỂN VAI TRÒ (DEV)</div>
-          {DEV_ROLES.map(acc => {
-            const isCurrent = acc.id === user.id;
-            return (
-              <button key={acc.id} className="tap" onClick={() => { if (!isCurrent) { setOpen(false); switchToAccount(acc); } }}
-                style={{
-                  width:"100%", display:"flex", alignItems:"center", gap:8,
-                  padding:"8px 10px", background: isCurrent ? `${acc.color}10` : "transparent",
-                  border:"none", cursor: isCurrent ? "default" : "pointer",
-                }}>
-                <div style={{
-                  width:26, height:26, borderRadius:"50%", background:acc.color,
-                  color:"#fff", fontSize:11, fontWeight:700,
-                  display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
-                  border: isCurrent ? "2px solid #fff" : "none",
-                  boxShadow: isCurrent ? `0 0 0 1.5px ${acc.color}` : "none",
-                }}>
-                  {acc.name.charAt(0)}
-                </div>
-                <div style={{ flex:1, textAlign:"left", minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight: isCurrent ? 700 : 500, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                    {acc.name.split(" ").pop()}
+          {/* Dev role switcher — only for dev role + ?dev URL */}
+          {currentDev?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && <>
+            <div style={{ padding:"6px 10px 4px", fontSize:9, fontWeight:700, color:C.muted, letterSpacing:.5 }}>CHUYỂN VAI TRÒ (DEV)</div>
+            {DEV_ROLES.map(acc => {
+              const isCurrent = acc.id === user.id;
+              return (
+                <button key={acc.id} className="tap" onClick={() => { if (!isCurrent) { setOpen(false); switchToAccount(acc); } }}
+                  style={{
+                    width:"100%", display:"flex", alignItems:"center", gap:8,
+                    padding:"8px 10px", background: isCurrent ? `${acc.color}10` : "transparent",
+                    border:"none", cursor: isCurrent ? "default" : "pointer",
+                  }}>
+                  <div style={{
+                    width:26, height:26, borderRadius:"50%", background:acc.color,
+                    color:"#fff", fontSize:11, fontWeight:700,
+                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                    border: isCurrent ? "2px solid #fff" : "none",
+                    boxShadow: isCurrent ? `0 0 0 1.5px ${acc.color}` : "none",
+                  }}>
+                    {acc.name.charAt(0)}
                   </div>
-                </div>
-                <span style={{ fontSize:9, color:acc.color, fontWeight:700 }}>{ROLE_LABELS[acc.role]}</span>
-                {isCurrent && <span style={{ fontSize:9, color:acc.color }}>●</span>}
-              </button>
-            );
-          })}
-          <div style={{ height:6 }} />
+                  <div style={{ flex:1, textAlign:"left", minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight: isCurrent ? 700 : 500, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {acc.name.split(" ").pop()}
+                    </div>
+                  </div>
+                  <span style={{ fontSize:9, color:acc.color, fontWeight:700 }}>{ROLE_LABELS[acc.role]}</span>
+                  {isCurrent && <span style={{ fontSize:9, color:acc.color }}>●</span>}
+                </button>
+              );
+            })}
+            <div style={{ height:6 }} />
+          </>}
         </div>
       )}
     </div>
   );
 }
 
-// Dev role switcher panel (used as a tab)
-export function DevRoleSwitcher({ currentUserId }) {
-  return (
-    <div style={{ animation:"fadeIn .2s" }}>
-      <div style={{ fontSize:12, fontWeight:700, color:C.muted, marginBottom:10, letterSpacing:.5, textAlign:"center" }}>CHUYỂN TÀI KHOẢN (DEV)</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-        {DEV_ROLES.map(acc => {
-          const isCurrent = acc.id === currentUserId;
-          return (
-            <button key={acc.id} className="tap" onClick={() => { if (!isCurrent) switchToAccount(acc); }}
-              style={{
-                display:"flex", alignItems:"center", gap:12, padding:"12px 14px",
-                background: isCurrent ? `${acc.color}12` : C.card,
-                border: isCurrent ? `2px solid ${acc.color}` : `1px solid ${C.border}`,
-                borderRadius:14, cursor: isCurrent ? "default" : "pointer",
-              }}>
-              <div style={{
-                width:40, height:40, borderRadius:"50%", background:acc.color,
-                color:"#fff", fontSize:16, fontWeight:700,
-                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
-              }}>
-                {acc.name.charAt(0)}
-              </div>
-              <div style={{ flex:1, textAlign:"left" }}>
-                <div style={{ fontSize:14, fontWeight:700, color:C.text }}>
-                  {acc.name}
-                  {isCurrent && <span style={{ fontSize:10, color:acc.color, marginLeft:6, fontWeight:600 }}>hiện tại</span>}
-                </div>
-                <div style={{ fontSize:11, color:acc.color, fontWeight:700 }}>{ROLE_LABELS[acc.role]} · {acc.title}</div>
-              </div>
-              <div style={{ fontSize:10, color:C.muted, textAlign:"right" }}>
-                <div>{acc.role === "admin" ? "Toàn quyền" : acc.role === "manager" ? "Quản lý" : "Thực thi"}</div>
-                <div style={{ fontSize:9 }}>MK: 111111</div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      <div style={{ fontSize:10, color:C.muted, textAlign:"center", marginTop:12, lineHeight:1.6 }}>
-        Mỗi tài khoản có dữ liệu riêng biệt.<br/>
-        Trong thực tế, vai trò do Admin cài đặt.
-      </div>
-    </div>
-  );
-}
+/* DevRoleSwitcher removed — dev-only feature now only in UserMenu with ?dev */
 
 /* -- Undo Toast -- */
 export function UndoToast({ toast, onUndo }) {

@@ -8,30 +8,10 @@ export function SupabaseProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Listen auth state
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
 
     const init = async () => {
-      // Handle OAuth hash tokens (implicit flow)
-      const hash = window.location.hash.substring(1);
-      if (hash && hash.includes("access_token")) {
-        const params = new URLSearchParams(hash);
-        const access_token = params.get("access_token");
-        const refresh_token = params.get("refresh_token");
-        if (access_token && refresh_token) {
-          const { data } = await supabase.auth.setSession({ access_token, refresh_token });
-          window.history.replaceState({}, "", window.location.pathname);
-          if (data?.session) {
-            setSession(data.session);
-            fetchProfile(data.session.user.id);
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      // Normal session check
       const { data: { session: s } } = await supabase.auth.getSession();
       setSession(s);
       if (s) fetchProfile(s.user.id);
@@ -52,77 +32,42 @@ export function SupabaseProvider({ children }) {
   const fetchProfile = async (uid) => {
     const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
     if (data) {
-      // Update email if missing (safe — ignores if column doesn't exist)
-      if (!data.email) {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user?.email) {
-            await supabase.from("profiles").update({ email: user.email }).eq("id", uid);
-            data.email = user.email;
-          }
-        } catch {}
-      }
       setProfile(data);
       return;
     }
 
-    // Auto-create profile for OAuth users (Google, etc.)
+    // Auto-create profile if not exists
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "User";
-      // Try with email first, fallback without
-      let newProfile;
-      const { data: p1, error: e1 } = await supabase.from("profiles").upsert({
-        id: uid, display_name: name, email: user.email || null,
+      const name = user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
+      const { data: created } = await supabase.from("profiles").upsert({
+        id: uid, display_name: name,
       }, { onConflict: "id" }).select().single();
-      if (e1) {
-        const { data: p2 } = await supabase.from("profiles").upsert({
-          id: uid, display_name: name,
-        }, { onConflict: "id" }).select().single();
-        newProfile = p2;
-      } else {
-        newProfile = p1;
-      }
-      if (newProfile) setProfile(newProfile);
+      if (created) setProfile(created);
     }
   };
 
-  // Sign up
-  const signUp = useCallback(async (email, password, displayName, legacyId) => {
+  // Sign up (email + password)
+  const signUp = useCallback(async (email, password, displayName) => {
     if (!supabase) return { error: "Supabase chưa được cấu hình" };
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error: error.message };
-
     if (data.user) {
-      const { error: pErr } = await supabase.from("profiles").insert({
-        id: data.user.id,
-        display_name: displayName || email.split("@")[0],
-        legacy_id: legacyId || null,
-      });
-      if (pErr) return { error: pErr.message };
+      try {
+        await supabase.from("profiles").upsert({
+          id: data.user.id,
+          display_name: displayName || email.split("@")[0],
+        }, { onConflict: "id" });
+      } catch {}
       await fetchProfile(data.user.id);
     }
     return { data };
   }, []);
 
-  // Sign in
+  // Sign in (email + password)
   const signIn = useCallback(async (email, password) => {
     if (!supabase) return { error: "Supabase chưa được cấu hình" };
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    return { data };
-  }, []);
-
-  // Sign in with Google
-  const signInWithGoogle = useCallback(async () => {
-    if (!supabase) return { error: "Supabase chưa được cấu hình" };
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: window.location.origin,
-        queryParams: { prompt: "select_account" },
-      },
-    });
     if (error) return { error: error.message };
     return { data };
   }, []);
@@ -136,14 +81,8 @@ export function SupabaseProvider({ children }) {
   }, []);
 
   const value = {
-    supabase,
-    session,
-    profile,
-    loading,
-    signUp,
-    signIn,
-    signInWithGoogle,
-    signOut,
+    supabase, session, profile, loading,
+    signUp, signIn, signOut,
     isConnected: !!session,
   };
 

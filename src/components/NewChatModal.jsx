@@ -38,6 +38,10 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
 
+  // Team member names — only show known team, filter out random OAuth profiles
+  const TEAM_NAMES = ["Nguyen Duy Trinh", "Lientran", "Pham Van Hung", "Tran Thi Mai", "Le Minh Duc"];
+  const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
+
   useEffect(() => {
     if (!supabase || !userId) return;
     (async () => {
@@ -45,7 +49,9 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
         .from("profiles")
         .select("id, display_name, avatar_color")
         .neq("id", userId);
-      setTeamMembers(data || []);
+      // Filter to only team members
+      const filtered = (data || []).filter(p => TEAM_NAMES.some(n => norm(n) === norm(p.display_name)));
+      setTeamMembers(filtered);
       setLoading(false);
     })();
   }, [userId]);
