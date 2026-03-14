@@ -52,10 +52,18 @@ export function NewProjectModal({ onAdd, onClose }) {
     { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad", role: "staff",   title: "Nhân viên" },
   ];
   const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
-  // Use team list as base, enrich with Supabase profile IDs if matched
+  // Use team list as base, enrich with Supabase profile IDs
   const allProfiles = TEAM_STAFF.map(d => {
     const supaMatch = teamProfiles.find(p => normalize(p.display_name) === normalize(d.display_name));
-    return supaMatch ? { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color } : d;
+    if (supaMatch) return { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color };
+    // Fallback: try matching by first/last name fragments
+    const fallback = teamProfiles.find(p => {
+      const pn = normalize(p.display_name);
+      const dn = normalize(d.display_name);
+      return pn.includes(dn) || dn.includes(pn);
+    });
+    if (fallback) return { ...d, supaId: fallback.id, avatar_color: fallback.avatar_color || d.avatar_color };
+    return d;
   });
   // Filter out current user
   const localSession = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
@@ -106,7 +114,7 @@ export function NewProjectModal({ onAdd, onClose }) {
       steps: finalSteps,
       workflowId: null,
       members,
-      selectedSupaMembers: selectedMembers.map(m => m.supaId), // Supabase user IDs to add to chat
+      selectedSupaMembers: selectedMembers.map(m => m.supaId).filter(Boolean), // Supabase user IDs to add to chat
     });
   };
 
