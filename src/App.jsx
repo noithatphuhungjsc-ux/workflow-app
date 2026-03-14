@@ -1113,6 +1113,60 @@ QUY TAC BAT BUOC:
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
             <Filters filter={filter} setFilter={setFilter} />
+            {/* Manager project dashboard when viewing all */}
+            {!isStaff && (projFilter === "all") && projects.filter(p => !p.archived).length > 0 && (
+              <div style={{ marginBottom:12 }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                  <span style={{ fontSize:13, fontWeight:700, color:C.text }}>Dự án ({projects.filter(p => !p.archived).length})</span>
+                  <button className="tap" onClick={() => setNewProjOpen(true)}
+                    style={{ fontSize:11, padding:"4px 10px", borderRadius:8, border:`1px solid ${C.accent}44`, background:C.accentD, color:C.accent, fontWeight:700 }}>+ Tạo</button>
+                </div>
+                {projects.filter(p => !p.archived).map(p => {
+                  const pTasks = tasks.filter(t => t.projectId === p.id);
+                  const pDone = pTasks.filter(t => t.status === "done").length;
+                  const pTotal = pTasks.length;
+                  const pct = pTotal > 0 ? Math.round((pDone / pTotal) * 100) : 0;
+                  const pOverdue = pTasks.filter(isOverdue).length;
+                  const pInProgress = pTasks.filter(t => t.status === "inprogress").length;
+                  const members = [...new Set(pTasks.map(t => t.assignee).filter(Boolean))];
+                  return (
+                    <div key={p.id} className="tap" onClick={() => setProjFilter(p.id)}
+                      style={{ marginBottom:6, padding:"10px 12px", background:C.card, borderRadius:12, border:`1px solid ${C.border}`, cursor:"pointer",
+                        borderLeft:`3px solid ${pct === 100 ? C.green : pOverdue > 0 ? C.red : C.accent}` }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                        <span style={{ fontSize:14 }}>{pct === 100 ? "✅" : "📂"}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:700, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                          <div style={{ fontSize:10, color:C.muted }}>{members.length > 0 ? members.map(m => m.split(" ").pop()).join(", ") : "Chưa giao"}</div>
+                        </div>
+                        <div style={{ textAlign:"right", flexShrink:0 }}>
+                          <div style={{ fontSize:14, fontWeight:800, color: pct === 100 ? C.green : C.accent }}>{pct}%</div>
+                          <div style={{ fontSize:9, color:C.muted }}>{pDone}/{pTotal} việc</div>
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{ height:4, borderRadius:2, background:C.bg, overflow:"hidden" }}>
+                        <div style={{ height:"100%", width:`${pct}%`, borderRadius:2, background: pct === 100 ? C.green : pOverdue > 0 ? `linear-gradient(90deg,${C.red},${C.accent})` : C.accent, transition:"width .3s" }} />
+                      </div>
+                      {/* Quick stats */}
+                      <div style={{ display:"flex", gap:8, marginTop:5 }}>
+                        {pInProgress > 0 && <span style={{ fontSize:9, color:C.accent, fontWeight:600 }}>▶ {pInProgress} đang làm</span>}
+                        {pOverdue > 0 && <span style={{ fontSize:9, color:C.red, fontWeight:600 }}>⚠ {pOverdue} trễ hạn</span>}
+                        {pTotal - pDone - pInProgress > 0 && <span style={{ fontSize:9, color:C.muted }}>⏳ {pTotal - pDone - pInProgress - pOverdue > 0 ? pTotal - pDone - pInProgress : 0} chờ</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Personal tasks separator */}
+                {tasks.filter(t => !t.projectId && t.status !== "done").length > 0 && (
+                  <div style={{ display:"flex", alignItems:"center", gap:8, margin:"12px 0 6px", padding:"7px 10px", background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
+                    <span style={{ fontSize:14 }}>📋</span>
+                    <span style={{ flex:1, fontSize:13, fontWeight:700, color:C.sub }}>Việc cá nhân</span>
+                    <span style={{ fontSize:10, color:C.muted, fontWeight:600 }}>{tasks.filter(t => !t.projectId && t.status !== "done").length} việc</span>
+                  </div>
+                )}
+              </div>
+            )}
             <ProjectFilters projects={projects} filter={projFilter} setFilter={setProjFilter} onAdd={() => setNewProjOpen(true)} onOpen={setProjDetail} isStaff={isStaff} myName={myName} onDeleteAll={async () => {
               const choice = prompt("Xóa TẤT CẢ dự án?\n\n1 = Xóa dự án, giữ công việc\n2 = Xóa dự án + công việc + nhóm chat\n\nNhập 1 hoặc 2:");
               if (!choice || !["1","2"].includes(choice)) return;
