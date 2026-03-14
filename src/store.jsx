@@ -190,11 +190,13 @@ export function AppProvider({ children, userId }) {
   // Cloud sync: push local data UP + pull missing data DOWN
   const cloudLoadedRef = useRef(false);
   useEffect(() => {
+    console.log("[CloudSync] effect run — cloudId:", cloudId, "userId:", userId, "loaded:", cloudLoadedRef.current);
     if (cloudLoadedRef.current || !cloudId) return;
     cloudLoadedRef.current = true;
     const localTasks = loadJSON("tasks", []);
     const localProjects = loadJSON("projects", []);
     const localExpenses = loadJSON("expenses", []);
+    console.log("[CloudSync] local:", localTasks.length, "tasks,", localProjects.length, "projects");
     // If local has data → push UP to cloud (save under BOTH cloudId and local userId)
     if (localTasks.length > 0) {
       cloudSave(null, cloudId, "tasks", localTasks);
@@ -212,11 +214,14 @@ export function AppProvider({ children, userId }) {
     (async () => {
       try {
         // Query by cloudId — also try local userId
+        console.log("[CloudSync] pulling from cloud...", cloudId, userId);
         let data = await cloudLoadAll(null, cloudId);
+        console.log("[CloudSync] cloudLoadAll(cloudId):", data?.length || 0, "rows");
         if ((!data?.length) && cloudId !== userId) {
           data = await cloudLoadAll(null, userId);
+          console.log("[CloudSync] cloudLoadAll(userId):", data?.length || 0, "rows");
         }
-        if (!data?.length) return;
+        if (!data?.length) { console.log("[CloudSync] no cloud data found"); return; }
         let loaded = 0;
         for (const row of data) {
           if (!row.data || !Array.isArray(row.data)) {
@@ -232,26 +237,29 @@ export function AppProvider({ children, userId }) {
           if (row.data.length === 0) continue;
 
           if (row.key === "tasks") {
+            console.log("[CloudSync] tasks from cloud:", row.data?.length, "local:", localTasks.length);
             if (localTasks.length === 0) {
-              // Empty local → full load
               dispatch({ type: "LOAD", tasks: row.data });
               saveJSON("tasks", row.data);
+              console.log("[CloudSync] FULL LOAD tasks:", row.data.length);
             } else {
-              // Merge: add cloud items that don't exist locally (by id)
               const localIds = new Set(localTasks.map(t => t.id));
               const newItems = row.data.filter(t => !localIds.has(t.id));
               if (newItems.length > 0) {
                 const merged = [...localTasks, ...newItems];
                 dispatch({ type: "LOAD", tasks: merged });
                 saveJSON("tasks", merged);
+                console.log("[CloudSync] MERGED", newItems.length, "new tasks");
               }
             }
             loaded++;
           }
           if (row.key === "projects") {
+            console.log("[CloudSync] projects from cloud:", row.data?.length, "local:", localProjects.length);
             if (localProjects.length === 0) {
               projDispatch({ type: "PROJ_LOAD", items: row.data });
               saveJSON("projects", row.data);
+              console.log("[CloudSync] FULL LOAD projects:", row.data.length);
             } else {
               const localIds = new Set(localProjects.map(p => p.id));
               const newItems = row.data.filter(p => !localIds.has(p.id));
@@ -259,6 +267,7 @@ export function AppProvider({ children, userId }) {
                 const merged = [...localProjects, ...newItems];
                 projDispatch({ type: "PROJ_LOAD", items: merged });
                 saveJSON("projects", merged);
+                console.log("[CloudSync] MERGED", newItems.length, "new projects");
               }
             }
             loaded++;
