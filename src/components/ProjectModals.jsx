@@ -387,8 +387,8 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
               onBlur={saveName} onKeyDown={e => { if (e.key === "Enter") saveName(); }}
               style={{ flex:1, fontSize:18, fontWeight:700, border:`1px solid ${C.accent}`, borderRadius:8, padding:"4px 8px", outline:"none", color:C.text, background:C.card }} />
           ) : (
-            <div className="tap" onClick={() => setEditName(true)}
-              style={{ flex:1, fontSize:18, fontWeight:700, color:C.text }}>{project.name}</div>
+            <div className={isStaff ? "" : "tap"} onClick={() => { if (!isStaff) setEditName(true); }}
+              style={{ flex:1, fontSize:18, fontWeight:700, color:C.text, cursor: isStaff ? "default" : "pointer" }}>{project.name}</div>
           )}
           {onOpenChat && <span className="tap" onClick={() => onOpenChat(project)}
             style={{ fontSize:18, cursor:"pointer", padding:"4px 6px", background:C.accentD, borderRadius:8 }} title="Chat dự án">💬</span>}
