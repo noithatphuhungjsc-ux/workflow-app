@@ -246,10 +246,15 @@ const DEV_PROFILES_FALLBACK = [
 ];
 
 export default function ProjectInfoModal({ conversationId, convName, profiles: rawProfiles, userId, linkedProject, projectTasks: mainStoreTasks, addTask: addMainTask, patchTask: patchMainTask, onClose }) {
-  // Merge profiles: Supabase first, DEV fallback
+  // Merge profiles: Supabase + DEV (dedup by normalized name)
   const profiles = useMemo(() => {
-    if (rawProfiles && rawProfiles.length > 0) return rawProfiles;
-    return DEV_PROFILES_FALLBACK;
+    const all = [...(rawProfiles || [])];
+    const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
+    DEV_PROFILES_FALLBACK.forEach(d => {
+      if (!all.some(p => p.id === d.id || normalize(p.display_name) === normalize(d.display_name)))
+        all.push(d);
+    });
+    return all;
   }, [rawProfiles]);
 
   const [info, setInfo] = useState(() => loadProjectInfo(conversationId) || defaultInfo());
@@ -751,7 +756,7 @@ export default function ProjectInfoModal({ conversationId, convName, profiles: r
                   <div style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>Báo cáo</div>
                 </div>
                 <div style={{ background: `${C.green}10`, borderRadius: 12, padding: "10px 8px", textAlign: "center" }}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: C.green }}>{(profiles || []).length}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: C.green }}>{linkedProject?.members?.length || (profiles || []).length}</div>
                   <div style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>Thành viên</div>
                 </div>
               </div>
@@ -1361,7 +1366,20 @@ export default function ProjectInfoModal({ conversationId, convName, profiles: r
           )}
 
           {/* ═══════ THÀNH VIÊN ═══════ */}
-          {tab === "members" && (
+          {tab === "members" && (() => {
+            // Show only project members if linkedProject has members, else all profiles
+            const projMembers = linkedProject?.members || [];
+            const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
+            const memberProfiles = projMembers.length > 0
+              ? projMembers.map(m => {
+                  // Match member to full profile by supaId, id, or name
+                  const match = profiles.find(p =>
+                    p.id === m.supaId || p.id === m.id || normalize(p.display_name) === normalize(m.name)
+                  );
+                  return match || { id: m.supaId || m.id || m.name, display_name: m.name, avatar_color: m.avatarColor || C.accent };
+                })
+              : profiles;
+            return (
             <div style={{ flex: 1 }}>
               {/* Role legend */}
               <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -1372,7 +1390,7 @@ export default function ProjectInfoModal({ conversationId, convName, profiles: r
                 ))}
               </div>
 
-              {(profiles || []).map(p => {
+              {memberProfiles.map(p => {
                 const role = info.roles[p.id] || "member";
                 const r = ROLES[role];
                 const memberTasks = allTasks.filter(t => t.assigneeId === p.id || t.assigneeName === p.display_name);
@@ -1415,7 +1433,8 @@ export default function ProjectInfoModal({ conversationId, convName, profiles: r
                 );
               })}
             </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -96,7 +96,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     inputRef.current?.focus();
   };
 
-  // Use Supabase profiles if available, fallback to DEV accounts
+  // Merge Supabase profiles + DEV accounts (dedup by normalized name)
   const DEV_PROFILES = [
     { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
     { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
@@ -104,7 +104,15 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
     { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
   ];
-  const mergedProfiles = (profiles && profiles.length > 0) ? profiles : DEV_PROFILES;
+  const mergedProfiles = (() => {
+    const all = [...(profiles || [])];
+    const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
+    DEV_PROFILES.forEach(d => {
+      if (!all.some(p => p.id === d.id || normalize(p.display_name) === normalize(d.display_name)))
+        all.push(d);
+    });
+    return all;
+  })();
   const localDevId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id; } catch { return null; } })();
   const mentionList = mergedProfiles
     .filter(p => p.id !== userId && p.id !== localDevId && (!mentionQuery || (p.display_name || "").toLowerCase().includes(mentionQuery)))
