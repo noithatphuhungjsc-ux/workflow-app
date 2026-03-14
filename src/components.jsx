@@ -91,11 +91,15 @@ export function Filters({ filter, setFilter }) {
 
 /* -- Project filter pills -- */
 export function ProjectFilters({ projects, filter, setFilter, onAdd, onOpen, onDeleteAll, isStaff, myName }) {
+  const [showArchived, setShowArchived] = useState(false);
   // Staff: only show projects they're a member of
-  const visibleProjects = isStaff && myName
+  const staffFiltered = isStaff && myName
     ? projects.filter(p => (p.members || []).some(m => m.name === myName))
     : projects;
-  if (!visibleProjects.length && !onAdd) return null;
+  const activeProjects = staffFiltered.filter(p => !p.archived);
+  const archivedProjects = staffFiltered.filter(p => p.archived);
+  const visibleProjects = showArchived ? staffFiltered : activeProjects;
+  if (!visibleProjects.length && !archivedProjects.length && !onAdd) return null;
   return (
     <div className="no-scrollbar" style={{ display:"flex", gap:5, marginBottom:10, overflowX:"auto", paddingBottom:2, alignItems:"center" }}>
       <button className="tap" onClick={() => setFilter("all")}
@@ -104,11 +108,17 @@ export function ProjectFilters({ projects, filter, setFilter, onAdd, onOpen, onD
         style={{ flexShrink:0, background:filter==="standalone"?"#3a3530":C.card, color:filter==="standalone"?"#fff":C.sub, border:`1px solid ${filter==="standalone"?"#3a3530":C.border}`, borderRadius:16, padding:"4px 12px", fontSize:12, fontWeight:600 }}>Việc chung</button>
       {visibleProjects.map(p => (
         <button key={p.id} className="tap" onClick={() => { if (filter === p.id) onOpen?.(p); else setFilter(p.id); }}
-          style={{ flexShrink:0, display:"flex", alignItems:"center", gap:5, background:filter===p.id?p.color:C.card, color:filter===p.id?"#fff":C.sub, border:`1px solid ${filter===p.id?p.color:C.border}`, borderRadius:16, padding:"4px 12px", fontSize:12, fontWeight:600 }}>
+          style={{ flexShrink:0, display:"flex", alignItems:"center", gap:5, background:filter===p.id?p.color:C.card, color:filter===p.id?"#fff":C.sub, border:`1px solid ${filter===p.id?p.color:C.border}`, borderRadius:16, padding:"4px 12px", fontSize:12, fontWeight:600, opacity: p.archived ? 0.5 : 1 }}>
           <span style={{ width:8, height:8, borderRadius:"50%", background:filter===p.id?"#fff":p.color, flexShrink:0 }} />
-          {p.name}
+          {p.archived ? "📦 " : ""}{p.name}
         </button>
       ))}
+      {archivedProjects.length > 0 && (
+        <button className="tap" onClick={() => setShowArchived(v => !v)}
+          style={{ flexShrink:0, fontSize:11, color:C.muted, background:showArchived ? `${C.muted}18` : C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"4px 10px", fontWeight:600 }}>
+          📦 {archivedProjects.length}
+        </button>
+      )}
       {onAdd && !isStaff && <button className="tap" onClick={onAdd}
         style={{ flexShrink:0, width:28, height:28, borderRadius:"50%", background:C.accentD, color:C.accent, border:`1px solid ${C.accent}33`, fontSize:16, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>+</button>}
       {onDeleteAll && !isStaff && visibleProjects.length > 0 && <button className="tap" onClick={onDeleteAll}

@@ -404,26 +404,10 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
           <span style={{ fontSize:11, color:C.muted }}>{doneTasks.length}/{projTasks.length}</span>
         </div>
 
-        {/* ── Members (Nhân sự) ── */}
+        {/* ── Members (Nhân sự) — checkbox style ── */}
         <div style={{ marginBottom:12, padding:"8px 10px", background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
-            <span style={{ fontSize:11, fontWeight:700, color:C.text }}>👥 Nhân sự ({members.length})</span>
-            {!isStaff && <span className="tap" onClick={() => setShowMemberPicker(v => !v)}
-              style={{ fontSize:10, padding:"2px 8px", borderRadius:6, background:C.accent, color:"#fff", fontWeight:700, cursor:"pointer" }}>+ Thêm</span>}
-          </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:members.length ? 6 : 0 }}>
-            {members.map(m => (
-              <span key={m.id} style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 8px", borderRadius:8, background: m.name === myName ? `${project.color}22` : C.bg, border:`1px solid ${m.name === myName ? project.color : C.border}`, fontSize:11, color: m.name === myName ? project.color : C.text, fontWeight: m.name === myName ? 700 : 400 }}>
-                {m.supaId && <span style={{ width:16, height:16, borderRadius:"50%", background: m.avatarColor || C.accent, display:"inline-flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, flexShrink:0 }}>{(m.name||"?")[0].toUpperCase()}</span>}
-                {m.name}{m.name === myName ? " (bạn)" : ""}
-                {!isStaff && m.name !== myName && <span className="tap" onClick={() => removeMember(m)} style={{ fontSize:12, color:C.red, cursor:"pointer", lineHeight:1 }}>×</span>}
-              </span>
-            ))}
-          </div>
-
-          {/* Member picker dropdown */}
-          {!isStaff && showMemberPicker && (() => {
-            // Dev accounts as fallback when no Supabase profiles
+          <div style={{ fontSize:11, fontWeight:700, color:C.text, marginBottom:6 }}>👥 Nhân sự ({members.length})</div>
+          {(() => {
             const DEV_STAFF = [
               { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
               { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
@@ -431,54 +415,54 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
               { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
               { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
             ];
-            // Merge Supabase + DEV accounts (skip duplicates by normalized name)
             const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
-            const merged = [...teamProfiles];
-            DEV_STAFF.forEach(d => { if (!merged.some(p => p.id === d.id || norm(p.display_name) === norm(d.display_name))) merged.push(d); });
-            const available = merged.filter(p =>
-              !members.some(m => (m.supaId === p.id) || (m.name === p.display_name) || norm(m.name) === norm(p.display_name)) &&
-              (!memberSearch || p.display_name?.toLowerCase().includes(memberSearch.toLowerCase()))
-            );
+            const allPeople = [...teamProfiles];
+            DEV_STAFF.forEach(d => { if (!allPeople.some(p => p.id === d.id || norm(p.display_name) === norm(d.display_name))) allPeople.push(d); });
             const isDevMode = teamProfiles.length === 0;
 
             return (
-              <div style={{ marginTop:6, padding:"6px", background:C.bg, borderRadius:8, border:`1px solid ${C.accent}33` }}>
-                <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)}
-                  placeholder="Tìm thành viên..."
-                  autoFocus
-                  style={{ width:"100%", fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", color:C.text, background:C.card, boxSizing:"border-box", marginBottom:4 }} />
-                <div style={{ maxHeight:150, overflowY:"auto" }}>
-                  {available.length === 0 && (
-                    <div style={{ fontSize:11, color:C.muted, padding:"6px 0", textAlign:"center" }}>Đã thêm hết</div>
-                  )}
-                  {available.map(p => (
-                    <div key={p.id} className="tap" onClick={() => {
-                      if (isDevMode) {
-                        // Dev mode: add by name directly
-                        const updated = [...members, { name: p.display_name, avatarColor: p.avatar_color, id: Date.now() }];
-                        patchProject(project.id, { members: updated });
+              <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                {allPeople.map(p => {
+                  const isMember = members.some(m => (m.supaId === p.id) || norm(m.name) === norm(p.display_name));
+                  const isMe = norm(p.display_name) === norm(myName);
+                  return (
+                    <div key={p.id} className={isStaff ? "" : "tap"} onClick={() => {
+                      if (isStaff) return;
+                      if (isMember) {
+                        if (isMe) return; // can't remove self
+                        const m = members.find(m => (m.supaId === p.id) || norm(m.name) === norm(p.display_name));
+                        if (m) removeMember(m);
                       } else {
-                        addMemberFromProfile(p);
+                        if (isDevMode) {
+                          const updated = [...members, { name: p.display_name, avatarColor: p.avatar_color, id: Date.now() }];
+                          patchProject(project.id, { members: updated });
+                        } else {
+                          addMemberFromProfile(p);
+                        }
                       }
                     }}
-                      style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 4px", cursor:"pointer", borderBottom:`1px solid ${C.border}11` }}>
-                      <div style={{ width:26, height:26, borderRadius:"50%", background: p.avatar_color || C.accent, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:11, fontWeight:700, flexShrink:0 }}>
+                      style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 4px", cursor: isStaff ? "default" : "pointer", borderRadius:6, background: isMember ? `${project.color}08` : "transparent" }}>
+                      <div style={{ width:20, height:20, borderRadius:4, border:`2px solid ${isMember ? project.color : C.border}`, background: isMember ? project.color : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        {isMember && <span style={{ color:"#fff", fontSize:12, fontWeight:700, lineHeight:1 }}>✓</span>}
+                      </div>
+                      <div style={{ width:24, height:24, borderRadius:"50%", background: p.avatar_color || C.accent, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:700, flexShrink:0 }}>
                         {(p.display_name || "?")[0].toUpperCase()}
                       </div>
-                      <span style={{ flex:1, fontSize:12, fontWeight:500, color:C.text }}>{p.display_name}</span>
-                      <span style={{ fontSize:11, color:C.accent, fontWeight:600 }}>+ Thêm</span>
+                      <span style={{ flex:1, fontSize:12, fontWeight: isMember ? 600 : 400, color: isMember ? C.text : C.sub }}>{p.display_name}{isMe ? " (bạn)" : ""}</span>
                     </div>
-                  ))}
-                </div>
-                {/* Manual name input */}
-                <div style={{ display:"flex", gap:4, marginTop:4, borderTop:`1px solid ${C.border}22`, paddingTop:4 }}>
-                  <input value={newMemberName} onChange={e => setNewMemberName(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") addMemberByName(); }}
-                    placeholder="Hoặc gõ tên..."
-                    style={{ flex:1, fontSize:10, border:`1px solid ${C.border}`, borderRadius:4, padding:"4px 6px", outline:"none", color:C.text, background:C.card }} />
-                  <button className="tap" onClick={addMemberByName}
-                    style={{ padding:"4px 8px", borderRadius:4, border:"none", background:C.muted, color:"#fff", fontSize:10, fontWeight:600, opacity:newMemberName.trim()?1:0.4 }}>+</button>
-                </div>
+                  );
+                })}
+                {/* Manual name input — manager only */}
+                {!isStaff && (
+                  <div style={{ display:"flex", gap:4, marginTop:4, borderTop:`1px solid ${C.border}22`, paddingTop:4 }}>
+                    <input value={newMemberName} onChange={e => setNewMemberName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") addMemberByName(); }}
+                      placeholder="Thêm tên khác..."
+                      style={{ flex:1, fontSize:10, border:`1px solid ${C.border}`, borderRadius:4, padding:"4px 6px", outline:"none", color:C.text, background:C.bg }} />
+                    <button className="tap" onClick={addMemberByName}
+                      style={{ padding:"4px 8px", borderRadius:4, border:"none", background:C.muted, color:"#fff", fontSize:10, fontWeight:600, opacity:newMemberName.trim()?1:0.4 }}>+</button>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -645,17 +629,24 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
         )}
 
         {/* ── Actions ── */}
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {onOpenChat && <button className="tap" onClick={() => onOpenChat(project)}
-            style={{ flex:1, padding:"10px", borderRadius:12, border:`1px solid ${project.color}44`, background:project.color+"12", color:project.color, fontSize:13, fontWeight:600 }}>
+            style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${project.color}44`, background:project.color+"12", color:project.color, fontSize:13, fontWeight:600 }}>
             💬 Chat dự án
+          </button>}
+          {!isStaff && <button className="tap" onClick={() => {
+            patchProject(project.id, { archived: !project.archived });
+            if (!project.archived) onClose();
+          }}
+            style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${project.archived ? C.accent : C.green}44`, background: project.archived ? C.accentD : C.greenD, color: project.archived ? C.accent : C.green, fontSize:13, fontWeight:600 }}>
+            {project.archived ? "📂 Mở lại" : "📦 Lưu trữ"}
           </button>}
           {!isStaff && <button className="tap" onClick={() => {
             const choice = prompt("Xoá dự án \"" + project.name + "\"?\n\n1 = Xóa dự án, giữ công việc (thành Việc chung)\n2 = Xóa dự án + xóa luôn công việc\n\nNhập 1 hoặc 2:");
             if (choice === "1") { projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); deleteProject(project.id); }
             else if (choice === "2") { projTasks.forEach(t => hardDelete?.(t.id)); deleteProject(project.id); }
           }}
-            style={{ flex:1, padding:"10px", borderRadius:12, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:13, fontWeight:600 }}>
+            style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:13, fontWeight:600 }}>
             Xoá dự án
           </button>}
         </div>
