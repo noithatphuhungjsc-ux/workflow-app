@@ -15,6 +15,7 @@ import LoginScreen from "./components/LoginScreen";
 import SettingsModal from "./components/SettingsModal";
 import { SupabaseProvider, useSupabase } from "./contexts/SupabaseContext";
 import { supabase } from "./lib/supabase";
+import { useConversations } from "./hooks/useConversations";
 import CallScreen from "./components/CallScreen";
 import TaskSheet from "./components/TaskSheet";
 import HeyModal from "./components/HeyModal";
@@ -756,9 +757,23 @@ QUY TAC BAT BUOC:
     subscribePush();
   }, [settings.notificationsEnabled, user.id]);
 
-  /* ── Global incoming call detection — works from any tab ── */
+  /* ── Chat unread tracking — works from any tab ── */
   const { session: supaSession } = useSupabase();
   const supaUserId = supaSession?.user?.id;
+  const { totalUnread: chatUnread } = useConversations(supaUserId);
+
+  // Push notification for new chat messages
+  const prevUnreadRef = useRef(0);
+  useEffect(() => {
+    if (chatUnread > prevUnreadRef.current && tab !== "inbox") {
+      // Browser notification
+      if ("Notification" in window && Notification.permission === "granted") {
+        const n = chatUnread - prevUnreadRef.current;
+        new Notification("WorkFlow", { body: `${n} tin nhắn mới`, icon: "/icon-192.png", tag: "chat-unread" });
+      }
+    }
+    prevUnreadRef.current = chatUnread;
+  }, [chatUnread, tab]);
   const lastCallCheckRef = useRef(new Date().toISOString());
   const ringtoneRef = useRef(null);
 
@@ -1535,20 +1550,25 @@ QUY TAC BAT BUOC:
         {[
           ["tasks","\u{1F4CB}","Việc"],
           ["calendar","\u{1F4C5}","Lịch"],
-          ["inbox","\u{1F4AC}","Trao đổi"],
+          ["inbox","\u{1F4AC}","Trao đổi", chatUnread],
           ["expense","\u{1F4B0}","Chi tiêu"],
           (user?.role === "admin" || user?.role === "manager") && ["report","\u{1F4CA}","Báo cáo"],
           user?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && ["dev","\u{1F4BB}","Dev"],
           ["ai","\u2726","Wory"],
-        ].filter(Boolean).map(([key, icon, label]) => {
+        ].filter(Boolean).map(([key, icon, label, badgeCount]) => {
           const active = tab === key;
           return (
             <button key={key} className="tap" onClick={() => setTab(key)}
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "6px 0 5px", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, position:"relative" }}>
-              <div style={{ width:36, height:28, borderRadius:10, background: active ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"background .2s" }}>
+              <div style={{ width:36, height:28, borderRadius:10, background: active ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"background .2s", position:"relative" }}>
                 <span style={{ fontSize: 16, lineHeight: 1, filter: active ? "none" : "grayscale(0.6) opacity(0.55)" }}>
                   {icon}
                 </span>
+                {badgeCount > 0 && !active && (
+                  <div style={{ position:"absolute", top:-2, right:-4, minWidth:16, height:16, borderRadius:8, background:"#e74c3c", color:"#fff", fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px" }}>
+                    {badgeCount > 9 ? "9+" : badgeCount}
+                  </div>
+                )}
               </div>
               <span style={{ fontSize: 9, fontWeight: active ? 700 : 500, color: active ? "#8b6914" : "#999", marginTop: 0, letterSpacing: active ? 0 : 0 }}>{label}</span>
             </button>

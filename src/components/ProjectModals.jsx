@@ -3,6 +3,7 @@ import { C, PROJECT_COLORS, WORKFLOWS } from "../constants";
 import { useSettings } from "../store";
 import { useSupabase } from "../contexts/SupabaseContext";
 import { supabase } from "../lib/supabase";
+import { cloudLoad, cloudSave } from "../services";
 
 /* ================================================================
    NEW PROJECT MODAL — create project with custom workflow + members
@@ -347,7 +348,11 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
     setNewMemberName("");
   };
 
-  // Remove member — sync to chat
+  // Remove member — sync to chat + clean up member's cloud data
+  const DEV_NAME_TO_LOCAL = {
+    "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
+    "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+  };
   const removeMember = async (member) => {
     patchProject(project.id, { members: members.filter(m => m.id !== member.id) });
     // Remove from Supabase chat
@@ -362,6 +367,20 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
           type: "system",
         });
       } catch (e) { console.warn("Remove member from chat failed:", e); }
+    }
+    // Clean up removed member's cloud storage (projects + tasks)
+    const localId = DEV_NAME_TO_LOCAL[member.name];
+    if (localId) {
+      try {
+        const ep = await cloudLoad(null, localId, "projects");
+        const cp = Array.isArray(ep?.data) ? ep.data : [];
+        const filtered = cp.filter(p => p.id !== project.id);
+        if (filtered.length !== cp.length) await cloudSave(null, localId, "projects", filtered);
+        const et = await cloudLoad(null, localId, "tasks");
+        const ct = Array.isArray(et?.data) ? et.data : [];
+        const filteredT = ct.filter(t => t.projectId !== project.id);
+        if (filteredT.length !== ct.length) await cloudSave(null, localId, "tasks", filteredT);
+      } catch (e) { console.warn("Clean member cloud failed:", e); }
     }
   };
 
@@ -654,10 +673,38 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
             style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${project.archived ? C.accent : C.green}44`, background: project.archived ? C.accentD : C.greenD, color: project.archived ? C.accent : C.green, fontSize:13, fontWeight:600 }}>
             {project.archived ? "📂 Mở lại" : "📦 Lưu trữ"}
           </button>}
-          {!isStaff && <button className="tap" onClick={() => {
+          {!isStaff && <button className="tap" onClick={async () => {
             const choice = prompt("Xoá dự án \"" + project.name + "\"?\n\n1 = Xóa dự án, giữ công việc (thành Việc chung)\n2 = Xóa dự án + xóa luôn công việc\n\nNhập 1 hoặc 2:");
-            if (choice === "1") { projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); deleteProject(project.id); }
-            else if (choice === "2") { projTasks.forEach(t => hardDelete?.(t.id)); deleteProject(project.id); }
+            if (choice !== "1" && choice !== "2") return;
+            if (choice === "1") { projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); }
+            else { projTasks.forEach(t => hardDelete?.(t.id)); }
+            deleteProject(project.id);
+            // Clean up all members' cloud storage
+            for (const m of members) {
+              const lid = DEV_NAME_TO_LOCAL[m.name];
+              if (!lid || lid === localSession.id) continue;
+              try {
+                const ep = await cloudLoad(null, lid, "projects");
+                const cp = Array.isArray(ep?.data) ? ep.data : [];
+                const filtered = cp.filter(p => p.id !== project.id);
+                if (filtered.length !== cp.length) await cloudSave(null, lid, "projects", filtered);
+                if (choice === "2") {
+                  const et = await cloudLoad(null, lid, "tasks");
+                  const ct = Array.isArray(et?.data) ? et.data : [];
+                  const filteredT = ct.filter(t => t.projectId !== project.id);
+                  if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
+                }
+              } catch {}
+            }
+            // Delete Supabase conversation
+            if (supabase && project.chatId) {
+              try {
+                await supabase.from("messages").delete().eq("conversation_id", project.chatId);
+                await supabase.from("conversation_members").delete().eq("conversation_id", project.chatId);
+                await supabase.from("conversations").delete().eq("id", project.chatId);
+              } catch {}
+            }
+            onClose();
           }}
             style={{ flex:1, minWidth:120, padding:"10px", borderRadius:12, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:13, fontWeight:600 }}>
             Xoá dự án

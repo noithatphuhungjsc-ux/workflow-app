@@ -248,18 +248,38 @@ export function AppProvider({ children, userId }) {
               }
             }
             if (row.key === "projects") {
+              // Filter out projects where user has been removed
+              const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
+              const myNames = [sess.name, sess.id].filter(Boolean).map(n => (n || "").toLowerCase().replace(/\s+/g, ""));
+              const validCloud = row.data.filter(p => {
+                if (!p.members || p.members.length === 0) return true;
+                return p.members.some(m => {
+                  if (m.supaId && m.supaId === cloudId) return true;
+                  const mn = (m.name || "").toLowerCase().replace(/\s+/g, "");
+                  return myNames.includes(mn);
+                });
+              });
               if (localProjects.length === 0) {
-                localProjects = row.data;
+                localProjects = validCloud;
                 projDispatch({ type: "PROJ_LOAD", items: localProjects });
                 saveJSON("projects", localProjects);
               } else {
+                // Also filter local projects by membership
+                localProjects = localProjects.filter(p => {
+                  if (!p.members || p.members.length === 0) return true;
+                  return p.members.some(m => {
+                    if (m.supaId && m.supaId === cloudId) return true;
+                    const mn = (m.name || "").toLowerCase().replace(/\s+/g, "");
+                    return myNames.includes(mn);
+                  });
+                });
                 const localIds = new Set(localProjects.map(p => p.id));
-                const newItems = row.data.filter(p => !localIds.has(p.id));
+                const newItems = validCloud.filter(p => !localIds.has(p.id));
                 if (newItems.length > 0) {
                   localProjects = [...localProjects, ...newItems];
-                  projDispatch({ type: "PROJ_LOAD", items: localProjects });
-                  saveJSON("projects", localProjects);
                 }
+                projDispatch({ type: "PROJ_LOAD", items: localProjects });
+                saveJSON("projects", localProjects);
               }
             }
             if (row.key === "expenses") {
