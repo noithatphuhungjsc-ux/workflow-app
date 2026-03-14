@@ -320,16 +320,10 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
             {otherTyping ? "Đang nhập..." : "Đang hoạt động"}
           </div>
         </div>
-        {linkedProject && (
+        {(linkedProject || convType === "group") && (
           <button className="tap" onClick={() => setShowProjectInfo(true)}
-            style={{ background: "none", border: "1px solid transparent", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: linkedProject.color }}>
-            📂
-          </button>
-        )}
-        {convType === "group" && (
-          <button className="tap" onClick={() => setShowProjectInfo(true)}
-            style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, color: C.accent }}>
-            ℹ️
+            style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: linkedProject?.color || C.accent }}>
+            {linkedProject ? "📂" : "ℹ️"}
           </button>
         )}
         <button className="tap" onClick={() => startCall("video")}
@@ -642,6 +636,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
           profiles={mergedProfiles}
           userId={userId}
           linkedProject={linkedProject}
+          projectTasks={projectTasks}
           addTask={addTask}
           patchTask={patchTask}
           onClose={() => setShowProjectInfo(false)}

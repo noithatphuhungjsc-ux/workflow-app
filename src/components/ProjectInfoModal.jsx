@@ -237,7 +237,21 @@ function MicButton({ onResult, style }) {
   );
 }
 
-export default function ProjectInfoModal({ conversationId, convName, profiles, userId, linkedProject, addTask: addMainTask, patchTask: patchMainTask, onClose }) {
+const DEV_PROFILES_FALLBACK = [
+  { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
+  { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
+  { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db" },
+  { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
+  { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
+];
+
+export default function ProjectInfoModal({ conversationId, convName, profiles: rawProfiles, userId, linkedProject, projectTasks: mainStoreTasks, addTask: addMainTask, patchTask: patchMainTask, onClose }) {
+  // Merge profiles: Supabase first, DEV fallback
+  const profiles = useMemo(() => {
+    if (rawProfiles && rawProfiles.length > 0) return rawProfiles;
+    return DEV_PROFILES_FALLBACK;
+  }, [rawProfiles]);
+
   const [info, setInfo] = useState(() => loadProjectInfo(conversationId) || defaultInfo());
   const [editing, setEditing] = useState(false); // view mode by default
   const [saving, setSaving] = useState(false);
@@ -309,18 +323,37 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
   const myRole = info.roles[userId] || "member";
   const isLeaderOrDeputy = myRole === "leader" || myRole === "deputy";
 
+  // Unified tasks: prefer main store tasks (with projectId) over info.tasks
+  const allTasks = useMemo(() => {
+    if (mainStoreTasks && mainStoreTasks.length > 0) {
+      // Map main store tasks to same shape as info.tasks for display
+      return mainStoreTasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        status: t.status === "inprogress" ? "doing" : (t.status || "todo"),
+        priority: t.priority === "cao" ? "high" : t.priority === "thap" ? "low" : "medium",
+        assigneeId: profiles?.find(p => p.display_name === t.assignee)?.id || "",
+        assigneeName: t.assignee || "",
+        dueDate: t.deadline || "",
+        created: t.createdAt || "",
+        fromMainStore: true,
+      }));
+    }
+    return info.tasks;
+  }, [mainStoreTasks, info.tasks, profiles]);
+
   /* ── Progress auto-calculated from tasks ── */
   const progress = useMemo(() => {
-    if (info.tasks.length === 0) return 0;
-    const done = info.tasks.filter(t => t.status === "done").length;
-    return Math.round((done / info.tasks.length) * 100);
-  }, [info.tasks]);
+    if (allTasks.length === 0) return 0;
+    const done = allTasks.filter(t => t.status === "done").length;
+    return Math.round((done / allTasks.length) * 100);
+  }, [allTasks]);
 
   const tasksByStatus = useMemo(() => {
     const counts = { todo: 0, doing: 0, review: 0, done: 0 };
-    info.tasks.forEach(t => { if (counts[t.status] !== undefined) counts[t.status]++; });
+    allTasks.forEach(t => { if (counts[t.status] !== undefined) counts[t.status]++; });
     return counts;
-  }, [info.tasks]);
+  }, [allTasks]);
 
   /* ── Days remaining ── */
   const daysLeft = useMemo(() => {
@@ -389,15 +422,22 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
 
   const cycleStatus = useCallback((id) => {
     const order = ["todo", "doing", "review", "done"];
+    // Find current status from either source
+    const task = allTasks.find(t => t.id === id);
+    if (!task) return;
+    const idx = order.indexOf(task.status);
+    const newStatus = order[(idx + 1) % order.length];
+    // Update info.tasks (local)
     setInfo(prev => ({
       ...prev,
-      tasks: prev.tasks.map(t => {
-        if (t.id !== id) return t;
-        const idx = order.indexOf(t.status);
-        return { ...t, status: order[(idx + 1) % order.length] };
-      }),
+      tasks: prev.tasks.map(t => t.id === id ? { ...t, status: newStatus } : t),
     }));
-  }, []);
+    // Also update main store if task comes from there
+    if (patchMainTask) {
+      const mainStatus = newStatus === "doing" ? "inprogress" : newStatus;
+      patchMainTask(id, { status: mainStatus });
+    }
+  }, [allTasks, patchMainTask]);
 
   /* ── Report helpers ── */
   const addReport = useCallback(() => {
@@ -562,11 +602,11 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
 
   const IS = { width: "100%", background: C.card, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 14, color: C.text };
 
-  const filteredTasks = taskFilter === "all" ? info.tasks : info.tasks.filter(t => t.status === taskFilter);
+  const filteredTasks = taskFilter === "all" ? allTasks : allTasks.filter(t => t.status === taskFilter);
 
   const tabs = [
     { id: "info", icon: "📋", label: "Tổng quan" },
-    { id: "tasks", icon: "✅", label: `Việc (${info.tasks.length})` },
+    { id: "tasks", icon: "✅", label: `Việc (${allTasks.length})` },
     { id: "links", icon: "🔗", label: `Link (${info.links.length})` },
     { id: "attendance", icon: "⏰", label: "Chấm công" },
     { id: "reports", icon: "📊", label: `Báo cáo` },
@@ -726,7 +766,7 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
                 <button className="tap" onClick={() => setTaskFilter("all")}
                   style={{ padding: "5px 10px", borderRadius: 14, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer",
                     background: taskFilter === "all" ? C.text : `${C.border}`, color: taskFilter === "all" ? "#fff" : C.sub }}>
-                  Tất cả ({info.tasks.length})
+                  Tất cả ({allTasks.length})
                 </button>
                 {Object.entries(TASK_STATUSES).map(([key, st]) => (
                   <button key={key} className="tap" onClick={() => setTaskFilter(key)}
@@ -748,6 +788,7 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
                 const st = TASK_STATUSES[task.status] || TASK_STATUSES.todo;
                 const pr = TASK_PRIORITIES[task.priority] || TASK_PRIORITIES.medium;
                 const assignee = profiles?.find(p => p.id === task.assigneeId);
+                const assigneeLabel = assignee?.display_name || task.assigneeName || "";
                 const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "done";
                 return (
                   <div key={task.id} style={{
@@ -775,8 +816,8 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
                           <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 6, background: `${st.color}18`, color: st.color, fontWeight: 700 }}>
                             {st.label}
                           </span>
-                          {assignee && (
-                            <span style={{ fontSize: 9, color: C.muted }}>👤 {assignee.display_name}</span>
+                          {assigneeLabel && (
+                            <span style={{ fontSize: 9, color: C.muted }}>👤 {assigneeLabel}</span>
                           )}
                           {task.dueDate && (
                             <span style={{ fontSize: 9, color: isOverdue ? C.red : C.muted }}>
@@ -1248,6 +1289,77 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
             </div>
           )}
 
+          {/* ═══════ BÁO CÁO ═══════ */}
+          {tab === "reports" && (
+            <div style={{ flex: 1 }}>
+              {info.reports.length === 0 && editMode !== "report" && (
+                <div style={{ textAlign: "center", padding: "24px 0", color: C.muted }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>📊</div>
+                  <div style={{ fontSize: 13 }}>Chưa có báo cáo nào</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>Viết báo cáo tiến độ, vấn đề, kết quả...</div>
+                </div>
+              )}
+
+              {info.reports.map(r => {
+                const author = profiles?.find(p => p.id === r.authorId);
+                const isMe = r.authorId === userId;
+                return (
+                  <div key={r.id} style={{ padding: "12px 14px", background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: author?.avatar_color || C.accent,
+                        display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {(author?.display_name || "?")[0].toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{author?.display_name || "Không tên"}</span>
+                        {isMe && <span style={{ fontSize: 9, color: C.accent, marginLeft: 4 }}>Bạn</span>}
+                      </div>
+                      <span style={{ fontSize: 10, color: C.muted }}>
+                        {new Date(r.created).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
+                        {" "}
+                        {new Date(r.created).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      {editing && isMe && (
+                        <button className="tap" onClick={() => removeReport(r.id)}
+                          style={{ background: "none", border: "none", color: C.muted, fontSize: 14, cursor: "pointer", padding: 2 }}>✕</button>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.content}</div>
+                  </div>
+                );
+              })}
+
+              {/* Add report form */}
+              {editing && (editMode === "report" ? (
+                <div style={{ background: `${C.accent}08`, borderRadius: 12, padding: 12, border: `1px solid ${C.accent}33` }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 10 }}>
+                    <textarea value={newReport} onChange={e => setNewReport(e.target.value)}
+                      placeholder="Nội dung báo cáo: tiến độ, vấn đề, kết quả..."
+                      rows={4} style={{ ...IS, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, flex: 1 }} autoFocus />
+                    <MicButton onResult={t => setNewReport(prev => prev ? prev + " " + t : t)} style={{ marginTop: 4 }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="tap" onClick={addReport}
+                      style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      Gửi báo cáo
+                    </button>
+                    <button className="tap" onClick={() => { setEditMode(null); setNewReport(""); }}
+                      style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.muted, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                      Hủy
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button className="tap" onClick={() => setEditMode("report")}
+                  style={{ width: "100%", padding: "12px", borderRadius: 12, border: `1.5px dashed ${C.accent}55`,
+                    background: `${C.accent}06`, color: C.accent, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  + Viết báo cáo
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* ═══════ THÀNH VIÊN ═══════ */}
           {tab === "members" && (
             <div style={{ flex: 1 }}>
@@ -1263,7 +1375,7 @@ export default function ProjectInfoModal({ conversationId, convName, profiles, u
               {(profiles || []).map(p => {
                 const role = info.roles[p.id] || "member";
                 const r = ROLES[role];
-                const memberTasks = info.tasks.filter(t => t.assigneeId === p.id);
+                const memberTasks = allTasks.filter(t => t.assigneeId === p.id || t.assigneeName === p.display_name);
                 const memberDone = memberTasks.filter(t => t.status === "done").length;
                 return (
                   <div key={p.id} style={{
