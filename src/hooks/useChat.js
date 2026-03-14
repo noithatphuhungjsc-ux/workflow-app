@@ -193,6 +193,19 @@ export function useChat(conversationId, userId) {
         .update({ last_message_at: data.created_at })
         .eq("id", conversationId);
     } else if (error) {
+      console.warn("Send message failed:", error);
+      // If membership issue, try auto-join then retry
+      if (error.code === "42501" || error.message?.includes("policy")) {
+        try {
+          await supabase.from("conversation_members").upsert({ conversation_id: conversationId, user_id: userId }, { onConflict: "conversation_id,user_id" });
+          const { data: retry } = await supabase.from("messages").insert(msg).select().single();
+          if (retry) {
+            setMessages(prev => prev.map(m => m.id === optimistic.id ? retry : m));
+            await supabase.from("conversations").update({ last_message_at: retry.created_at }).eq("id", conversationId);
+            return retry;
+          }
+        } catch {}
+      }
       setMessages(prev => prev.filter(m => m.id !== optimistic.id));
     }
 

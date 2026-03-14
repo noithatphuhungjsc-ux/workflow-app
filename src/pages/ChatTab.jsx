@@ -15,11 +15,27 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   // Auto-open specific conversation (e.g., from project chat button)
   useEffect(() => {
     if (openConvId && openConvId !== activeConv) {
-      _setActiveConv(openConvId);
-      sessionStorage.setItem("wf_activeConv", openConvId);
+      setActiveConv(openConvId);
     }
   }, [openConvId]);
-  const setActiveConv = useCallback((id) => { if (id) sessionStorage.setItem("wf_activeConv", id); else sessionStorage.removeItem("wf_activeConv"); _setActiveConv(id); }, []);
+  const setActiveConv = useCallback(async (id) => {
+    if (id) {
+      sessionStorage.setItem("wf_activeConv", id);
+      // Auto-ensure user is a member of this conversation (fixes project chats)
+      if (supabase && userId) {
+        try {
+          const { data: existing } = await supabase.from("conversation_members")
+            .select("user_id").eq("conversation_id", id).eq("user_id", userId).maybeSingle();
+          if (!existing) {
+            await supabase.from("conversation_members").insert({ conversation_id: id, user_id: userId });
+          }
+        } catch {}
+      }
+    } else {
+      sessionStorage.removeItem("wf_activeConv");
+    }
+    _setActiveConv(id);
+  }, [userId]);
   const [showNew, setShowNew] = useState(null); // null | "dm" | "group"
   const [profiles, setProfiles] = useState([]);
   const [contextMenu, setContextMenu] = useState(null); // { id }
