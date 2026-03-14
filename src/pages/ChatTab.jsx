@@ -104,8 +104,27 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     setActiveConv(convId);
   }, []);
 
+  // Merge project chats that might not be in conversation_members
+  const mergedConversations = (() => {
+    if (!projects?.length) return conversations;
+    const existingIds = new Set(conversations.map(c => c.id));
+    const projectChats = projects
+      .filter(p => p.chatId && !existingIds.has(p.chatId))
+      .map(p => ({
+        id: p.chatId,
+        type: "group",
+        name: `[project]${p.name}`,
+        displayName: `[project]${p.name}`,
+        created_by: userId,
+        lastMessage: null,
+        unreadCount: 0,
+        _isProjectChat: true,
+      }));
+    return projectChats.length > 0 ? [...conversations, ...projectChats] : conversations;
+  })();
+
   // Filter conversations
-  const filtered = conversations.filter(c => {
+  const filtered = mergedConversations.filter(c => {
     if (filter === "all") return true;
     if (filter === "dm") return c.type === "dm";
     if (c.type !== "group") return false;
@@ -115,13 +134,13 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
 
   // Count groups by category for filter badges
   const groupCounts = {};
-  conversations.forEach(c => {
+  mergedConversations.forEach(c => {
     if (c.type === "group") {
       const decoded = decodeGroupName(c.displayName || c.name);
       groupCounts[decoded.category] = (groupCounts[decoded.category] || 0) + 1;
     }
   });
-  const dmCount = conversations.filter(c => c.type === "dm").length;
+  const dmCount = mergedConversations.filter(c => c.type === "dm").length;
 
   // Not connected — show auth form
   if (!isConnected) {
@@ -179,7 +198,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
 
   // Active conversation
   if (activeConv) {
-    const conv = conversations.find(c => c.id === activeConv);
+    const conv = mergedConversations.find(c => c.id === activeConv) || conversations.find(c => c.id === activeConv);
     const rawName = conv?.displayName || "Trò chuyện";
     const decoded = conv?.type === "group" ? decodeGroupName(rawName) : null;
     const name = decoded ? decoded.name : rawName;
@@ -199,7 +218,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
 
   // Build filter pills
   const filterPills = [
-    { key: "all", label: "Tất cả", count: conversations.length, color: C.text },
+    { key: "all", label: "Tất cả", count: mergedConversations.length, color: C.text },
     { key: "dm", label: "Cá nhân", count: dmCount, color: C.accent },
     ...GROUP_CATEGORIES.filter(cat => groupCounts[cat.key]).map(cat => ({
       key: cat.key, label: `${cat.icon} ${cat.label}`, count: groupCounts[cat.key], color: cat.color,
@@ -230,7 +249,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
       </div>
 
       {/* Filter pills */}
-      {conversations.length > 0 && (
+      {mergedConversations.length > 0 && (
         <div style={{ display: "flex", gap: 6, padding: "8px 14px", overflowX: "auto", flexShrink: 0, borderBottom: `1px solid ${C.border}22` }}>
           {filterPills.map(p => (
             <button key={p.key} className="tap" onClick={() => setFilter(p.key)}

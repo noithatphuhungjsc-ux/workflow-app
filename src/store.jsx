@@ -135,13 +135,36 @@ export function AppProvider({ children, userId }) {
   const tasks = allTasks.filter(t => !t.deleted);
   const deletedTasks = allTasks.filter(t => t.deleted);
 
-  // Auto-save + cloud sync
+  // Auto-save + cloud sync + cross-user task sync
   const hasLoadedRef = useRef(false);
   useEffect(() => {
     if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("tasks", allTasks);
     if (supabase && userId) scheduleSyncDebounced(supabase, userId, "tasks", allTasks);
+
+    // Cross-user sync: copy assigned project tasks to assignee's localStorage
+    const DEV_NAME_TO_ID = {
+      "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
+      "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+    };
+    const currentPrefix = userKey("");
+    allTasks.filter(t => t.assignee && t.projectId && !t.deleted).forEach(t => {
+      const targetId = DEV_NAME_TO_ID[t.assignee];
+      if (!targetId) return;
+      const targetKey = `wf_${targetId}_tasks`;
+      if (targetKey === currentPrefix + "tasks") return; // same user
+      try {
+        const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
+        const idx = existing.findIndex(e => e.id === t.id);
+        if (idx >= 0) {
+          existing[idx] = { ...existing[idx], ...t };
+        } else {
+          existing.push(t);
+        }
+        localStorage.setItem(targetKey, JSON.stringify(existing));
+      } catch {}
+    });
   }, [allTasks, userId]);
 
   // Purge old deleted + roll overdue tasks on mount
@@ -168,6 +191,30 @@ export function AppProvider({ children, userId }) {
     if (!userKey("").startsWith("wf_")) return;
     saveJSON("projects", projects);
     if (supabase && userId) scheduleSyncDebounced(supabase, userId, "projects", projects);
+
+    // Cross-user sync: share projects with all members
+    const DEV_IDS = ["trinh", "lien", "hung", "mai", "duc"];
+    const currentPrefix = userKey("");
+    projects.forEach(proj => {
+      if (!proj.members?.length) return;
+      proj.members.forEach(m => {
+        const targetId = DEV_IDS.find(id => id === m.id || `wf_${id}_` === currentPrefix);
+        const memberId = m.id || m.supaId;
+        const devId = DEV_IDS.find(id => id === memberId);
+        if (!devId || `wf_${devId}_` === currentPrefix) return;
+        const targetKey = `wf_${devId}_projects`;
+        try {
+          const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
+          const idx = existing.findIndex(e => e.id === proj.id);
+          if (idx >= 0) {
+            existing[idx] = { ...existing[idx], ...proj };
+          } else {
+            existing.push(proj);
+          }
+          localStorage.setItem(targetKey, JSON.stringify(existing));
+        } catch {}
+      });
+    });
   }, [projects, userId]);
 
   const addProject = useCallback((item) => { projDispatch({ type: "PROJ_ADD", item }); }, []);
