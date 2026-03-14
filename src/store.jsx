@@ -136,6 +136,7 @@ export function AppProvider({ children, userId }) {
   const deletedTasks = allTasks.filter(t => t.deleted);
 
   // Auto-save + cloud sync + cross-user task sync
+  const crossUserTasksRef = useRef({});
   const hasLoadedRef = useRef(false);
   useEffect(() => {
     if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
@@ -168,70 +169,9 @@ export function AppProvider({ children, userId }) {
       if (!tasksByAssignee[t.assignee]) tasksByAssignee[t.assignee] = [];
       tasksByAssignee[t.assignee].push(t);
     });
-    // Cloud sync: push assigned tasks to assignee's Supabase user_data
-    if (supabase && Object.keys(tasksByAssignee).length > 0) {
-      (async () => {
-        try {
-          // Fetch profiles for matching (try with email, fallback without)
-          let profiles;
-          const { data: pData, error: pErr } = await supabase.from("profiles").select("id, display_name, email");
-          if (pErr) {
-            // email column might not exist yet — fallback
-            const { data: pFallback } = await supabase.from("profiles").select("id, display_name");
-            profiles = pFallback;
-          } else {
-            profiles = pData;
-          }
-          if (!profiles) return;
-          // Known assignee name → email mapping
-          const DEV_EMAIL_MAP = {
-            "Tran Thi Mai": "noithatphuhung.jsc@gmail.com",
-          };
-          const normalize = s => (s || "").toLowerCase().trim();
-          for (const [assigneeName, assignedTasks] of Object.entries(tasksByAssignee)) {
-            const knownEmail = DEV_EMAIL_MAP[assigneeName];
-            // Match by: 1) display_name exact, 2) email, 3) partial name match
-            let profile = profiles.find(p => normalize(p.display_name) === normalize(assigneeName));
-            if (!profile && knownEmail) {
-              profile = profiles.find(p => normalize(p.email) === normalize(knownEmail));
-            }
-            if (!profile) {
-              const parts = assigneeName.toLowerCase().split(" ");
-              profile = profiles.find(p => parts.some(part => part.length > 2 && normalize(p.display_name).includes(part)));
-            }
-            if (!profile || profile.id === userId) continue;
-            // Get existing cloud tasks for this assignee
-            const { data: existing } = await supabase.from("user_data")
-              .select("data").eq("user_id", profile.id).eq("key", "tasks").maybeSingle();
-            const cloudTasks = (existing?.data && Array.isArray(existing.data)) ? existing.data : [];
-            // Merge: update existing, add new
-            let merged = [...cloudTasks];
-            for (const t of assignedTasks) {
-              const idx = merged.findIndex(e => e.id === t.id);
-              if (idx >= 0) { merged[idx] = { ...merged[idx], ...t }; }
-              else { merged.push(t); }
-            }
-            await cloudSave(supabase, profile.id, "tasks", merged);
-            // Also sync projects
-            const assigneeProjects = [...new Set(assignedTasks.map(t => t.projectId))];
-            const projsToSync = assigneeProjects.map(pid => projects.find(p => p.id === pid)).filter(Boolean);
-            if (projsToSync.length > 0) {
-              const { data: existingProj } = await supabase.from("user_data")
-                .select("data").eq("user_id", profile.id).eq("key", "projects").maybeSingle();
-              const cloudProjs = (existingProj?.data && Array.isArray(existingProj.data)) ? existingProj.data : [];
-              let mergedProjs = [...cloudProjs];
-              for (const p of projsToSync) {
-                const idx = mergedProjs.findIndex(e => e.id === p.id);
-                if (idx >= 0) { mergedProjs[idx] = { ...mergedProjs[idx], ...p }; }
-                else { mergedProjs.push(p); }
-              }
-              await cloudSave(supabase, profile.id, "projects", mergedProjs);
-            }
-          }
-        } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
-      })();
-    }
-  }, [allTasks, userId, projects]);
+    // Store tasksByAssignee for cloud sync in separate effect (after projects is declared)
+    crossUserTasksRef.current = tasksByAssignee;
+  }, [allTasks, userId]);
 
   // Purge old deleted + roll overdue tasks on mount
   useEffect(() => {
@@ -343,6 +283,47 @@ export function AppProvider({ children, userId }) {
       });
     });
   }, [projects, userId]);
+
+  // Cross-user CLOUD sync: push assigned tasks+projects to assignee's Supabase
+  const crossSyncTimerRef = useRef(null);
+  useEffect(() => {
+    const tasksByAssignee = crossUserTasksRef.current;
+    if (!supabase || !userId || !Object.keys(tasksByAssignee).length) return;
+    clearTimeout(crossSyncTimerRef.current);
+    crossSyncTimerRef.current = setTimeout(async () => {
+      try {
+        let profs;
+        const { data: pD, error: pE } = await supabase.from("profiles").select("id, display_name, email");
+        profs = pE ? (await supabase.from("profiles").select("id, display_name")).data : pD;
+        if (!profs) return;
+        const DEV_EMAIL_MAP = { "Tran Thi Mai": "noithatphuhung.jsc@gmail.com" };
+        const norm = s => (s || "").toLowerCase().trim();
+        for (const [name, tasks] of Object.entries(tasksByAssignee)) {
+          const email = DEV_EMAIL_MAP[name];
+          let p = profs.find(x => norm(x.display_name) === norm(name));
+          if (!p && email) p = profs.find(x => norm(x.email) === norm(email));
+          if (!p) { const parts = name.toLowerCase().split(" "); p = profs.find(x => parts.some(pt => pt.length > 2 && norm(x.display_name).includes(pt))); }
+          if (!p || p.id === userId) continue;
+          // Merge tasks
+          const { data: ex } = await supabase.from("user_data").select("data").eq("user_id", p.id).eq("key", "tasks").maybeSingle();
+          const cloud = (ex?.data && Array.isArray(ex.data)) ? ex.data : [];
+          let merged = [...cloud];
+          for (const t of tasks) { const i = merged.findIndex(e => e.id === t.id); if (i >= 0) merged[i] = { ...merged[i], ...t }; else merged.push(t); }
+          await cloudSave(supabase, p.id, "tasks", merged);
+          // Merge projects
+          const projIds = [...new Set(tasks.map(t => t.projectId))];
+          const projs = projIds.map(pid => projects.find(pr => pr.id === pid)).filter(Boolean);
+          if (projs.length) {
+            const { data: exP } = await supabase.from("user_data").select("data").eq("user_id", p.id).eq("key", "projects").maybeSingle();
+            const cP = (exP?.data && Array.isArray(exP.data)) ? exP.data : [];
+            let mP = [...cP];
+            for (const pr of projs) { const i = mP.findIndex(e => e.id === pr.id); if (i >= 0) mP[i] = { ...mP[i], ...pr }; else mP.push(pr); }
+            await cloudSave(supabase, p.id, "projects", mP);
+          }
+        }
+      } catch (e) { console.warn("Cross-user cloud sync failed:", e); }
+    }, 5000);
+  }, [allTasks, projects, userId]);
 
   const addProject = useCallback((item) => { projDispatch({ type: "PROJ_ADD", item }); }, []);
   const patchProject = useCallback((id, data) => { projDispatch({ type: "PROJ_PATCH", id, data }); }, []);
