@@ -43,20 +43,30 @@ const TEAM_ACCOUNTS = [
 const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
 
 function SupabaseAutoLogin() {
-  const { isConnected, signIn, signUp, loading } = useSupabase();
+  const { isConnected, signIn, signUp, signOut, loading, session } = useSupabase();
   const tried = useRef(false);
-  const triedEmail = useRef("");
 
   useEffect(() => {
-    if (loading || isConnected) return;
-    // Get current session email
+    if (loading) return;
     const s = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
     const email = TEAM_EMAILS[s.id];
     if (!email) return;
-    // Re-try if switching to different user, or first attempt
-    if (tried.current && triedEmail.current === email) return;
+
+    // If already connected, check if Supabase session matches local user
+    if (isConnected && session?.user?.email) {
+      if (session.user.email === email) return; // correct user, nothing to do
+      // Wrong user — sign out first, then re-login
+      (async () => {
+        await signOut();
+        // After signOut, isConnected becomes false → this effect re-runs
+      })();
+      return;
+    }
+
+    if (isConnected) return; // connected but no email to check — skip
+    if (tried.current) return;
     tried.current = true;
-    triedEmail.current = email;
+
     const pw = "111111";
     const name = s.name || email.split("@")[0];
     (async () => {
@@ -70,11 +80,10 @@ function SupabaseAutoLogin() {
       const r = await signIn(email, pw);
       if (r.error) {
         const r2 = await signUp(email, pw, name);
-        // If signUp also fails, retry signIn (ensure_auth may have just created it)
         if (r2.error) await signIn(email, pw);
       }
     })();
-  }, [loading, isConnected]);
+  }, [loading, isConnected, session]);
 
   // One-time: ensure all team members have Supabase auth accounts
   useEffect(() => {
