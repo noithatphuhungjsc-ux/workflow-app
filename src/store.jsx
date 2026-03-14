@@ -187,105 +187,112 @@ export function AppProvider({ children, userId }) {
     dispatch({ type: "ROLL_OVERDUE" });
   }, []);
 
-  // Cloud sync: push local data UP + pull missing data DOWN
+  // Cloud sync: PULL first → merge → then PUSH merged data up
   const cloudLoadedRef = useRef(false);
   useEffect(() => {
-    console.log("[CloudSync] effect run — cloudId:", cloudId, "userId:", userId, "loaded:", cloudLoadedRef.current);
     if (cloudLoadedRef.current || !cloudId) return;
     cloudLoadedRef.current = true;
-    const localTasks = loadJSON("tasks", []);
-    const localProjects = loadJSON("projects", []);
-    const localExpenses = loadJSON("expenses", []);
-    console.log("[CloudSync] local:", localTasks.length, "tasks,", localProjects.length, "projects");
-    // If local has data → push UP to cloud (save under BOTH cloudId and local userId)
-    if (localTasks.length > 0) {
-      cloudSave(null, cloudId, "tasks", localTasks);
-      if (cloudId !== userId) cloudSave(null, userId, "tasks", localTasks);
-    }
-    if (localProjects.length > 0) {
-      cloudSave(null, cloudId, "projects", localProjects);
-      if (cloudId !== userId) cloudSave(null, userId, "projects", localProjects);
-    }
-    if (localExpenses.length > 0) {
-      cloudSave(null, cloudId, "expenses", localExpenses);
-      if (cloudId !== userId) cloudSave(null, userId, "expenses", localExpenses);
-    }
-    // Always pull from cloud and MERGE (not replace) — ensures cross-user synced data arrives
+
     (async () => {
+      let localTasks = loadJSON("tasks", []);
+      let localProjects = loadJSON("projects", []);
+      let localExpenses = loadJSON("expenses", []);
+
+      // === STEP 1: PULL from cloud FIRST (before pushing) ===
       try {
-        // Query by cloudId — also try local userId
-        console.log("[CloudSync] pulling from cloud...", cloudId, userId);
         let data = await cloudLoadAll(null, cloudId);
-        console.log("[CloudSync] cloudLoadAll(cloudId):", data?.length || 0, "rows");
         if ((!data?.length) && cloudId !== userId) {
           data = await cloudLoadAll(null, userId);
-          console.log("[CloudSync] cloudLoadAll(userId):", data?.length || 0, "rows");
         }
-        if (!data?.length) { console.log("[CloudSync] no cloud data found"); return; }
-        let loaded = 0;
-        for (const row of data) {
-          if (!row.data || !Array.isArray(row.data)) {
-            // Non-array data (settings, memory, knowledge)
-            if (row.key === "settings" && typeof row.data === "object") {
-              setSettingsState(prev => { const m = { ...prev, ...row.data }; persistSettings(m); return m; });
-              loaded++;
-            }
-            if (row.key === "memory" && row.data) { setMemory(row.data); saveJSON("memory", row.data); loaded++; }
-            if (row.key === "wory_knowledge" && row.data) { setKnowledge(row.data); saveJSON("wory_knowledge", row.data); loaded++; }
-            continue;
-          }
-          if (row.data.length === 0) continue;
+        if (data?.length) {
+          for (const row of data) {
+            if (!row.data) continue;
 
-          if (row.key === "tasks") {
-            console.log("[CloudSync] tasks from cloud:", row.data?.length, "local:", localTasks.length);
-            if (localTasks.length === 0) {
-              dispatch({ type: "LOAD", tasks: row.data });
-              saveJSON("tasks", row.data);
-              console.log("[CloudSync] FULL LOAD tasks:", row.data.length);
-            } else {
-              const localIds = new Set(localTasks.map(t => t.id));
-              const newItems = row.data.filter(t => !localIds.has(t.id));
-              if (newItems.length > 0) {
-                const merged = [...localTasks, ...newItems];
-                dispatch({ type: "LOAD", tasks: merged });
-                saveJSON("tasks", merged);
-                console.log("[CloudSync] MERGED", newItems.length, "new tasks");
+            // Non-array data (settings, memory, knowledge)
+            if (!Array.isArray(row.data)) {
+              if (row.key === "settings" && typeof row.data === "object") {
+                setSettingsState(prev => { const m = { ...prev, ...row.data }; persistSettings(m); return m; });
+              }
+              if (row.key === "memory" && row.data) { setMemory(row.data); saveJSON("memory", row.data); }
+              if (row.key === "wory_knowledge" && row.data) { setKnowledge(row.data); saveJSON("wory_knowledge", row.data); }
+              continue;
+            }
+            if (row.data.length === 0) continue;
+
+            if (row.key === "tasks") {
+              if (localTasks.length === 0) {
+                localTasks = row.data;
+                dispatch({ type: "LOAD", tasks: localTasks });
+                saveJSON("tasks", localTasks);
+              } else {
+                const localIds = new Set(localTasks.map(t => t.id));
+                const newItems = row.data.filter(t => !localIds.has(t.id));
+                if (newItems.length > 0) {
+                  localTasks = [...localTasks, ...newItems];
+                  dispatch({ type: "LOAD", tasks: localTasks });
+                  saveJSON("tasks", localTasks);
+                }
+                // Also update existing tasks with newer cloud data
+                let updated = false;
+                for (const ct of row.data) {
+                  const li = localTasks.findIndex(t => t.id === ct.id);
+                  if (li >= 0 && ct.status !== localTasks[li].status) {
+                    localTasks[li] = { ...localTasks[li], ...ct };
+                    updated = true;
+                  }
+                }
+                if (updated) {
+                  dispatch({ type: "LOAD", tasks: [...localTasks] });
+                  saveJSON("tasks", localTasks);
+                }
               }
             }
-            loaded++;
-          }
-          if (row.key === "projects") {
-            console.log("[CloudSync] projects from cloud:", row.data?.length, "local:", localProjects.length);
-            if (localProjects.length === 0) {
-              projDispatch({ type: "PROJ_LOAD", items: row.data });
-              saveJSON("projects", row.data);
-              console.log("[CloudSync] FULL LOAD projects:", row.data.length);
-            } else {
-              const localIds = new Set(localProjects.map(p => p.id));
-              const newItems = row.data.filter(p => !localIds.has(p.id));
-              if (newItems.length > 0) {
-                const merged = [...localProjects, ...newItems];
-                projDispatch({ type: "PROJ_LOAD", items: merged });
-                saveJSON("projects", merged);
-                console.log("[CloudSync] MERGED", newItems.length, "new projects");
+            if (row.key === "projects") {
+              if (localProjects.length === 0) {
+                localProjects = row.data;
+                projDispatch({ type: "PROJ_LOAD", items: localProjects });
+                saveJSON("projects", localProjects);
+              } else {
+                const localIds = new Set(localProjects.map(p => p.id));
+                const newItems = row.data.filter(p => !localIds.has(p.id));
+                if (newItems.length > 0) {
+                  localProjects = [...localProjects, ...newItems];
+                  projDispatch({ type: "PROJ_LOAD", items: localProjects });
+                  saveJSON("projects", localProjects);
+                }
               }
             }
-            loaded++;
-          }
-          if (row.key === "expenses") {
-            if (localExpenses.length === 0) {
-              row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
-              saveJSON("expenses", row.data);
-            } else {
-              const localIds = new Set(localExpenses.map(e => e.id));
-              const newItems = row.data.filter(e => !localIds.has(e.id));
-              newItems.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+            if (row.key === "expenses") {
+              if (localExpenses.length === 0) {
+                localExpenses = row.data;
+                row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+                saveJSON("expenses", localExpenses);
+              } else {
+                const localIds = new Set(localExpenses.map(e => e.id));
+                const newItems = row.data.filter(e => !localIds.has(e.id));
+                if (newItems.length > 0) {
+                  localExpenses = [...localExpenses, ...newItems];
+                  newItems.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+                }
+              }
             }
-            loaded++;
           }
         }
-        if (loaded > 0) console.log(`Cloud sync: merged ${loaded} keys from cloud`);
-      } catch (e) { console.warn("Cloud auto-load failed:", e); }
+      } catch (e) { console.warn("Cloud pull failed:", e); }
+
+      // === STEP 2: PUSH merged data UP to cloud ===
+      if (localTasks.length > 0) {
+        cloudSave(null, cloudId, "tasks", localTasks);
+        if (cloudId !== userId) cloudSave(null, userId, "tasks", localTasks);
+      }
+      if (localProjects.length > 0) {
+        cloudSave(null, cloudId, "projects", localProjects);
+        if (cloudId !== userId) cloudSave(null, userId, "projects", localProjects);
+      }
+      if (localExpenses.length > 0) {
+        cloudSave(null, cloudId, "expenses", localExpenses);
+        if (cloudId !== userId) cloudSave(null, userId, "expenses", localExpenses);
+      }
     })();
   }, [cloudId, userId]);
 
