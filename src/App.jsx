@@ -45,22 +45,35 @@ const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
 function SupabaseAutoLogin() {
   const { isConnected, signIn, signUp, loading } = useSupabase();
   const tried = useRef(false);
+  const triedEmail = useRef("");
 
   useEffect(() => {
-    // Auto sign-in to Supabase from local session
-    if (loading || isConnected || tried.current) return;
+    if (loading || isConnected) return;
+    // Get current session email
+    const s = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
+    const email = TEAM_EMAILS[s.id];
+    if (!email) return;
+    // Re-try if switching to different user, or first attempt
+    if (tried.current && triedEmail.current === email) return;
     tried.current = true;
-    try {
-      const s = JSON.parse(localStorage.getItem("wf_session") || "{}");
-      const email = TEAM_EMAILS[s.id];
-      if (!email) return;
-      const pw = "111111";
-      const name = s.name || email.split("@")[0];
-      (async () => {
-        const r = await signIn(email, pw);
-        if (r.error) await signUp(email, pw, name);
-      })();
-    } catch {}
+    triedEmail.current = email;
+    const pw = "111111";
+    const name = s.name || email.split("@")[0];
+    (async () => {
+      // First ensure auth account exists on server
+      try {
+        await fetch("/api/cloud-sync", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "ensure_auth", email, password: pw, displayName: name }),
+        });
+      } catch {}
+      const r = await signIn(email, pw);
+      if (r.error) {
+        const r2 = await signUp(email, pw, name);
+        // If signUp also fails, retry signIn (ensure_auth may have just created it)
+        if (r2.error) await signIn(email, pw);
+      }
+    })();
   }, [loading, isConnected]);
 
   // One-time: ensure all team members have Supabase auth accounts

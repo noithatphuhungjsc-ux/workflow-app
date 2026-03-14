@@ -486,12 +486,17 @@ const DEV_ROLES = [
 const ROLE_LABELS = { dev: "DEV", admin: "AD", manager: "QL", staff: "NV" };
 const ROLE_COLORS = { dev: "#9b59b6", admin: "#e74c3c", manager: "#c8956c", staff: "#27ae60" };
 
-function switchToAccount(acc) {
+async function switchToAccount(acc) {
+  // Sign out Supabase so auto-login re-triggers for new user
+  try {
+    const { supabase } = await import("./lib/supabase");
+    if (supabase) await supabase.auth.signOut({ scope: "local" });
+  } catch {}
   localStorage.setItem("wf_session", JSON.stringify({ id: acc.id, name: acc.name, email: acc.email || "", phone: acc.phone || "", role: acc.role, title: acc.title, loginAt: Date.now() }));
   const settingsKey = `wf_${acc.id}_settings`;
   try {
     const s = JSON.parse(localStorage.getItem(settingsKey) || "{}");
-    s.userRole = acc.role === "staff" ? "staff" : "manager"; // dev/admin/manager all use manager UI
+    s.userRole = acc.role === "staff" ? "staff" : "manager";
     s.displayName = s.displayName || acc.name;
     localStorage.setItem(settingsKey, JSON.stringify(s));
   } catch {}
