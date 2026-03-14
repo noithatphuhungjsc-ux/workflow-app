@@ -583,9 +583,10 @@ ${sum}`;
     setMiniReply("");
     try {
       const t = miniTask ? tasks.find(x => x.id === miniTask.id) || miniTask : null;
-      const taskCtx = t ? `[NHANH — Task: "${t.title}" | ${STATUSES[t.status]?.label} | ${PRIORITIES[t.priority]?.label?.replace("\n",", ")}${t.deadline ? ` | ${t.deadline}` : ""}]
-LAM LUON, tra loi ≤15 tu. Dung lenh:
-[TASK_EXPENSE:ten_task:ly_do|so_tien|danh_muc] — chi tieu (work/relationship/family/personal/other)
+      const isProjectTask = t?.projectId;
+      const taskCtx = t ? `[NHANH — Task: "${t.title}" | ${STATUSES[t.status]?.label} | ${PRIORITIES[t.priority]?.label?.replace("\n",", ")}${t.deadline ? ` | ${t.deadline}` : ""}${isProjectTask ? " | DỰ ÁN" : ""}]
+LAM LUON, tra loi ≤15 tu.${isProjectTask ? " KHONG TAO VIEC MOI. Chi cap nhat task hien tai." : ""} Dung lenh:
+[TASK_EXPENSE:ten_task:ly_do|so_tien] — chi tieu
 [TASK_NOTES:ten_task:noi_dung] — ghi chu
 [TASK_PATCH:ten_task:field=value] — doi status/priority/deadline/startTime\n\n` : "";
       const fullText = await callClaudeStream(
@@ -597,7 +598,7 @@ LAM LUON, tra loi ≤15 tu. Dung lenh:
       let clean = processMemoryCommands(fullText, memory, setMemory, knowledge, setKnowledge);
       const { cleanText, actions } = processTaskCommands(clean, tasks, {}, settings.woryCanEdit);
       clean = cleanText.replace(/\[TASK_\w+:.+?\]/g, "").trim();
-      if (actions.length > 0) executeTaskActions(actions, { addTask, deleteTask, patchTask });
+      if (actions.length > 0) executeTaskActions(actions, isProjectTask ? { patchTask } : { addTask, deleteTask, patchTask });
       setMiniReply(clean);
       if (settings.ttsEnabled) tts(clean, settings.ttsSpeed);
     } catch { setMiniReply("Lỗi kết nối."); }

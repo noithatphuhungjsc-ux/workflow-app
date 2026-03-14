@@ -294,11 +294,11 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
             </div>
           )}
         </div>
-        {/* Right: Wory mic — always same width for vertical alignment */}
+        {/* Right: Wory mic — add details via voice */}
         <div style={{ flexShrink:0, width:28, display:"flex", alignItems:"center", justifyContent:"center" }}>
           {!isDone && <span className="tap" onClick={e => { e.stopPropagation(); onAdjust?.(task); }}
             style={{ width:24, height:24, borderRadius:"50%", background:`${C.purple}10`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:`1.5px solid ${C.purple}33` }}
-            title="Nhờ Wory điều chỉnh">
+            title="Thêm chi tiết bằng giọng nói">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.purple} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
             </svg>
@@ -376,24 +376,28 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
 
           {/* ── Inline Expense editing ── */}
           <div style={{ marginTop:8 }}>
-            <div style={{ fontSize:10, color:C.muted, fontWeight:600, marginBottom:4 }}>CHI TIÊU</div>
-            <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:6 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+              <span style={{ fontSize:10, color:C.muted, fontWeight:600 }}>CHI TIÊU</span>
+              <span className="tap" onClick={() => { if (!expense.amount) patchExpense({ amount: 0, description: "" }); }}
+                style={{ fontSize:10, padding:"1px 6px", borderRadius:4, background:C.goldD, color:C.gold, fontWeight:700, cursor:"pointer" }}>+ Thêm</span>
+            </div>
+            {/* Amount + reason on same row */}
+            <div style={{ display:"flex", gap:4, alignItems:"center", marginBottom:4 }}>
+              <input value={expense.description || ""} onChange={e => patchExpense({ description: e.target.value })}
+                placeholder="Lý do..." style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, minWidth:0 }} />
               <input type="number" value={expense.amount || ""} onChange={e => patchExpense({ amount: Number(e.target.value) || 0 })}
-                placeholder="Số tiền" style={{ flex:1, fontSize:13, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg }} />
-              <span style={{ fontSize:11, color:C.muted }}>đ</span>
+                placeholder="Số tiền" style={{ flex:1, fontSize:12, fontWeight:700, color:C.gold, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 6px", outline:"none", background:C.bg, minWidth:0 }} />
+              <span style={{ fontSize:10, color:C.muted, flexShrink:0 }}>đ</span>
               <span className="tap" onClick={openQR}
-                style={{ width:26, height:26, borderRadius:"50%", background:`${C.accent}12`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:`1.5px solid ${C.accent}44`, flexShrink:0 }}
+                style={{ width:24, height:24, borderRadius:"50%", background:`${C.accent}12`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:`1.5px solid ${C.accent}44`, flexShrink:0 }}
                 title="QR thanh toán">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2">
                   <rect x="2" y="2" width="7" height="7" rx="1"/><rect x="15" y="2" width="7" height="7" rx="1"/><rect x="2" y="15" width="7" height="7" rx="1"/>
                   <rect x="4.5" y="4.5" width="2" height="2" fill={C.accent} stroke="none"/><rect x="17.5" y="4.5" width="2" height="2" fill={C.accent} stroke="none"/><rect x="4.5" y="17.5" width="2" height="2" fill={C.accent} stroke="none"/>
                   <path d="M15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2zM17 17h2v2h-2z" fill={C.accent} stroke="none"/>
                 </svg>
               </span>
             </div>
-            {/* Reason input */}
-            <input value={expense.description || ""} onChange={e => patchExpense({ description: e.target.value })}
-              placeholder="Lý do chi tiêu..." style={{ width:"100%", fontSize:12, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", outline:"none", background:C.bg, color:C.text, marginBottom:6, boxSizing:"border-box" }} />
             {/* Source + paid */}
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <select value={expense.source || ""} onChange={e => patchExpense({ source: e.target.value })}
