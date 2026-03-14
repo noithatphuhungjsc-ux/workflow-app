@@ -993,7 +993,7 @@ LAM LUON, tra loi ≤15 tu.${isProjectTask ? " KHONG TAO VIEC MOI. Chi cap nhat 
       {/* ── HEADER ── */}
       <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 6, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
         <UserMenu user={{ ...user, name: settings.displayName || user.name }} onLogout={onLogout} onSettings={() => setSettingsOpen(true)} />
-        <span style={{ fontSize:13, fontWeight:700, color:C.accent, letterSpacing:-.3 }}>WorkFlow</span>
+        <span style={{ fontSize:17, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
         <div style={{ flex: 1, minWidth:4 }} />
         {/* Quick expense / QR scan */}
         <div className="tap" onClick={() => setQrOpen(true)}
