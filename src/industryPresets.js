@@ -2,14 +2,6 @@
    INDUSTRY PRESETS — "Chọn ngành = Thu nhỏ app vừa đúng nhu cầu"
    Mỗi preset cùng shape. Thiếu field → fallback về mặc định.
    ================================================================ */
-import { WORKFLOWS } from "./constants";
-
-/* ── Helper: lọc workflow theo id list ── */
-export function getWorkflowsByIds(ids) {
-  if (!ids?.length) return [];
-  return WORKFLOWS.filter(w => ids.includes(w.id));
-}
-
 /* ══════════════════════════════════════════════════════════════════
    PRESET DATA
    ══════════════════════════════════════════════════════════════════ */

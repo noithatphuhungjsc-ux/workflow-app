@@ -4,7 +4,12 @@
    ================================================================ */
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS } from "./constants";
-import { INDUSTRY_PRESETS, getWorkflowsByIds } from "./industryPresets";
+import { INDUSTRY_PRESETS } from "./industryPresets";
+
+function getWorkflowsByIds(ids) {
+  if (!ids?.length) return [];
+  return WORKFLOWS.filter(w => ids.includes(w.id));
+}
 import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
 import { useSupabase } from "./contexts/SupabaseContext";
 
