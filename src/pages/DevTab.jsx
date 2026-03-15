@@ -118,6 +118,25 @@ function ensureVConsole() {
   }
 }
 
+const USER_IDS = ["trinh", "lien", "hung", "mai", "duc"];
+
+function clearPersonalTasks() {
+  let total = 0;
+  for (const uid of USER_IDS) {
+    const key = `wf_${uid}_tasks`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const tasks = JSON.parse(raw);
+      const before = tasks.length;
+      const kept = tasks.filter(t => !!t.projectId);
+      total += before - kept.length;
+      localStorage.setItem(key, JSON.stringify(kept));
+    } catch {}
+  }
+  return total;
+}
+
 export default function DevTab({ user }) {
   useEffect(() => { ensureVConsole(); }, []);
 
@@ -325,6 +344,18 @@ export default function DevTab({ user }) {
           <span style={{ fontSize: 10, color: C.muted }}>{bridgeOnline ? "Bridge ON" : "Bridge OFF"}</span>
           <button onClick={clearHistory} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: C.muted }}>🗑️</button>
         </div>
+      </div>
+
+      {/* ── Data Tools ── */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 6, flexShrink: 0 }}>
+        <button className="tap" onClick={() => {
+          if (!confirm("Xóa tất cả việc cá nhân (không thuộc dự án) của 5 tài khoản?")) return;
+          const n = clearPersonalTasks();
+          alert(`Đã xóa ${n} việc cá nhân. Tải lại trang để cập nhật.`);
+          window.location.reload();
+        }} style={{ flex: 1, background: "#fde8e8", color: "#d95f5f", border: "1px solid #d95f5f33", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700 }}>
+          🗑️ Xóa việc cá nhân (tất cả TK)
+        </button>
       </div>
 
       {/* ── Messages ── */}
