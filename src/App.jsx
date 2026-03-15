@@ -1192,6 +1192,7 @@ function MainApp({ user, onLogout }) {
         onNavigate={(targetTab, targetModal, scrollY) => {
           setChangelogScrollY(scrollY);
           setChangelogOpen(false);
+          setSettingsOpen(false);
           if (targetTab) setTab(targetTab);
           if (targetModal === "settings") setSettingsOpen(true);
           setChangelogBack(true);
