@@ -120,7 +120,7 @@ function ensureVConsole() {
 
 const USER_IDS = ["trinh", "lien", "hung", "mai", "duc"];
 
-function clearPersonalTasks() {
+async function clearPersonalTasks() {
   let total = 0;
   for (const uid of USER_IDS) {
     const key = `wf_${uid}_tasks`;
@@ -132,6 +132,14 @@ function clearPersonalTasks() {
       const kept = tasks.filter(t => !!t.projectId);
       total += before - kept.length;
       localStorage.setItem(key, JSON.stringify(kept));
+      // Also push to cloud
+      try {
+        await fetch("/api/cloud-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: uid, key: "tasks", data: kept }),
+        });
+      } catch {}
     } catch {}
   }
   return total;
@@ -348,13 +356,13 @@ export default function DevTab({ user }) {
 
       {/* ── Data Tools ── */}
       <div style={{ display: "flex", gap: 6, marginBottom: 6, flexShrink: 0 }}>
-        <button className="tap" onClick={() => {
-          if (!confirm("Xóa tất cả việc cá nhân (không thuộc dự án) của 5 tài khoản?")) return;
-          const n = clearPersonalTasks();
-          alert(`Đã xóa ${n} việc cá nhân. Tải lại trang để cập nhật.`);
+        <button className="tap" onClick={async () => {
+          if (!confirm("Xóa tất cả việc cá nhân (không thuộc dự án) của 5 tài khoản? Bao gồm cả cloud.")) return;
+          const n = await clearPersonalTasks();
+          alert(`Đã xóa ${n} việc cá nhân (local + cloud). Tải lại trang.`);
           window.location.reload();
         }} style={{ flex: 1, background: "#fde8e8", color: "#d95f5f", border: "1px solid #d95f5f33", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700 }}>
-          🗑️ Xóa việc cá nhân (tất cả TK)
+          🗑️ Xóa việc cá nhân (tất cả TK + cloud)
         </button>
       </div>
 
