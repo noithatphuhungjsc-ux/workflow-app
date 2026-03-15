@@ -7,8 +7,18 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { C } from "../constants";
 import { CHANGELOG } from "../changelog";
 
+/* Hardcoded overrides for ambiguous texts (keyword appears but isn't the main feature) */
+const TARGET_OVERRIDES = {
+  "PWA — cài đặt như app native": null,
+  "Desktop responsive — giao diện mở rộng 640-900px cho màn hình lớn": null,
+  "Audit log — ghi nhận mọi thao tác (task, expense, settings)": null,
+  "Xuất báo cáo CSV/PDF — export tasks & chi tiêu": "report",
+  "Push notification nâng cao — thông báo khi giao việc/duyệt chi tiêu": null,
+};
+
 /* Map change text → target tab */
 function getTarget(text) {
+  if (text in TARGET_OVERRIDES) return TARGET_OVERRIDES[text];
   const lc = text.toLowerCase();
   // Exact/specific matches first
   if (/dashboard|tổng quan|kpi|donut|weekly trend|priority breakdown/.test(lc)) return "dashboard";
