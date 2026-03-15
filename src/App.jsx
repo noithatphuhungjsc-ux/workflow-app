@@ -221,6 +221,8 @@ function MainApp({ user, onLogout }) {
 
   const [addOpen, setAddOpen]         = useState(false);
   const [searchQ, setSearchQ]         = useState("");
+  const [selectMode, setSelectMode]   = useState(null); // null | "edit" | "delete"
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [alertToast, setAlertToast]   = useState(null); // { task, type }
   const [bellOpen, setBellOpen]       = useState(false);
@@ -232,6 +234,8 @@ function MainApp({ user, onLogout }) {
   const [toast, setToast]             = useState(null); // { message, type }
   const [showGuide, setShowGuide]     = useState(() => !localStorage.getItem("wf_onboard_done") && !!settings.industryPreset);
   const showToast = useCallback((message, type = "success") => setToast({ message, type }), []);
+  const toggleSelect = useCallback((id) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }), []);
+  const exitSelectMode = useCallback(() => { setSelectMode(null); setSelectedIds(new Set()); }, []);
   const alertDismissedRef = useRef(new Set());
 
   /* ── AI Chat (extracted to useWoryChat) ── */
@@ -770,6 +774,59 @@ function MainApp({ user, onLogout }) {
               )}
             </div>
             <Filters filter={filter} setFilter={setFilter} />
+            {/* ── Multi-select toolbar ── */}
+            {!selectMode ? (
+              <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+                <button className="tap" onClick={() => { setSelectMode("edit"); setSelectedIds(new Set()); }}
+                  style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:`1px solid ${C.accent}44`, background:C.accentD, color:C.accent, fontSize:11, fontWeight:600 }}>
+                  <span style={{ fontSize:13 }}>✏️</span> Sửa
+                </button>
+                <button className="tap" onClick={() => { setSelectMode("delete"); setSelectedIds(new Set()); }}
+                  style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:11, fontWeight:600 }}>
+                  <span style={{ fontSize:13 }}>🗑️</span> Xóa
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"8px 10px", background: selectMode === "delete" ? `${C.red}08` : `${C.accent}08`, borderRadius:10, border:`1px solid ${selectMode === "delete" ? C.red + "33" : C.accent + "33"}` }}>
+                <label className="tap" style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:12, fontWeight:600, color:C.text }}>
+                  <input type="checkbox" checked={filteredTasks.length > 0 && selectedIds.size === filteredTasks.length}
+                    onChange={() => setSelectedIds(prev => prev.size === filteredTasks.length ? new Set() : new Set(filteredTasks.map(t => t.id)))}
+                    style={{ width:16, height:16, accentColor: selectMode === "delete" ? C.red : C.accent }} />
+                  Chọn tất cả
+                </label>
+                <span style={{ fontSize:11, color:C.muted }}>{selectedIds.size}/{filteredTasks.length}</span>
+                <div style={{ flex:1 }} />
+                {selectedIds.size > 0 && selectMode === "delete" && (
+                  <button className="tap" onClick={() => {
+                    if (isStaff) {
+                      if (!window.confirm(`Yêu cầu xóa ${selectedIds.size} công việc? Admin sẽ duyệt.`)) return;
+                      selectedIds.forEach(id => patchTask(id, { deleteRequest: { status: "pending", by: settings.displayName || "NV", at: new Date().toISOString() } }));
+                    } else {
+                      if (!window.confirm(`Xóa ${selectedIds.size} công việc?`)) return;
+                      selectedIds.forEach(id => deleteTask(id));
+                    }
+                    exitSelectMode();
+                  }}
+                    style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                    {isStaff ? "Yêu cầu xóa" : `Xóa (${selectedIds.size})`}
+                  </button>
+                )}
+                {selectedIds.size > 0 && selectMode === "edit" && (
+                  <button className="tap" onClick={() => {
+                    const status = prompt("Đổi trạng thái:\n1 = Chờ\n2 = Đang làm\n3 = Xong\n4 = Tạm hoãn");
+                    const map = { "1": "todo", "2": "inprogress", "3": "done", "4": "paused" };
+                    if (map[status]) { selectedIds.forEach(id => patchTask(id, { status: map[status] })); exitSelectMode(); }
+                  }}
+                    style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:11, fontWeight:700 }}>
+                    Đổi trạng thái ({selectedIds.size})
+                  </button>
+                )}
+                <button className="tap" onClick={exitSelectMode}
+                  style={{ padding:"5px 10px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:11, fontWeight:600 }}>
+                  Huỷ
+                </button>
+              </div>
+            )}
             {/* Manager project dashboard when viewing all */}
             {!isStaff && (projFilter === "all") && projects.filter(p => !p.archived).length > 0 && (
               <div style={{ marginBottom:12 }}>
@@ -926,17 +983,33 @@ function MainApp({ user, onLogout }) {
                       <div style={{ width:10, height:10, borderRadius:"50%", background:dotColor, flexShrink:0, zIndex:1, border:"2px solid " + C.bg }} />
                       {!isLast && <div style={{ width:1.5, flex:1, background:C.border, minHeight:8 }} />}
                     </div>
-                    <div style={{ flex:1, minWidth:0, marginBottom: isLast ? 0 : 6 }}>
-                      <TaskRow task={t} onPress={() => setSel(t)}
-                        projectName={t.projectId ? projects.find(p => p.id === t.projectId)?.name : null}
-                        onStatusChange={(tk, s) => patchTask(tk.id, { status: s })}
-                        onPriorityChange={(tk, p) => patchTask(tk.id, { priority: p })}
-                        onPatchTask={(id, data) => patchTask(id, data)}
-                        onAdjust={(tk) => {
-                          setMiniVoice(true); setMiniReply(""); setMiniTask(tk); setMiniTranscript("");
-                          setTimeout(() => startMiniListening(), 200);
-                        }}
-                        timerTick={timerTick} handSide={settings.handSide} />
+                    <div style={{ flex:1, minWidth:0, marginBottom: isLast ? 0 : 6, display:"flex", alignItems:"stretch" }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <TaskRow task={t} onPress={selectMode ? () => toggleSelect(t.id) : () => setSel(t)}
+                          projectName={t.projectId ? projects.find(p => p.id === t.projectId)?.name : null}
+                          onStatusChange={selectMode ? undefined : (tk, s) => patchTask(tk.id, { status: s })}
+                          onPriorityChange={selectMode ? undefined : (tk, p) => patchTask(tk.id, { priority: p })}
+                          onPatchTask={(id, data) => patchTask(id, data)}
+                          onAdjust={selectMode ? undefined : (tk) => {
+                            setMiniVoice(true); setMiniReply(""); setMiniTask(tk); setMiniTranscript("");
+                            setTimeout(() => startMiniListening(), 200);
+                          }}
+                          timerTick={timerTick} handSide={settings.handSide} />
+                      </div>
+                      {selectMode && (
+                        <div className="tap" onClick={() => toggleSelect(t.id)}
+                          style={{ width:36, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+                          <div style={{
+                            width:20, height:20, borderRadius:6,
+                            border: selectedIds.has(t.id) ? "none" : `2px solid ${C.border}`,
+                            background: selectedIds.has(t.id) ? (selectMode === "delete" ? C.red : C.accent) : "transparent",
+                            display:"flex", alignItems:"center", justifyContent:"center",
+                            transition:"all .15s"
+                          }}>
+                            {selectedIds.has(t.id) && <span style={{ color:"#fff", fontSize:13, fontWeight:700, lineHeight:1 }}>✓</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
