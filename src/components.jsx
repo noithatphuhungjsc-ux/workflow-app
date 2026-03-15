@@ -309,6 +309,7 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
             {task.deadline && <span style={{ background:`${over ? C.red : C.muted}18`, color: over ? C.red : C.muted, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{over ? "! " : ""}{fmtDD(task.deadline)}</span>}
             {task.originalDeadline && <span style={{ background:`${C.red}12`, color:C.red, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>từ {fmtDD(task.originalDeadline)}</span>}
             {task.assignee && <span style={{ background:`${C.purple}18`, color:C.purple, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{task.assignee}</span>}
+            {task.deleteRequest?.status === "pending" && <span style={{ background:`${C.red}18`, color:C.red, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:600 }}>🗑️ Chờ xóa</span>}
             {projectName && <span style={{ background:`${C.accent}15`, color:C.accent, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:600 }}>📁 {projectName}</span>}
             {task.timerState === "running" && <span style={{ background:`${C.green}18`, color:C.green, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{formatTimer(elapsed)}</span>}
             {task.timerState === "paused" && elapsed > 0 && <span style={{ background:`${C.gold}18`, color:C.gold, borderRadius:20, padding:"1px 6px", fontSize:8, fontWeight:500 }}>{formatTimer(elapsed)}</span>}

@@ -301,11 +301,32 @@ export default function TaskSheet({ task, onClose }) {
   const elapsed = getElapsed(task);
   const statusColor = STATUSES[task.status]?.color || C.muted;
   const prioColor = PRIORITIES[task.priority]?.color || C.muted;
+  const isStaff = settings.userRole === "staff";
+  const hasDeleteRequest = task.deleteRequest?.status === "pending";
+
   const handleDelete = () => {
-    if (window.confirm(`Xóa "${task.title}"?`)) {
-      deleteTask(task.id);
-      onClose();
+    if (isStaff) {
+      // Staff: request deletion, admin will approve
+      if (window.confirm(`Yêu cầu xóa "${task.title}"? Admin sẽ duyệt.`)) {
+        patchTask(task.id, { deleteRequest: { status: "pending", by: settings.displayName || "NV", at: new Date().toISOString() } });
+        onClose();
+      }
+    } else {
+      // Admin/Manager/Dev: delete directly
+      if (window.confirm(`Xóa "${task.title}"?`)) {
+        deleteTask(task.id);
+        onClose();
+      }
     }
+  };
+
+  const handleApproveDelete = () => {
+    deleteTask(task.id);
+    onClose();
+  };
+
+  const handleRejectDelete = () => {
+    patchTask(task.id, { deleteRequest: null });
   };
 
   const SectionHeader = ({ label, count, open, onToggle, extra }) => (
@@ -326,8 +347,20 @@ export default function TaskSheet({ task, onClose }) {
             style={{ background:"none", border:"none", fontSize:20, color:C.muted, padding:"2px 6px", lineHeight:1 }}>&larr;</button>
           <div style={{ flex:1, fontSize:15, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{task.title}</div>
           {expenseTotal > 0 && <span style={{ fontSize:12, fontWeight:700, color:C.gold, background:C.goldD, borderRadius:8, padding:"2px 8px" }}>{fmtMoney(expenseTotal)}</span>}
-          <button className="tap" onClick={handleDelete}
-            style={{ background:C.redD, border:`1px solid ${C.red}44`, borderRadius:8, padding:"4px 10px", fontSize:11, color:C.red, fontWeight:600, flexShrink:0 }}>Xóa</button>
+          {/* Delete / Request delete */}
+          {hasDeleteRequest && !isStaff ? (
+            <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+              <button className="tap" onClick={handleApproveDelete}
+                style={{ background:C.redD, border:`1px solid ${C.red}44`, borderRadius:8, padding:"4px 8px", fontSize:10, color:C.red, fontWeight:700 }}>Duyệt xóa</button>
+              <button className="tap" onClick={handleRejectDelete}
+                style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:8, padding:"4px 8px", fontSize:10, color:C.muted, fontWeight:600 }}>Từ chối</button>
+            </div>
+          ) : (
+            <button className="tap" onClick={handleDelete}
+              style={{ background: hasDeleteRequest ? C.goldD : C.redD, border:`1px solid ${hasDeleteRequest ? C.gold : C.red}44`, borderRadius:8, padding:"4px 10px", fontSize:11, color: hasDeleteRequest ? C.gold : C.red, fontWeight:600, flexShrink:0 }}>
+              {isStaff ? (hasDeleteRequest ? "⏳ Chờ duyệt" : "Yêu cầu xóa") : "Xóa"}
+            </button>
+          )}
         </div>
 
         {/* Body */}
