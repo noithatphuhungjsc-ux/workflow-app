@@ -225,7 +225,7 @@ export default function SettingsModal({ user, onClose }) {
           </div>
 
           {/* Tabs */}
-          <div className="no-scrollbar" style={{ display:"flex", gap:4, marginBottom:16, overflowX:"auto" }}>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:16 }}>
             {TABS.filter(t => settings.userRole === "staff" ? ["profile","ai","ui","changelog"].includes(t.id) : true).map(t => (
               <button key={t.id} className="tap" onClick={() => { setTab(t.id); setMsg(""); }}
                 style={{ flexShrink:0, background: tab === t.id ? C.accent : C.card, color: tab === t.id ? "#fff" : C.sub, border:`1px solid ${tab === t.id ? C.accent : C.border}`, borderRadius:12, padding:"7px 12px", fontSize:11, fontWeight:600 }}>
