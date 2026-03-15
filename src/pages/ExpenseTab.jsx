@@ -588,7 +588,7 @@ ${last7Text}`;
                   </div>
                   {e.approval === "pending" && (
                     <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                      {(settings.userRole === "manager" || settings.userIndustryRole === "owner" || settings.userIndustryRole === "manager") ? (<>
+                      {(settings.userRole === "director" || settings.userIndustryRole === "owner") ? (<>
                         <button className="tap" onClick={() => patchExpense?.(e.id, { approval: "approved" })}
                           style={{ fontSize: 9, padding: "2px 8px", borderRadius: 6, background: C.green, color: "#fff", border: "none", fontWeight: 700, cursor: "pointer" }}>Duyệt</button>
                         <button className="tap" onClick={() => patchExpense?.(e.id, { approval: "rejected" })}

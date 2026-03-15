@@ -510,7 +510,7 @@ async function switchToAccount(acc) {
   const settingsKey = `wf_${acc.id}_settings`;
   try {
     const s = JSON.parse(localStorage.getItem(settingsKey) || "{}");
-    s.userRole = acc.role === "staff" ? "staff" : "manager";
+    s.userRole = acc.role === "director" ? "director" : "staff";
     s.displayName = s.displayName || acc.name;
     localStorage.setItem(settingsKey, JSON.stringify(s));
   } catch {}
@@ -565,7 +565,7 @@ export function UserMenu({ user, onLogout, onSettings }) {
           </div>
 
           {/* Dev role switcher — only for dev role */}
-          {currentDev?.role === "dev" && <>
+          {currentDev?.role === "director" && <>
             <div style={{ padding:"6px 10px 4px", fontSize:9, fontWeight:700, color:C.muted, letterSpacing:.5 }}>CHUYỂN VAI TRÒ (DEV)</div>
             {DEV_ROLES.map(acc => {
               const isCurrent = acc.id === user.id;

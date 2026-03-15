@@ -115,11 +115,11 @@ export const PROJECT_COLORS = ["#2980b9","#e67e22","#27ae60","#9b59b6","#d35400"
 
 /* -- TEAM ACCOUNTS — single source of truth -- */
 export const TEAM_ACCOUNTS = [
-  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn", phone: "+84983523868", role: "dev",     title: "Developer",     color: "#9b59b6" },
-  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",  phone: "",              role: "admin",   title: "Quản trị",      color: "#e74c3c" },
-  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",  phone: "",              role: "manager", title: "Quản lý",       color: "#6a7fd4" },
-  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",   phone: "",              role: "staff",   title: "Nhân viên",     color: "#3aaa72" },
-  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",   phone: "",              role: "staff",   title: "Nhân viên",     color: "#e67e22" },
+  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn", phone: "+84983523868", role: "director", title: "Giám đốc",      color: "#9b59b6" },
+  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",  phone: "",              role: "accountant", title: "Kế toán",    color: "#e74c3c" },
+  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",  phone: "",              role: "sales",   title: "Kinh doanh",    color: "#6a7fd4" },
+  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",   phone: "",              role: "hr",      title: "Nhân sự",       color: "#3aaa72" },
+  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",   phone: "",              role: "construction", title: "Thi công",  color: "#e67e22" },
 ];
 export const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
 

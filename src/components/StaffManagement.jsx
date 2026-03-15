@@ -96,8 +96,8 @@ export default function StaffManagement({ currentUserId }) {
   };
 
   const accountList = Object.values(accounts);
-  const roleColors = { dev: "#9b59b6", admin: "#e74c3c", manager: C.accent, staff: C.green };
-  const roleLabels = { dev: "Dev", admin: "Admin", manager: "Quản lý", staff: "Nhân viên" };
+  const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22" };
+  const roleLabels = { director: "Giám đốc", accountant: "Kế toán", sales: "Kinh doanh", hr: "Nhân sự", construction: "Thi công" };
 
   return (
     <div>

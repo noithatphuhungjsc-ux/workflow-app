@@ -550,7 +550,7 @@ export function AppProvider({ children, userId }) {
   // --- Expense (needs settings) ---
   const addExpense = useCallback((item) => {
     const role = settings.userIndustryRole || settings.userRole;
-    const needsApproval = role === "staff" || role === "worker" || role === "kitchen" || role === "tech" || role === "reception" || role === "driver" || role === "warehouse" || role === "nurse" || role === "ta" || role === "paralegal";
+    const needsApproval = role !== "director" && role !== "owner";
     const expenseItem = { ...item, approval: item.approval || (needsApproval ? "pending" : "approved"), createdBy: settings.displayName || "" };
     expenseDispatch({ type: "EXP_ADD", item: expenseItem });
     log("expense", item.description || "Chi tiêu", fmtMoney(item.amount));

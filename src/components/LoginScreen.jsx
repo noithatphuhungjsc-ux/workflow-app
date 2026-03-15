@@ -95,7 +95,7 @@ export default function LoginScreen({ onLogin }) {
     const settingsKey = `wf_${account.id}_settings`;
     try {
       const s = JSON.parse(localStorage.getItem(settingsKey) || "{}");
-      s.userRole = account.role === "staff" ? "staff" : "manager";
+      s.userRole = account.role === "director" ? "director" : "staff";
       s.displayName = s.displayName || account.name;
       localStorage.setItem(settingsKey, JSON.stringify(s));
     } catch {}
@@ -219,8 +219,8 @@ export default function LoginScreen({ onLogin }) {
             <div style={{ fontSize:10, color:C.muted, fontWeight:600, textAlign:"center", letterSpacing:.5 }}>CHỌN NHANH (DEV)</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
               {Object.values(accounts).map(a => {
-                const roleColors = { dev: "#9b59b6", admin: "#e74c3c", manager: C.accent, staff: C.green };
-                const roleLabels = { dev: "Dev", admin: "Admin", manager: "QL", staff: "NV" };
+                const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22" };
+                const roleLabels = { director: "GĐ", accountant: "KT", sales: "KD", hr: "NS", construction: "TC" };
                 const role = a.role || "staff";
                 return (
                   <button key={a.id} className="tap" onClick={() => completeLogin(a)}

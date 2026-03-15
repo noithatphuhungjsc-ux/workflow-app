@@ -46,7 +46,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const canCreateGroup = (() => {
     try {
       const s = JSON.parse(localStorage.getItem("wf_session") || "{}");
-      return (s.role || "staff") !== "staff";
+      return s.role === "director";
     } catch { return false; }
   })();
 

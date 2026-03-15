@@ -229,7 +229,7 @@ export default function SettingsModal({ user, onClose }) {
 
           {/* Tabs */}
           <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:16 }}>
-            {TABS.filter(t => settings.userRole === "staff" ? ["profile","ai","ui"].includes(t.id) : true).map(t => (
+            {TABS.filter(t => settings.userRole !== "director" ? ["profile","ai","ui"].includes(t.id) : true).map(t => (
               <button key={t.id} className="tap" onClick={() => { setTab(t.id); setMsg(""); }}
                 style={{ flexShrink:0, background: tab === t.id ? C.accent : C.card, color: tab === t.id ? "#fff" : C.sub, border:`1px solid ${tab === t.id ? C.accent : C.border}`, borderRadius:12, padding:"7px 12px", fontSize:11, fontWeight:600 }}>
                 {t.label}
@@ -304,10 +304,10 @@ export default function SettingsModal({ user, onClose }) {
                 </div>
               ) : (
                 <div style={{ display:"flex", gap:8 }}>
-                  {[["manager","👔 Quản lý"],["staff","🔧 Thực thi"]].map(([k,label]) => (
+                  {[["director","👔 Giám đốc"],["staff","🔧 Nhân viên"]].map(([k,label]) => (
                     <div key={k} className="tap" onClick={() => setSettings({ userRole: k })}
-                      style={{ flex:1, padding:"10px 12px", borderRadius:12, border:`2px solid ${(settings.userRole||"manager")===k?C.accent:C.border}`, background:(settings.userRole||"manager")===k?C.accentD:C.card, cursor:"pointer" }}>
-                      <div style={{ fontSize:13, fontWeight:700, color:(settings.userRole||"manager")===k?C.accent:C.text }}>{label}</div>
+                      style={{ flex:1, padding:"10px 12px", borderRadius:12, border:`2px solid ${(settings.userRole||"director")===k?C.accent:C.border}`, background:(settings.userRole||"director")===k?C.accentD:C.card, cursor:"pointer" }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:(settings.userRole||"director")===k?C.accent:C.text }}>{label}</div>
                     </div>
                   ))}
                 </div>

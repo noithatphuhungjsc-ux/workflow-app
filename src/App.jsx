@@ -559,7 +559,8 @@ function MainApp({ user, onLogout }) {
   }, [tasks, settings]);
 
   /* ── Derived data (needed by effects below) ── */
-  const isStaff = settings.userRole === "staff";
+  const isDirector = settings.userRole === "director";
+  const isStaff = !isDirector;
   const myName = settings.displayName || user.name;
 
   /* ── Project chat notification — track task status changes ── */
@@ -593,7 +594,7 @@ function MainApp({ user, onLogout }) {
     prevTasksRef.current = tasks.map(t => ({ id: t.id, status: t.status, projectId: t.projectId }));
   }, [tasks, projects, supaSession, myName]);
 
-  const pendingDeleteCount = isStaff ? 0 : tasks.filter(t => t.deleteRequest?.status === "pending").length;
+  const pendingDeleteCount = isDirector ? tasks.filter(t => t.deleteRequest?.status === "pending").length : 0;
   const filteredTasks = (() => {
     let list;
     if (filter === "pending_delete") {
@@ -1264,8 +1265,8 @@ function MainApp({ user, onLogout }) {
           ["inbox","\u{1F4AC}","Trao đổi", chatUnread],
           ["expense","\u{1F4B0}", t("expense", settings)],
           ["dashboard","\u{1F4CA}","Tổng quan"],
-          (user?.role === "admin" || user?.role === "manager") && ["report","\u{1F4C4}","Báo cáo"],
-          user?.role === "dev" && ["dev","\u{1F4BB}","Dev"],
+          isDirector && ["report","\u{1F4C4}","Báo cáo"],
+          isDirector && ["dev","\u{1F4BB}","Dev"],
           ["ai","\u2726","Wory"],
         ].filter(Boolean).filter(([key]) => {
           if (key === "dev") return true;
