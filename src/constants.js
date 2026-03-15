@@ -134,6 +134,10 @@ export function hasPermission(settings, tabOrAction) {
 
 /* -- DEFAULT SETTINGS -- */
 export const DEFAULT_SETTINGS = {
+  // Organization & Multi-tenant
+  orgId: "",              // unique org identifier (auto-generated or set by owner)
+  orgName: "",            // display name of the organization
+
   // Profile & Role
   displayName: "",
   avatarColor: C.accent,

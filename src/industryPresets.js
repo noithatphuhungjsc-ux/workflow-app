@@ -45,6 +45,28 @@ export const INDUSTRY_PRESETS = {
       { title: "Lập dự toán chi phí", priority: "trung" },
       { title: "Đặt vật tư đợt 1", priority: "thap" },
     ],
+    taskTemplates: [
+      { group: "Khởi công", icon: "🏗", tasks: [
+        { title: "Khảo sát mặt bằng", priority: "cao" },
+        { title: "Lập bản vẽ thi công", priority: "cao" },
+        { title: "Xin giấy phép xây dựng", priority: "cao" },
+        { title: "Dự toán ngân sách", priority: "trung" },
+        { title: "Tuyển nhân công", priority: "trung" },
+      ]},
+      { group: "Thi công", icon: "🔨", tasks: [
+        { title: "Đào móng", priority: "cao" },
+        { title: "Đổ bê tông móng", priority: "cao" },
+        { title: "Xây tường", priority: "trung" },
+        { title: "Lắp hệ thống điện/nước", priority: "trung" },
+        { title: "Hoàn thiện nội thất", priority: "thap" },
+      ]},
+      { group: "Nghiệm thu", icon: "✅", tasks: [
+        { title: "Nghiệm thu kết cấu", priority: "cao" },
+        { title: "Nghiệm thu điện nước", priority: "cao" },
+        { title: "Nghiệm thu hoàn thiện", priority: "trung" },
+        { title: "Bàn giao công trình", priority: "trung" },
+      ]},
+    ],
     settingsOverrides: { monthlyBudget: 50000000 },
     suggestedIntegrations: ["email", "telegram"],
   },
@@ -86,6 +108,20 @@ export const INDUSTRY_PRESETS = {
       { title: "Kiểm tra tồn kho nguyên liệu", priority: "cao" },
       { title: "Đặt hàng NCC tuần này", priority: "trung" },
     ],
+    taskTemplates: [
+      { group: "Mở cửa hàng", icon: "🏪", tasks: [
+        { title: "Kiểm tra nguyên liệu tồn kho", priority: "cao" },
+        { title: "Vệ sinh khu vực bếp & phục vụ", priority: "cao" },
+        { title: "Kiểm tra thiết bị (gas, điện, máy pha)", priority: "trung" },
+        { title: "Chuẩn bị menu đặc biệt hôm nay", priority: "thap" },
+      ]},
+      { group: "Đóng cửa", icon: "🔒", tasks: [
+        { title: "Thu ngân & kiểm đếm cuối ngày", priority: "cao" },
+        { title: "Vệ sinh bếp & sàn", priority: "cao" },
+        { title: "Kiểm tra khóa gas/điện/nước", priority: "cao" },
+        { title: "Ghi nhận doanh thu ngày", priority: "trung" },
+      ]},
+    ],
     settingsOverrides: { expenseReportTime: "22:00" },
     suggestedIntegrations: ["qr_payment", "telegram"],
   },
@@ -124,6 +160,19 @@ export const INDUSTRY_PRESETS = {
     sampleTasks: [
       { title: "Kiểm tra tồn kho đầu ngày", priority: "cao" },
       { title: "Liên hệ NCC báo giá đợt mới", priority: "trung" },
+    ],
+    taskTemplates: [
+      { group: "Nhập hàng", icon: "📦", tasks: [
+        { title: "Kiểm tra tồn kho sản phẩm", priority: "cao" },
+        { title: "Liên hệ NCC đặt hàng", priority: "trung" },
+        { title: "Nhận hàng & kiểm đếm", priority: "cao" },
+        { title: "Sắp xếp kho & trưng bày", priority: "thap" },
+      ]},
+      { group: "Kiểm kê cuối tháng", icon: "📋", tasks: [
+        { title: "Kiểm kê số lượng tồn kho", priority: "cao" },
+        { title: "Đối chiếu sổ sách & thực tế", priority: "cao" },
+        { title: "Báo cáo hàng hư/hết hạn", priority: "trung" },
+      ]},
     ],
     settingsOverrides: {},
     suggestedIntegrations: ["qr_payment", "zalo"],
@@ -165,6 +214,18 @@ export const INDUSTRY_PRESETS = {
       { title: "Kiểm tra lịch hẹn hôm nay", priority: "cao" },
       { title: "Đặt vật tư/mỹ phẩm tháng này", priority: "trung" },
     ],
+    taskTemplates: [
+      { group: "Đầu ngày", icon: "🌅", tasks: [
+        { title: "Kiểm tra lịch hẹn hôm nay", priority: "cao" },
+        { title: "Chuẩn bị dụng cụ/sản phẩm", priority: "trung" },
+        { title: "Gọi xác nhận lịch hẹn chiều", priority: "trung" },
+      ]},
+      { group: "Cuối tháng", icon: "📊", tasks: [
+        { title: "Thống kê doanh thu tháng", priority: "cao" },
+        { title: "Đặt vật tư/mỹ phẩm tháng sau", priority: "trung" },
+        { title: "Đánh giá nhân viên", priority: "thap" },
+      ]},
+    ],
     settingsOverrides: {},
     suggestedIntegrations: ["zalo", "telegram"],
   },
@@ -205,6 +266,19 @@ export const INDUSTRY_PRESETS = {
       { title: "Chuẩn bị hồ sơ bệnh nhân hôm nay", priority: "cao" },
       { title: "Kiểm tra tồn kho vật tư y tế", priority: "trung" },
     ],
+    taskTemplates: [
+      { group: "Khám bệnh", icon: "🩺", tasks: [
+        { title: "Chuẩn bị hồ sơ bệnh nhân", priority: "cao" },
+        { title: "Khám & ghi nhận kết quả", priority: "cao" },
+        { title: "Kê đơn thuốc", priority: "cao" },
+        { title: "Hẹn tái khám", priority: "trung" },
+      ]},
+      { group: "Quản lý phòng khám", icon: "🏥", tasks: [
+        { title: "Kiểm tra tồn kho vật tư y tế", priority: "cao" },
+        { title: "Vệ sinh & khử khuẩn phòng khám", priority: "cao" },
+        { title: "Bảo trì thiết bị y tế", priority: "trung" },
+      ]},
+    ],
     settingsOverrides: {},
     suggestedIntegrations: ["zalo", "email"],
   },
@@ -244,6 +318,20 @@ export const INDUSTRY_PRESETS = {
     sampleTasks: [
       { title: "Soạn giáo án tuần này", priority: "cao" },
       { title: "Liên hệ học viên chưa đóng học phí", priority: "trung" },
+    ],
+    taskTemplates: [
+      { group: "Khóa học mới", icon: "📚", tasks: [
+        { title: "Soạn giáo trình & tài liệu", priority: "cao" },
+        { title: "Thiết kế bài kiểm tra", priority: "trung" },
+        { title: "Chuẩn bị phòng học/thiết bị", priority: "trung" },
+        { title: "Thông báo lịch học cho học viên", priority: "trung" },
+      ]},
+      { group: "Cuối kỳ", icon: "🎓", tasks: [
+        { title: "Tổ chức thi cuối kỳ", priority: "cao" },
+        { title: "Chấm bài & nhập điểm", priority: "cao" },
+        { title: "Phát chứng chỉ/bảng điểm", priority: "trung" },
+        { title: "Thu thập feedback học viên", priority: "thap" },
+      ]},
     ],
     settingsOverrides: {},
     suggestedIntegrations: ["email", "zalo"],
@@ -286,6 +374,21 @@ export const INDUSTRY_PRESETS = {
       { title: "Setup project board & workflow", priority: "cao" },
       { title: "Tạo sprint planning tuần này", priority: "trung" },
     ],
+    taskTemplates: [
+      { group: "Sprint mới", icon: "🏃", tasks: [
+        { title: "Sprint planning meeting", priority: "cao" },
+        { title: "Chia task & estimate", priority: "cao" },
+        { title: "Setup branch & environment", priority: "trung" },
+        { title: "Daily standup check", priority: "trung" },
+      ]},
+      { group: "Release", icon: "🚀", tasks: [
+        { title: "Code review & merge PR", priority: "cao" },
+        { title: "QA testing", priority: "cao" },
+        { title: "Deploy staging", priority: "cao" },
+        { title: "Deploy production", priority: "cao" },
+        { title: "Post-release monitoring", priority: "trung" },
+      ]},
+    ],
     settingsOverrides: {},
     suggestedIntegrations: ["email", "telegram"],
   },
@@ -326,6 +429,19 @@ export const INDUSTRY_PRESETS = {
       { title: "Kiểm tra đơn hàng cần giao hôm nay", priority: "cao" },
       { title: "Bảo trì xe định kỳ", priority: "trung" },
     ],
+    taskTemplates: [
+      { group: "Đơn vận chuyển", icon: "📦", tasks: [
+        { title: "Nhận đơn & phân tuyến", priority: "cao" },
+        { title: "Kiểm tra xe trước chuyến", priority: "cao" },
+        { title: "Giao hàng & xác nhận", priority: "cao" },
+        { title: "Cập nhật trạng thái đơn", priority: "trung" },
+      ]},
+      { group: "Bảo trì", icon: "🔧", tasks: [
+        { title: "Bảo trì xe định kỳ", priority: "trung" },
+        { title: "Kiểm tra giấy tờ xe", priority: "trung" },
+        { title: "Đổ xăng/sạc pin", priority: "thap" },
+      ]},
+    ],
     settingsOverrides: {},
     suggestedIntegrations: ["telegram", "qr_payment"],
   },
@@ -365,6 +481,21 @@ export const INDUSTRY_PRESETS = {
     sampleTasks: [
       { title: "Kiểm tra hồ sơ sắp hết hạn tố tụng", priority: "cao" },
       { title: "Soạn hợp đồng dịch vụ cho KH mới", priority: "trung" },
+    ],
+    taskTemplates: [
+      { group: "Vụ việc mới", icon: "📁", tasks: [
+        { title: "Tiếp nhận & tư vấn ban đầu", priority: "cao" },
+        { title: "Thu thập tài liệu & chứng cứ", priority: "cao" },
+        { title: "Soạn đơn khởi kiện/kháng cáo", priority: "cao" },
+        { title: "Nộp hồ sơ tòa án", priority: "cao" },
+        { title: "Theo dõi tiến trình vụ việc", priority: "trung" },
+      ]},
+      { group: "Hợp đồng", icon: "📝", tasks: [
+        { title: "Soạn thảo hợp đồng", priority: "cao" },
+        { title: "Rà soát điều khoản", priority: "cao" },
+        { title: "Thương lượng & chỉnh sửa", priority: "trung" },
+        { title: "Ký kết & lưu trữ", priority: "trung" },
+      ]},
     ],
     settingsOverrides: {},
     suggestedIntegrations: ["email"],

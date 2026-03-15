@@ -5,6 +5,7 @@ import { useState, useCallback } from "react";
 import { C, PRIORITIES, STATUSES, DAY_NAMES, fmtDate, getWeekDays, isOverdue, todayStr } from "../constants";
 import { SL, StatCard, MdBlock } from "../components";
 import { callClaudeStream, loadJSON, saveJSON } from "../services";
+import { exportTasksCSV, exportExpensesCSV, exportReportPDF } from "../utils/exportReport";
 
 export default function ReportTab({ tasks, history, settings, memory, user }) {
   const now = new Date();
@@ -147,6 +148,18 @@ ${sum}`;
 
   return (
     <div style={{ animation:"fadeIn .2s" }}>
+
+      {/* ── Export buttons ── */}
+      <div style={{ display:"flex", gap:6, marginBottom:12, flexWrap:"wrap" }}>
+        <button className="tap" onClick={() => exportTasksCSV(tasks, `tasks-${todayStr()}`)}
+          style={{ fontSize:11, fontWeight:700, background:"#fff", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", color:C.text, cursor:"pointer" }}>
+          Xuất CSV
+        </button>
+        <button className="tap" onClick={() => exportReportPDF({ title:"Báo cáo công việc", tasks, settings, dateRange:`${weekStartS} — ${weekEndS}` })}
+          style={{ fontSize:11, fontWeight:700, background:C.accent, border:"none", borderRadius:8, padding:"6px 12px", color:"#fff", cursor:"pointer" }}>
+          Xuất PDF
+        </button>
+      </div>
 
       {/* ── AI Report Generator ── */}
       <SL>BÁO CÁO CỦA WORY</SL>

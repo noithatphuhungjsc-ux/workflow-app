@@ -121,7 +121,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
 /* -- Responsive cho desktop/tablet -- */
 @media (min-width: 768px) {
   .app-container {
-    max-width: 480px;
+    max-width: 640px;
     border-radius: 20px;
     box-shadow: 0 8px 40px rgba(0,0,0,0.1);
     margin: 20px auto;
@@ -153,16 +153,31 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
     border-top: 1px solid #e8e5de;
     border-radius: 0;
   }
+
+  .sheet {
+    max-width: 600px;
+  }
 }
 
 /* -- Responsive cho màn hình lớn -- */
 @media (min-width: 1024px) {
   .app-container {
-    max-width: 520px;
+    max-width: 780px;
   }
 
   .bottom-nav {
     border-radius: 0 0 20px 20px;
+  }
+
+  .sheet {
+    max-width: 700px;
+  }
+}
+
+/* -- Wide desktop -- */
+@media (min-width: 1400px) {
+  .app-container {
+    max-width: 900px;
   }
 }
 
