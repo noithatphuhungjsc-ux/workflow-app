@@ -90,12 +90,17 @@ export function StatCard({ icon, label, value, color }) {
 }
 
 /* -- Filter chips -- */
-export function Filters({ filter, setFilter }) {
+export function Filters({ filter, setFilter, pendingDeleteCount }) {
+  const pills = [["all","Tất cả"],["todo","Cần làm"],["prepare","Chuẩn bị"],["inprogress","Đang làm"],["done","Xong"]];
+  if (pendingDeleteCount > 0) pills.push(["pending_delete", `Chờ xóa`]);
   return (
     <div className="no-scrollbar" style={{ display:"flex", gap:6, marginBottom:14, overflowX:"auto", paddingBottom:2 }}>
-      {[["all","Tất cả"],["todo","Cần làm"],["prepare","Chuẩn bị"],["inprogress","Đang làm"],["done","Xong"]].map(([k,l]) => (
+      {pills.map(([k,l]) => (
         <button key={k} className="tap" onClick={() => setFilter(k)}
-          style={{ flexShrink:0, background:filter===k?C.accent:C.card, color:filter===k?"#fff":C.sub, border:`1px solid ${filter===k?C.accent:C.border}`, borderRadius:20, padding:"6px 14px", fontSize:14, fontWeight:500 }}>{l}</button>
+          style={{ flexShrink:0, background: filter===k ? (k==="pending_delete" ? C.red : C.accent) : C.card, color: filter===k ? "#fff" : (k==="pending_delete" ? C.red : C.sub), border:`1px solid ${filter===k ? (k==="pending_delete" ? C.red : C.accent) : (k==="pending_delete" ? C.red+"44" : C.border)}`, borderRadius:20, padding:"6px 14px", fontSize:14, fontWeight:500, position:"relative" }}>
+          {l}
+          {k === "pending_delete" && <span style={{ position:"absolute", top:-4, right:-4, background:C.red, color:"#fff", fontSize:9, fontWeight:700, borderRadius:10, padding:"1px 5px", minWidth:16, textAlign:"center" }}>{pendingDeleteCount}</span>}
+        </button>
       ))}
     </div>
   );

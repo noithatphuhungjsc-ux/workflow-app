@@ -593,8 +593,14 @@ function MainApp({ user, onLogout }) {
     prevTasksRef.current = tasks.map(t => ({ id: t.id, status: t.status, projectId: t.projectId }));
   }, [tasks, projects, supaSession, myName]);
 
+  const pendingDeleteCount = isStaff ? 0 : tasks.filter(t => t.deleteRequest?.status === "pending").length;
   const filteredTasks = (() => {
-    let list = filter === "all" ? tasks : tasks.filter(t => t.status === filter);
+    let list;
+    if (filter === "pending_delete") {
+      list = tasks.filter(t => t.deleteRequest?.status === "pending");
+    } else {
+      list = filter === "all" ? tasks : tasks.filter(t => t.status === filter);
+    }
     if (!settings.showCompletedTasks && filter === "all") {
       list = list.filter(t => t.status !== "done");
     }
@@ -773,7 +779,7 @@ function MainApp({ user, onLogout }) {
                   style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: C.muted, cursor: "pointer" }}>×</span>
               )}
             </div>
-            <Filters filter={filter} setFilter={setFilter} />
+            <Filters filter={filter} setFilter={setFilter} pendingDeleteCount={pendingDeleteCount} />
             {/* ── Multi-select toolbar ── */}
             {!selectMode ? (
               <div style={{ display:"flex", gap:6, marginBottom:8 }}>
@@ -785,6 +791,26 @@ function MainApp({ user, onLogout }) {
                   style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:11, fontWeight:600 }}>
                   <span style={{ fontSize:13 }}>🗑️</span> Xóa
                 </button>
+                {filter === "pending_delete" && filteredTasks.length > 0 && (
+                  <>
+                    <div style={{ flex:1 }} />
+                    <button className="tap" onClick={() => {
+                      if (!window.confirm(`Duyệt xóa TẤT CẢ ${filteredTasks.length} công việc?`)) return;
+                      filteredTasks.forEach(t => deleteTask(t.id));
+                      setFilter("all");
+                    }}
+                      style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                      Duyệt tất cả
+                    </button>
+                    <button className="tap" onClick={() => {
+                      filteredTasks.forEach(t => patchTask(t.id, { deleteRequest: null }));
+                      setFilter("all");
+                    }}
+                      style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:11, fontWeight:600 }}>
+                      Từ chối tất cả
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"8px 10px", background: selectMode === "delete" ? `${C.red}08` : `${C.accent}08`, borderRadius:10, border:`1px solid ${selectMode === "delete" ? C.red + "33" : C.accent + "33"}` }}>
@@ -797,19 +823,42 @@ function MainApp({ user, onLogout }) {
                 <span style={{ fontSize:11, color:C.muted }}>{selectedIds.size}/{filteredTasks.length}</span>
                 <div style={{ flex:1 }} />
                 {selectedIds.size > 0 && selectMode === "delete" && (
-                  <button className="tap" onClick={() => {
-                    if (isStaff) {
-                      if (!window.confirm(`Yêu cầu xóa ${selectedIds.size} công việc? Admin sẽ duyệt.`)) return;
-                      selectedIds.forEach(id => patchTask(id, { deleteRequest: { status: "pending", by: settings.displayName || "NV", at: new Date().toISOString() } }));
-                    } else {
-                      if (!window.confirm(`Xóa ${selectedIds.size} công việc?`)) return;
-                      selectedIds.forEach(id => deleteTask(id));
-                    }
-                    exitSelectMode();
-                  }}
-                    style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
-                    {isStaff ? "Yêu cầu xóa" : `Xóa (${selectedIds.size})`}
-                  </button>
+                  <div style={{ display:"flex", gap:4 }}>
+                    {filter === "pending_delete" && !isStaff && (
+                      <>
+                        <button className="tap" onClick={() => {
+                          if (!window.confirm(`Duyệt xóa ${selectedIds.size} công việc?`)) return;
+                          selectedIds.forEach(id => deleteTask(id));
+                          exitSelectMode(); if (pendingDeleteCount <= selectedIds.size) setFilter("all");
+                        }}
+                          style={{ padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                          Duyệt ({selectedIds.size})
+                        </button>
+                        <button className="tap" onClick={() => {
+                          selectedIds.forEach(id => patchTask(id, { deleteRequest: null }));
+                          exitSelectMode();
+                        }}
+                          style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:11, fontWeight:600 }}>
+                          Từ chối
+                        </button>
+                      </>
+                    )}
+                    {(filter !== "pending_delete" || isStaff) && (
+                      <button className="tap" onClick={() => {
+                        if (isStaff) {
+                          if (!window.confirm(`Yêu cầu xóa ${selectedIds.size} công việc? Admin sẽ duyệt.`)) return;
+                          selectedIds.forEach(id => patchTask(id, { deleteRequest: { status: "pending", by: settings.displayName || "NV", at: new Date().toISOString() } }));
+                        } else {
+                          if (!window.confirm(`Xóa ${selectedIds.size} công việc?`)) return;
+                          selectedIds.forEach(id => deleteTask(id));
+                        }
+                        exitSelectMode();
+                      }}
+                        style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                        {isStaff ? "Yêu cầu xóa" : `Xóa (${selectedIds.size})`}
+                      </button>
+                    )}
+                  </div>
                 )}
                 {selectedIds.size > 0 && selectMode === "edit" && (
                   <button className="tap" onClick={() => {
