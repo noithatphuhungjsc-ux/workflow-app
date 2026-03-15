@@ -23,7 +23,6 @@ const TABS = [
   { id: "staff",    label: "Nhân sự" },
   { id: "ui",       label: "Giao diện" },
   { id: "data",     label: "Dữ liệu" },
-  { id: "changelog", label: "Cập nhật" },
 ];
 
 const AVATAR_COLORS = [C.accent, C.purple, C.green, C.gold, C.red, "#e67e22", "#1abc9c", "#e91e63", "#607d8b", "#795548"];
@@ -226,7 +225,7 @@ export default function SettingsModal({ user, onClose }) {
 
           {/* Tabs */}
           <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:16 }}>
-            {TABS.filter(t => settings.userRole === "staff" ? ["profile","ai","ui","changelog"].includes(t.id) : true).map(t => (
+            {TABS.filter(t => settings.userRole === "staff" ? ["profile","ai","ui"].includes(t.id) : true).map(t => (
               <button key={t.id} className="tap" onClick={() => { setTab(t.id); setMsg(""); }}
                 style={{ flexShrink:0, background: tab === t.id ? C.accent : C.card, color: tab === t.id ? "#fff" : C.sub, border:`1px solid ${tab === t.id ? C.accent : C.border}`, borderRadius:12, padding:"7px 12px", fontSize:11, fontWeight:600 }}>
                 {t.label}
@@ -661,55 +660,6 @@ export default function SettingsModal({ user, onClose }) {
             </div>
           )}
 
-          {/* ======== CHANGELOG ======== */}
-          {tab === "changelog" && (<>
-            <div style={{ textAlign:"center", marginBottom:16 }}>
-              <div style={{ fontSize:22, marginBottom:4 }}>📋</div>
-              <div style={{ fontSize:15, fontWeight:700, color:C.text }}>Lịch sử cập nhật</div>
-              <div style={{ fontSize:11, color:C.muted }}>Phiên bản hiện tại: v{CHANGELOG[0]?.version}</div>
-            </div>
-            {CHANGELOG.map((release, ri) => {
-              const typeColors = { major: C.accent, minor: C.green, fix: C.gold };
-              const typeLabels = { major: "Lớn", minor: "Nhỏ", fix: "Sửa lỗi" };
-              const isLatest = ri === 0;
-              return (
-                <div key={release.version} style={{ marginBottom:16 }}>
-                  {/* Version header */}
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <span style={{
-                        fontSize:14, fontWeight:800, color: isLatest ? C.accent : C.text,
-                        background: isLatest ? C.accentD : "transparent",
-                        borderRadius:8, padding: isLatest ? "2px 8px" : 0,
-                      }}>v{release.version}</span>
-                      <span style={{
-                        fontSize:9, fontWeight:700, borderRadius:6, padding:"2px 6px",
-                        color: typeColors[release.type], background:`${typeColors[release.type]}18`,
-                      }}>{typeLabels[release.type]}</span>
-                      {isLatest && <span style={{ fontSize:9, fontWeight:700, borderRadius:6, padding:"2px 6px", color:C.green, background:C.greenD }}>MỚI</span>}
-                    </div>
-                    <div style={{ flex:1 }} />
-                    <span style={{ fontSize:10, color:C.muted }}>{release.date}</span>
-                  </div>
-                  {/* Title */}
-                  <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:6 }}>{release.title}</div>
-                  {/* Changes */}
-                  <div style={{ background:C.card, borderRadius:12, border:`1px solid ${C.border}`, overflow:"hidden" }}>
-                    {release.changes.map((ch, ci) => (
-                      <div key={ci} style={{
-                        display:"flex", alignItems:"flex-start", gap:8,
-                        padding:"8px 12px",
-                        borderBottom: ci < release.changes.length - 1 ? `1px solid ${C.border}22` : "none",
-                      }}>
-                        <span style={{ fontSize:14, flexShrink:0, marginTop:1 }}>{ch.icon}</span>
-                        <span style={{ fontSize:12, color:C.text, lineHeight:1.5 }}>{ch.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </>)}
 
           </>)}
         </div>

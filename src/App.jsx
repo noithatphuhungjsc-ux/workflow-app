@@ -9,6 +9,7 @@ import { C, todayStr, fmtDate, isOverdue, t, hasPermission } from "./constants";
 import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail } from "./services";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
 import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel } from "./components";
+import { CHANGELOG } from "./changelog";
 
 /* Static imports — needed immediately */
 import LoginScreen from "./components/LoginScreen";
@@ -38,6 +39,8 @@ const DashboardTab = React.lazy(() => import("./pages/DashboardTab"));
 const NewProjectModal = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.NewProjectModal })));
 const ProjectDetailSheet = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.ProjectDetailSheet })));
 const IndustrySetupModal = React.lazy(() => import("./components/IndustrySetupModal"));
+const ChangelogView = React.lazy(() => import("./components/ChangelogView").then(m => ({ default: m.default })));
+const ChangelogBackButton = React.lazy(() => import("./components/ChangelogView").then(m => ({ default: m.ChangelogBackButton })));
 
 
 /* ================================================================
@@ -279,6 +282,9 @@ function MainApp({ user, onLogout }) {
   const [alertToast, setAlertToast]   = useState(null); // { task, type }
   const [bellOpen, setBellOpen]       = useState(false);
   const [qrOpen, setQrOpen]           = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [changelogScrollY, setChangelogScrollY] = useState(0);
+  const [changelogBack, setChangelogBack] = useState(false); // show floating back button
   const [globalCall, setGlobalCall]   = useState(null); // { conversationId, convName, mode, callerId }
   const alertDismissedRef = useRef(new Set());
 
@@ -703,6 +709,10 @@ function MainApp({ user, onLogout }) {
       <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
         <UserMenu user={{ ...user, name: settings.displayName || user.name }} onLogout={onLogout} onSettings={() => setSettingsOpen(true)} />
         <span style={{ fontSize:19, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
+        <span className="tap" onClick={() => { setChangelogOpen(true); setChangelogBack(false); }}
+          style={{ fontSize:9, fontWeight:700, color:C.muted, background:"#f0eeea", borderRadius:6, padding:"2px 5px", cursor:"pointer" }}>
+          v{CHANGELOG[0]?.version || "2.2"}
+        </span>
         {!isOnline && (
           <span style={{ fontSize:10, fontWeight:700, color:"#e74c3c", background:"#fde8e8", padding:"2px 6px", borderRadius:6, marginLeft:4 }}>
             Offline{queueSize > 0 ? ` (${queueSize})` : ""}
@@ -1174,6 +1184,20 @@ function MainApp({ user, onLogout }) {
       {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} />}
       {!settings.industryPreset && <IndustrySetupModal onClose={() => {}} />}
       {qrOpen && <QRScanModal tasks={tasks} patchTask={patchTask} addExpense={addExpense} onClose={() => setQrOpen(false)} />}
+
+      {/* ── CHANGELOG ── */}
+      {changelogOpen && <ChangelogView
+        initialScrollY={changelogScrollY}
+        onClose={() => setChangelogOpen(false)}
+        onNavigate={(targetTab, targetModal, scrollY) => {
+          setChangelogScrollY(scrollY);
+          setChangelogOpen(false);
+          if (targetTab) setTab(targetTab);
+          if (targetModal === "settings") setSettingsOpen(true);
+          setChangelogBack(true);
+        }}
+      />}
+      {changelogBack && !changelogOpen && <ChangelogBackButton onClick={() => { setChangelogOpen(true); setChangelogBack(false); }} />}
 
       {/* ── NEW PROJECT MODAL ── */}
       {newProjOpen && <NewProjectModal onAdd={async (p) => {
