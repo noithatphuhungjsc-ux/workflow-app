@@ -123,43 +123,87 @@ const USER_IDS = ["trinh", "lien", "hung", "mai", "duc"];
 const CLOUD_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
 const LOCAL_EXTRA = ["history", "chat_started", "chat_archives", "gmail_token", "expense_wory_report"];
 
-async function clearPersonalTasks() {
+async function cloudPush(uid, key, data) {
+  const res = await fetch("/api/cloud-sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: uid, key, data }),
+  });
+  return res.ok;
+}
+
+async function clearPersonalTasks(setLog) {
   let total = 0;
+  // Step 1: Push empty tasks to cloud FIRST (prevent pull-back)
   for (const uid of USER_IDS) {
     const key = `wf_${uid}_tasks`;
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const tasks = JSON.parse(raw);
-      const kept = tasks.filter(t => !!t.projectId);
-      total += tasks.length - kept.length;
-      localStorage.setItem(key, JSON.stringify(kept));
-      try { await fetch("/api/cloud-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, key: "tasks", data: kept }) }); } catch {}
-    } catch {}
+    const raw = localStorage.getItem(key);
+    const tasks = raw ? JSON.parse(raw) : [];
+    const kept = tasks.filter(t => !!t.projectId);
+    total += tasks.length - kept.length;
+    setLog?.(`Cloud: xóa ${tasks.length - kept.length} việc cá nhân của ${uid}...`);
+    await cloudPush(uid, "tasks", kept);
+    localStorage.setItem(key, JSON.stringify(kept));
   }
   return total;
 }
 
-async function resetAllDataAllUsers() {
+async function resetAllDataAllUsers(setLog) {
+  // Step 1: Push empty to cloud FIRST for all users
   for (const uid of USER_IDS) {
-    // Clear localStorage per user
+    for (const k of CLOUD_KEYS) {
+      setLog?.(`Cloud: xóa ${k} của ${uid}...`);
+      await cloudPush(uid, k, k === "settings" ? {} : []);
+    }
+  }
+  // Step 2: Clear localStorage after cloud is clean
+  for (const uid of USER_IDS) {
     for (const k of [...CLOUD_KEYS, ...LOCAL_EXTRA]) {
       localStorage.removeItem(`wf_${uid}_${k}`);
     }
-    // Clear cloud — push empty for each key
-    for (const k of CLOUD_KEYS) {
-      try {
-        await fetch("/api/cloud-sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: uid, key: k, data: k === "settings" ? {} : [] }),
-        });
-      } catch {}
-    }
   }
-  // Clear shared keys
+  // Step 3: Clear shared keys
   ["wf_onboard_done", "wf_install_dismissed", "wf_auth_synced_v3", "wf_cleanup_v2", "wf_accounts_ver", "wf_accounts", "wf_gmail_enc", "wf_schema_version"]
     .forEach(k => localStorage.removeItem(k));
+}
+
+function DataTools() {
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState("");
+
+  const handleClearPersonal = async () => {
+    if (!confirm("Xóa tất cả việc cá nhân (không thuộc dự án) của 5 TK? Cloud sẽ được cập nhật trước.")) return;
+    setBusy(true);
+    const n = await clearPersonalTasks(setLog);
+    setLog(`Xong! Đã xóa ${n} việc cá nhân.`);
+    setTimeout(() => window.location.reload(), 1500);
+  };
+
+  const handleResetAll = async () => {
+    if (!confirm("⚠️ XÓA TOÀN BỘ dữ liệu của TẤT CẢ 5 TK — cả local + cloud. KHÔNG THỂ HOÀN TÁC!")) return;
+    if (!confirm("Chắc chắn? Mọi thứ sẽ bị xóa sạch.")) return;
+    setBusy(true);
+    await resetAllDataAllUsers(setLog);
+    setLog("Xong! Đã xóa toàn bộ. Đang tải lại...");
+    localStorage.removeItem("wf_session");
+    setTimeout(() => window.location.reload(), 1500);
+  };
+
+  return (
+    <div style={{ marginBottom: 6, flexShrink: 0 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button className="tap" onClick={handleClearPersonal} disabled={busy}
+          style={{ flex: 1, background: "#fde8e8", color: "#d95f5f", border: "1px solid #d95f5f33", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700, opacity: busy ? .5 : 1 }}>
+          🗑️ Xóa việc cá nhân
+        </button>
+        <button className="tap" onClick={handleResetAll} disabled={busy}
+          style={{ flex: 1, background: "#d95f5f", color: "#fff", border: "none", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700, opacity: busy ? .5 : 1 }}>
+          💣 RESET TẤT CẢ
+        </button>
+      </div>
+      {log && <div style={{ fontSize: 10, color: C.accent, marginTop: 4, padding: "4px 8px", background: C.accentD, borderRadius: 6 }}>{busy && "⏳ "}{log}</div>}
+    </div>
+  );
 }
 
 export default function DevTab({ user }) {
@@ -372,26 +416,7 @@ export default function DevTab({ user }) {
       </div>
 
       {/* ── Data Tools ── */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 6, flexShrink: 0 }}>
-        <button className="tap" onClick={async () => {
-          if (!confirm("Xóa tất cả việc cá nhân (không thuộc dự án) của 5 tài khoản? Bao gồm cả cloud.")) return;
-          const n = await clearPersonalTasks();
-          alert(`Đã xóa ${n} việc cá nhân (local + cloud). Tải lại trang.`);
-          window.location.reload();
-        }} style={{ flex: 1, background: "#fde8e8", color: "#d95f5f", border: "1px solid #d95f5f33", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700 }}>
-          🗑️ Xóa việc cá nhân
-        </button>
-        <button className="tap" onClick={async () => {
-          if (!confirm("⚠️ XÓA TOÀN BỘ dữ liệu (tasks, expenses, projects, settings, chat, memory...) của TẤT CẢ 5 tài khoản — cả local + cloud. KHÔNG THỂ HOÀN TÁC!")) return;
-          if (!confirm("Chắc chắn? Mọi thứ sẽ bị xóa sạch.")) return;
-          await resetAllDataAllUsers();
-          alert("Đã xóa toàn bộ dữ liệu. Tải lại trang.");
-          localStorage.removeItem("wf_session");
-          window.location.reload();
-        }} style={{ flex: 1, background: "#d95f5f", color: "#fff", border: "none", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700 }}>
-          💣 RESET TẤT CẢ
-        </button>
-      </div>
+      <DataTools />
 
       {/* ── Messages ── */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "8px 0", WebkitOverflowScrolling: "touch" }}>
