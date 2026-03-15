@@ -8,6 +8,8 @@ import { SL, MdBlock } from "../components";
 import { callClaudeStream, loadJSON, saveJSON, decryptToken } from "../services";
 
 export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExpense, settings, user, onOpenQR }) {
+  // Industry preset override expense categories
+  const CATS = settings.industryExpenseCategories || EXPENSE_CATEGORIES;
   const [subTab, setSubTab] = useState("overview"); // overview | list | wory
   const [filterCat, setFilterCat] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -134,10 +136,10 @@ export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExp
 
     const shortName = (settings?.displayName || user?.name || "Sếp").split(" ").pop();
     const expenseData = todayExpenses.length > 0
-      ? todayExpenses.map(e => `- ${e.taskTitle}: ${fmtMoney(e.amount)} (${EXPENSE_CATEGORIES[e.category]?.label || e.category}, ${PAYMENT_SOURCES[e.source]?.label || e.source}${e.paid ? ", đã chi" : ", chưa chi"})`).join("\n")
+      ? todayExpenses.map(e => `- ${e.taskTitle}: ${fmtMoney(e.amount)} (${CATS[e.category]?.label || e.category}, ${PAYMENT_SOURCES[e.source]?.label || e.source}${e.paid ? ", đã chi" : ", chưa chi"})`).join("\n")
       : "Chưa có khoản chi nào hôm nay.";
 
-    const monthData = byCat.map(([k, v]) => `- ${EXPENSE_CATEGORIES[k]?.label || k}: ${fmtMoney(v)}`).join("\n");
+    const monthData = byCat.map(([k, v]) => `- ${CATS[k]?.label || k}: ${fmtMoney(v)}`).join("\n");
 
     const system = `Ban la Wory — thu ky tai chinh cua ${shortName} (lanh dao/giam doc).
 Tong hop chi tieu hang ngay, nhan xet va tu van. Viet tieng Viet co dau, markdown.
@@ -236,7 +238,7 @@ ${budget > 0 ? `- So với ngân sách: ${budgetPct}%\n- Dự báo cuối tháng
           id: Date.now() + Math.random(),
           description: desc,
           amount,
-          category: Object.keys(EXPENSE_CATEGORIES).includes(cat) ? cat : "personal",
+          category: Object.keys(CATS).includes(cat) ? cat : Object.keys(CATS)[0] || "other",
           source: "cash",
           date: todayStr(),
           paid: true,
@@ -285,10 +287,10 @@ ${budget > 0 ? `- So với ngân sách: ${budgetPct}%\n- Dự báo cuối tháng
     const todayExp = allExpenses.filter(e => e.date === todayStr());
     const todayTotal = todayExp.reduce((s, e) => s + e.amount, 0);
     const todayList = todayExp.length > 0
-      ? todayExp.map(e => `- ${e.description || e.taskTitle}: ${fmtMoney(e.amount)} (${EXPENSE_CATEGORIES[e.category]?.label || e.category}${e.paid ? "" : ", CHUA CHI"})`).join("\n")
+      ? todayExp.map(e => `- ${e.description || e.taskTitle}: ${fmtMoney(e.amount)} (${CATS[e.category]?.label || e.category}${e.paid ? "" : ", CHUA CHI"})`).join("\n")
       : "Chua co khoan chi nao.";
 
-    const monthList = byCat.map(([k, v]) => `- ${EXPENSE_CATEGORIES[k]?.label || k}: ${fmtMoney(v)}`).join("\n");
+    const monthList = byCat.map(([k, v]) => `- ${CATS[k]?.label || k}: ${fmtMoney(v)}`).join("\n");
 
     // Extract what was recorded in THIS chat session from chat history
     const chatRecorded = [];
@@ -474,7 +476,7 @@ ${last7Text}`;
           <div style={{ background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, padding: "12px", marginBottom: 14 }}>
             {byCat.length === 0 && <div style={{ textAlign: "center", padding: 12, color: C.muted, fontSize: 13 }}>Chưa có khoản chi</div>}
             {byCat.map(([k, v]) => {
-              const cat = EXPENSE_CATEGORIES[k] || { label: k, icon: "📦", color: C.muted };
+              const cat = CATS[k] || { label: k, icon: "📦", color: C.muted };
               const pct = totalMonth > 0 ? Math.round(v / totalMonth * 100) : 0;
               return (
                 <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}22` }}>
@@ -523,7 +525,7 @@ ${last7Text}`;
                 border: `1px solid ${filterCat === "all" ? C.accent + "66" : C.border}` }}>
               Tất cả ({monthExpenses.length})
             </button>
-            {Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => {
+            {Object.entries(CATS).map(([k, v]) => {
               const cnt = monthExpenses.filter(e => e.category === k).length;
               if (cnt === 0) return null;
               return (
@@ -542,7 +544,7 @@ ${last7Text}`;
           )}
 
           {filtered.map(e => {
-            const cat = EXPENSE_CATEGORIES[e.category] || { label: "Khác", icon: "📦", color: C.muted };
+            const cat = CATS[e.category] || { label: "Khác", icon: "📦", color: C.muted };
             const src = PAYMENT_SOURCES[e.source] || { label: e.source, icon: "💳" };
             const title = e.description || e.taskTitle || "Chi tiêu";
             const fmtD = (d) => { if (!d) return ""; const p = d.split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : d; };
@@ -603,7 +605,7 @@ ${last7Text}`;
               <input type="text" inputMode="numeric" value={newAmount} onChange={e => setNewAmount(e.target.value)} placeholder="Số tiền (VNĐ)"
                 style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, fontWeight: 700, color: C.gold, marginBottom: 6 }} />
               <div className="no-scrollbar" style={{ display: "flex", gap: 4, marginBottom: 8, overflowX: "auto" }}>
-                {Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => (
+                {Object.entries(CATS).map(([k, v]) => (
                   <button key={k} className="tap" onClick={() => setNewCat(k)}
                     style={{ padding: "4px 8px", borderRadius: 16, fontSize: 10, fontWeight: 600, flexShrink: 0,
                       background: newCat === k ? v.color + "20" : C.bg, color: newCat === k ? v.color : C.muted,

@@ -5,7 +5,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
 
-import { C, STATUSES, PRIORITIES, todayStr, fmtDate, isOverdue } from "./constants";
+import { C, STATUSES, PRIORITIES, todayStr, fmtDate, isOverdue, t } from "./constants";
 import { setUserPrefix, callClaudeStream, tts, memoryToText, buildKnowledgePrompt, extractKnowledge, addKnowledgeEntry, processTaskCommands, processMemoryCommands, executeTaskActions, addMemory, deleteMemory, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail } from "./services";
 import { useVoice } from "./hooks";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
@@ -29,6 +29,7 @@ import ReportTab from "./pages/ReportTab";
 import DevTab from "./pages/DevTab";
 import QRScanModal from "./components/QRScanModal";
 import { NewProjectModal, ProjectDetailSheet } from "./components/ProjectModals";
+import IndustrySetupModal from "./components/IndustrySetupModal";
 
 
 /* ================================================================
@@ -1551,11 +1552,15 @@ QUY TAC BAT BUOC:
           ["tasks","\u{1F4CB}","Việc"],
           ["calendar","\u{1F4C5}","Lịch"],
           ["inbox","\u{1F4AC}","Trao đổi", chatUnread],
-          ["expense","\u{1F4B0}","Chi tiêu"],
+          ["expense","\u{1F4B0}", t("expense", settings)],
           (user?.role === "admin" || user?.role === "manager") && ["report","\u{1F4CA}","Báo cáo"],
           user?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && ["dev","\u{1F4BB}","Dev"],
           ["ai","\u2726","Wory"],
-        ].filter(Boolean).map(([key, icon, label, badgeCount]) => {
+        ].filter(Boolean).filter(([key]) => {
+          const vt = settings.visibleTabs;
+          if (!vt || key === "dev") return true;
+          return vt[key] !== false;
+        }).map(([key, icon, label, badgeCount]) => {
           const active = tab === key;
           return (
             <button key={key} className="tap" onClick={() => setTab(key)}
@@ -1581,6 +1586,7 @@ QUY TAC BAT BUOC:
       {addOpen && <VoiceAddModal onClose={() => setAddOpen(false)} />}
       {heyOpen && <HeyModal onClose={() => setHeyOpen(false)} onChat={(txt) => { setHeyOpen(false); setTab("ai"); setTimeout(() => sendChat(txt), 500); }} buildSystemPrompt={buildSystemPrompt} user={{ ...user, name: settings.displayName || user.name }} />}
       {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} />}
+      {!settings.industryPreset && <IndustrySetupModal onClose={() => {}} />}
       {qrOpen && <QRScanModal tasks={tasks} patchTask={patchTask} addExpense={addExpense} onClose={() => setQrOpen(false)} />}
 
       {/* ── NEW PROJECT MODAL ── */}

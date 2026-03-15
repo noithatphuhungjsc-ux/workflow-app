@@ -116,12 +116,24 @@ export const PROJECT_COLORS = ["#2980b9","#e67e22","#27ae60","#9b59b6","#d35400"
 export const DAY_NAMES = ["T2","T3","T4","T5","T6","T7","CN"];
 export const MONTH_NAMES = ["Tháng 1","Tháng 2","Tháng 3","Tháng 4","Tháng 5","Tháng 6","Tháng 7","Tháng 8","Tháng 9","Tháng 10","Tháng 11","Tháng 12"];
 
+/* -- TERMINOLOGY HELPER -- */
+const DEFAULT_TERMS = { task: "Công việc", project: "Dự án", deadline: "Hạn chót", assignee: "Người làm", expense: "Chi tiêu" };
+export function t(key, settings) {
+  return settings?.terminology?.[key] || DEFAULT_TERMS[key] || key;
+}
+
 /* -- DEFAULT SETTINGS -- */
 export const DEFAULT_SETTINGS = {
   // Profile & Role
   displayName: "",
   avatarColor: C.accent,
   userRole: "manager", // "manager" | "staff"
+
+  // Industry preset
+  industryPreset: "",         // preset id ("fnb", "construction", ...)
+  visibleTabs: { tasks: true, calendar: true, inbox: true, expense: true, report: true, ai: true },
+  terminology: {},            // { task, project, deadline, assignee, expense }
+  industryExpenseCategories: null, // override EXPENSE_CATEGORIES, null = dùng mặc định
 
   // Security
   autoLockMinutes: 0,   // 0 = never

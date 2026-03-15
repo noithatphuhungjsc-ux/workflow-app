@@ -3,7 +3,9 @@
    Hồ sơ | Bảo mật | AI & Giọng | Kết nối | Chi tiêu | Giao diện | Dữ liệu
    ================================================================ */
 import { useState, useEffect, useRef } from "react";
-import { C, DEFAULT_SETTINGS, PAYMENT_SOURCES, KNOWLEDGE_CATEGORIES, DEFAULT_PROFILE, WORKFLOWS } from "../constants";
+import { C, DEFAULT_SETTINGS, PAYMENT_SOURCES, KNOWLEDGE_CATEGORIES, DEFAULT_PROFILE, WORKFLOWS, t } from "../constants";
+import { INDUSTRY_PRESETS } from "../industryPresets";
+import IndustrySetupModal from "./IndustrySetupModal";
 import { useStore, useSettings } from "../store";
 import { hashPassword, loadAccounts, saveAccounts, maskPhone, exportAllData, importData, clearAllData, saveJSON, loadJSON, encryptToken, decryptToken, sendBackupEmail, saveKnowledgeProfile, addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry, approveKnowledgeEntry, approveAllPending, cloudSaveAll, cloudLoadAll } from "../services";
 import { useSupabase } from "../contexts/SupabaseContext";
@@ -28,6 +30,7 @@ export default function SettingsModal({ user, onClose }) {
   const { supabase, session } = useSupabase();
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState("");
+  const [showIndustryModal, setShowIndustryModal] = useState(false);
   const [locked, setLocked] = useState(true);
   const [lockPw, setLockPw] = useState("");
   const [accounts, setAcct] = useState(loadAccounts);
@@ -234,6 +237,33 @@ export default function SettingsModal({ user, onClose }) {
 
           {/* ======== HỒ SƠ ======== */}
           {tab === "profile" && (<>
+            {/* ── Ngành nghề ── */}
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:6 }}>NGÀNH NGHỀ</div>
+              {settings.industryPreset ? (() => {
+                const preset = INDUSTRY_PRESETS[settings.industryPreset];
+                return preset ? (
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ padding:"10px 14px", borderRadius:12, background:C.accentD, border:`1px solid ${C.accent}33`, flex:1, display:"flex", alignItems:"center", gap:10 }}>
+                      <span style={{ fontSize:22 }}>{preset.icon}</span>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{preset.name}</div>
+                        <div style={{ fontSize:10, color:C.muted }}>{preset.description}</div>
+                      </div>
+                    </div>
+                    <button className="tap" onClick={() => setShowIndustryModal(true)}
+                      style={{ padding:"10px 14px", borderRadius:12, background:C.card, border:`1px solid ${C.border}`, fontSize:12, fontWeight:600, color:C.accent, cursor:"pointer", whiteSpace:"nowrap" }}>
+                      Đổi
+                    </button>
+                  </div>
+                ) : null;
+              })() : (
+                <button className="tap" onClick={() => setShowIndustryModal(true)}
+                  style={{ width:"100%", padding:"12px 16px", borderRadius:12, background:C.accent, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                  Chọn ngành nghề
+                </button>
+              )}
+            </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>EMAIL (TÀI KHOẢN CÔNG TY)</div>
               <div style={{ ...IS, background:C.bg, color:C.sub }}>{email || sessionData.email || "Chưa có"}</div>
@@ -599,6 +629,7 @@ export default function SettingsModal({ user, onClose }) {
           </>)}
         </div>
       </div>
+      {showIndustryModal && <IndustrySetupModal isChange onClose={() => setShowIndustryModal(false)} />}
     </div>
   );
 }

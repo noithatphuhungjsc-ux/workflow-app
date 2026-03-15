@@ -3,6 +3,7 @@
    ================================================================ */
 import { useState, useRef, useEffect, memo } from "react";
 import { C, PRIORITIES, STATUSES, STATUS_ORDER, WORKFLOWS, EXPENSE_CATEGORIES, PAYMENT_SOURCES, getElapsed, formatTimer, isOverdue, todayStr, fmtMoney, fmtDD } from "./constants";
+import { useSettings } from "./store";
 import { inlineMd } from "./services";
 
 /* -- Pill (header stats) -- */
@@ -149,6 +150,8 @@ export { getAlertLevel };
 const PRIO_ORDER = ["cao","trung","thap","none"];
 
 export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, onPriorityChange, onAdjust, onPatchTask, timerTick, handSide, projectName }) {
+  const { settings } = useSettings();
+  const CATS = settings.industryExpenseCategories || EXPENSE_CATEGORIES;
   const wf = WORKFLOWS.find(w => w.id === task.workflow);
   const over = isOverdue(task);
   const alert = getAlertLevel(task);
@@ -415,7 +418,7 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
                 <div style={{ display:"flex", gap:4, alignItems:"center", marginTop:2, paddingLeft:18 }}>
                   <select value={item.category || "other"} onChange={e => patchExpenseItem(item.id, { category: e.target.value })}
                     style={{ fontSize:10, border:`1px solid ${C.border}`, borderRadius:5, padding:"2px 4px", color:C.text, background:C.bg, outline:"none" }}>
-                    {Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                    {Object.entries(CATS).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
                   </select>
                   <span className="tap" onClick={() => patchExpenseItem(item.id, { paid: !item.paid })}
                     style={{ fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:6, cursor:"pointer",

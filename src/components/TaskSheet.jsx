@@ -5,7 +5,7 @@
 import { useState, useRef } from "react";
 import { C, PRIORITIES, STATUSES, WORKFLOWS, EXPENSE_CATEGORIES, getElapsed, formatTimer, fmtMoney } from "../constants";
 import { ConfirmDialog } from "../components";
-import { useTasks } from "../store";
+import { useTasks, useSettings } from "../store";
 
 const IS = { background:C.card, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 12px", color:C.text, fontSize:14, width:"100%" };
 const NOTE_STATUSES = [
@@ -37,7 +37,7 @@ function ExpenseItemRow({ item, index, isLast, onPatch, onDelete }) {
           placeholder="Số tiền" style={{ ...IS, fontSize:12, padding:"5px 8px", width:100, flex:"none" }} />
         <select value={item.category || "work"} onChange={e => onPatch({ category: e.target.value })}
           style={{ ...IS, fontSize:11, padding:"5px 6px", flex:1 }}>
-          {Object.entries(EXPENSE_CATEGORIES).map(([k, c]) => <option key={k} value={k}>{c.icon} {c.label}</option>)}
+          {Object.entries(CATS).map(([k, c]) => <option key={k} value={k}>{c.icon} {c.label}</option>)}
         </select>
         <button className="tap" onClick={() => onPatch({ paid: !item.paid })}
           style={{ width:24, height:24, borderRadius:6, border:`2px solid ${item.paid ? C.green : C.border}`, background: item.paid ? C.green : "transparent",
@@ -51,6 +51,8 @@ function ExpenseItemRow({ item, index, isLast, onPatch, onDelete }) {
 
 export default function TaskSheet({ task, onClose }) {
   const { patchTask, deleteTask, timerStart, timerPause, timerResume, timerDone, timerTick } = useTasks();
+  const { settings } = useSettings();
+  const CATS = settings.industryExpenseCategories || EXPENSE_CATEGORIES;
   const [confirmDel, setConfirmDel] = useState(false);
   const [newSub, setNewSub] = useState("");
   const [subsOpen, setSubsOpen] = useState(true);

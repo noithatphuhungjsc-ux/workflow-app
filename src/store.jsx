@@ -3,7 +3,8 @@
    Solves: prop drilling, stale closure, centralized state
    ================================================================ */
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
-import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney } from "./constants";
+import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS } from "./constants";
+import { INDUSTRY_PRESETS, getWorkflowsByIds } from "./industryPresets";
 import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
 import { useSupabase } from "./contexts/SupabaseContext";
 
@@ -497,6 +498,48 @@ export function AppProvider({ children, userId }) {
     });
   }, [cloudId]);
 
+  // --- Industry Preset ---
+  const applyIndustryPreset = useCallback((presetId, isFirstTime = false) => {
+    const preset = INDUSTRY_PRESETS[presetId];
+    if (!preset) return;
+    setSettings(prev => ({
+      ...prev,
+      industryPreset: presetId,
+      visibleTabs: preset.visibleTabs,
+      terminology: preset.terminology || {},
+      industryExpenseCategories: preset.expenseCategories || null,
+      industryRoles: preset.roles || [],
+      customWorkflows: getWorkflowsByIds(preset.defaultWorkflowIds),
+      ...preset.settingsOverrides,
+    }));
+    // Inject Wory knowledge (avoid duplicates)
+    if (preset.woryKnowledge?.length) {
+      setKnowledge(prev => {
+        const existing = prev.entries || [];
+        const newEntries = preset.woryKnowledge
+          .filter(k => !existing.some(e => e.content === k.content))
+          .map(k => ({
+            id: Date.now() + Math.random(),
+            content: k.content,
+            category: k.category,
+            source: "industry_preset",
+            approved: true,
+            createdAt: new Date().toISOString(),
+          }));
+        if (!newEntries.length) return prev;
+        const next = { ...prev, entries: [...existing, ...newEntries] };
+        saveKnowledge(next);
+        return next;
+      });
+    }
+    // Sample tasks only on first setup
+    if (isFirstTime && preset.sampleTasks?.length) {
+      preset.sampleTasks.forEach(st => {
+        dispatch({ type: "ADD", task: { title: st.title, priority: st.priority || "none", source: "industry_preset" } });
+      });
+    }
+  }, [setSettings, setKnowledge]);
+
   // --- Undo toast ---
   const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = useRef(null);
@@ -601,6 +644,7 @@ export function AppProvider({ children, userId }) {
     setUndoToast,
     settings,
     setSettings,
+    applyIndustryPreset,
     userId,
   };
 
