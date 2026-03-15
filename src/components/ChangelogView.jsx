@@ -10,23 +10,27 @@ import { CHANGELOG } from "../changelog";
 /* Map change text → target tab */
 function getTarget(text) {
   const lc = text.toLowerCase();
+  // Exact/specific matches first
   if (/dashboard|tổng quan|kpi|donut|weekly trend|priority breakdown/.test(lc)) return "dashboard";
-  if (/calendar|lịch|drag.?drop|kéo.*ngày/.test(lc)) return "calendar";
+  if (/calendar|drag.?drop|kéo.*ngày/.test(lc)) return "calendar";
+  if (/chi tiêu|expense|hóa đơn|duyệt chi|ngân sách|qr thanh toán|vietqr|bill/.test(lc)) return "expense";
   if (/chat|gọi thoại|webrtc|realtime|trao đổi/.test(lc)) return "inbox";
-  if (/hộp thư|email|gmail|telegram|inbox/.test(lc)) return "inbox";
-  if (/chi tiêu|expense|ocr.*hóa đơn|duyệt chi|ngân sách|qr thanh toán|vietqr|bill/.test(lc)) return "expense";
-  if (/báo cáo|report|csv|pdf|xuất/.test(lc)) return "report";
+  if (/hộp thư|inbox/.test(lc)) return "inbox";
+  if (/gmail|telegram/.test(lc)) return "inbox";
+  if (/báo cáo ai|báo cáo.*csv|csv.*pdf|xuất báo cáo/.test(lc)) return "report";
   if (/wory|ai assistant|trò chuyện.*phân tích/.test(lc)) return "ai";
-  if (/voice add|giọng nói|ghi âm/.test(lc)) return "ai";
-  if (/nhân sự|staff|tài khoản|quản lý.*nhân/.test(lc)) return "settings";
+  if (/nhân sự|staff|quản lý.*nhân/.test(lc)) return "settings";
   if (/ngành nghề|industry|onboarding|terminology/.test(lc)) return "settings";
   if (/cài đặt|setting|giao diện|tab ẩn/.test(lc)) return "settings";
+  if (/task template|mẫu công việc/.test(lc)) return "settings";
   if (/dự án|project|tiến độ/.test(lc)) return "tasks";
-  if (/task template|mẫu công việc/.test(lc)) return "tasks";
   if (/công việc|tạo.*sửa.*xóa|subtask/.test(lc)) return "tasks";
-  if (/thông báo|notification|push/.test(lc)) return null;
-  if (/pwa|cài đặt.*app|offline|desktop|responsive/.test(lc)) return null;
+  if (/lịch.*ngày|lịch.*tuần|lịch.*tháng/.test(lc)) return "calendar";
   if (/timer|đếm giờ/.test(lc)) return "tasks";
+  // No link for these
+  if (/thông báo|notification|push/.test(lc)) return null;
+  if (/pwa|offline|desktop|responsive|voice add|giọng nói/.test(lc)) return null;
+  if (/đăng nhập|tài khoản.*2fa|cloud sync|error boundary|cors|code splitting|lazy|hooks|rbac|multi.?tenant|audit log|changelog/.test(lc)) return null;
   return null;
 }
 
