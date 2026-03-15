@@ -201,42 +201,44 @@ export default function LoginScreen({ onLogin }) {
             </div>
           )}
 
+          {/* Staff avatars — tap to auto-fill email */}
+          <div style={{ display:"flex", justifyContent:"center", gap:10, marginBottom:16 }}>
+            {Object.values(accounts).map(a => {
+              const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22" };
+              const role = a.role || "staff";
+              const active = username.toLowerCase() === (a.email || "").toLowerCase();
+              return (
+                <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
+                  style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, background:"none", border:"none", cursor:"pointer", padding:2, opacity: active ? 1 : 0.6, transform: active ? "scale(1.1)" : "none", transition:"all .15s" }}>
+                  <div style={{ width:36, height:36, borderRadius:"50%", background: roleColors[role], color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border: active ? "2.5px solid #c8956c" : "2px solid transparent", boxShadow: active ? "0 2px 8px rgba(200,149,108,.4)" : "none" }}>
+                    {a.name.split(" ").pop().charAt(0)}
+                  </div>
+                  <span style={{ fontSize:8, fontWeight:700, color: active ? "#c8956c" : C.muted, maxWidth:48, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.title || a.name.split(" ").pop()}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Login button */}
           <button className="tap" onClick={handleLogin} disabled={loading}
             style={{ width:"100%", background:warmGrad, color:"#fff", border:"none", borderRadius:28, padding:"15px", fontSize:16, fontWeight:700, boxShadow:"0 4px 16px rgba(200,149,108,.3)", opacity: loading ? .7 : 1, marginBottom:4 }}>
             {loading ? "Đang xác thực..." : "Đăng Nhập →"}
           </button>
 
-          {/* Dev quick login — hidden by default, show with ?dev or 5x logo tap */}
+          {/* Dev quick login — hidden by default, show with ?dev */}
           {devMode && <>
           <div style={{ display:"flex", alignItems:"center", gap:12, margin:"18px 0" }}>
             <div style={{ flex:1, height:1, background:C.border }} />
-            <span style={{ fontSize:12, color:C.muted }}>hoặc</span>
+            <span style={{ fontSize:12, color:C.muted }}>DEV</span>
             <div style={{ flex:1, height:1, background:C.border }} />
           </div>
-
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            <div style={{ fontSize:10, color:C.muted, fontWeight:600, textAlign:"center", letterSpacing:.5 }}>CHỌN NHANH (DEV)</div>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-              {Object.values(accounts).map(a => {
-                const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22" };
-                const roleLabels = { director: "GĐ", accountant: "KT", sales: "KD", hr: "NS", construction: "TC" };
-                const role = a.role || "staff";
-                return (
-                  <button key={a.id} className="tap" onClick={() => completeLogin(a)}
-                    style={{ flex:"1 1 45%", background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:"8px 10px", fontSize:12, fontWeight:600, color:C.sub, display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
-                    <div style={{ width:28, height:28, borderRadius:"50%", background:roleColors[role], color:"#fff", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                      {a.name.charAt(0)}
-                    </div>
-                    <div style={{ flex:1, minWidth:0, textAlign:"left" }}>
-                      <div style={{ fontSize:12, fontWeight:700, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.name.split(" ").pop()}</div>
-                      <div style={{ fontSize:9, color:roleColors[role], fontWeight:700 }}>{roleLabels[role]} · {a.title || role}</div>
-                      {a.email && <div style={{ fontSize:8, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.email}</div>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {Object.values(accounts).map(a => (
+              <button key={a.id} className="tap" onClick={() => completeLogin(a)}
+                style={{ flex:"1 1 45%", background:C.card, border:`1.5px solid ${C.border}`, borderRadius:12, padding:"8px 10px", fontSize:12, fontWeight:600, color:C.sub }}>
+                {a.name.split(" ").pop()} ({a.title})
+              </button>
+            ))}
           </div>
           </>}
 
