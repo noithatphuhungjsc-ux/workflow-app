@@ -4,6 +4,21 @@
    ================================================================ */
 export const CHANGELOG = [
   {
+    version: "2.3",
+    date: "2026-03-15",
+    title: "UX Polish — Skeleton, Toast, Onboarding & Animations",
+    type: "minor",
+    changes: [
+      { icon: "💀", text: "Loading skeleton — hiệu ứng shimmer khi tải dữ liệu" },
+      { icon: "📭", text: "Empty state nâng cao — icon, mô tả, nút hành động" },
+      { icon: "🔔", text: "Toast notification — thông báo thành công/lỗi tự ẩn sau 3s" },
+      { icon: "🎓", text: "Onboarding spotlight — hướng dẫn 4 bước cho người mới" },
+      { icon: "🖼️", text: "Lazy image — tải ảnh bill khi cuộn đến, giảm dung lượng ảnh" },
+      { icon: "✨", text: "Micro-animations — chuyển tab trượt, danh sách xuất hiện tuần tự" },
+      { icon: "♿", text: "Accessibility — tắt animation khi prefers-reduced-motion" },
+    ],
+  },
+  {
     version: "2.2",
     date: "2026-03-15",
     title: "Industry Preset, Dashboard & 24 cải tiến",

@@ -8,7 +8,7 @@ import "./App.css";
 import { C, todayStr, fmtDate, isOverdue, t, hasPermission } from "./constants";
 import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail } from "./services";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
-import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel } from "./components";
+import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel, Skeleton, Toast } from "./components";
 import { CHANGELOG } from "./changelog";
 
 /* Static imports — needed immediately */
@@ -39,6 +39,7 @@ const DashboardTab = React.lazy(() => import("./pages/DashboardTab"));
 const NewProjectModal = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.NewProjectModal })));
 const ProjectDetailSheet = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.ProjectDetailSheet })));
 const IndustrySetupModal = React.lazy(() => import("./components/IndustrySetupModal"));
+const OnboardingGuide = React.lazy(() => import("./components/OnboardingGuide"));
 const ChangelogView = React.lazy(() => import("./components/ChangelogView").then(m => ({ default: m.default })));
 const ChangelogBackButton = React.lazy(() => import("./components/ChangelogView").then(m => ({ default: m.ChangelogBackButton })));
 
@@ -175,8 +176,17 @@ function MainApp({ user, onLogout }) {
     projects, addProject, patchProject, deleteProject, hardDelete,
   } = useStore();
 
+  const TAB_ORDER = ["tasks","calendar","inbox","expense","dashboard","report","ai"];
   const [tab, _setTab]        = useState(() => sessionStorage.getItem("wf_tab") || settings.defaultTab || "tasks");
-  const setTab = useCallback((t) => { sessionStorage.setItem("wf_tab", t); _setTab(t); }, []);
+  const prevTabRef = useRef(tab);
+  const tabDir = useRef("right");
+  const setTab = useCallback((t) => {
+    const oldIdx = TAB_ORDER.indexOf(prevTabRef.current);
+    const newIdx = TAB_ORDER.indexOf(t);
+    tabDir.current = newIdx >= oldIdx ? "right" : "left";
+    prevTabRef.current = t;
+    sessionStorage.setItem("wf_tab", t); _setTab(t);
+  }, []);
   const [sel, setSel]         = useState(null);
   const [filter, setFilter]   = useState(() => settings.defaultFilter || "all");
   const [projFilter, setProjFilter] = useState("all");
@@ -286,6 +296,9 @@ function MainApp({ user, onLogout }) {
   const [changelogScrollY, setChangelogScrollY] = useState(0);
   const [changelogBack, setChangelogBack] = useState(false); // show floating back button
   const [globalCall, setGlobalCall]   = useState(null); // { conversationId, convName, mode, callerId }
+  const [toast, setToast]             = useState(null); // { message, type }
+  const [showGuide, setShowGuide]     = useState(() => !localStorage.getItem("wf_onboard_done") && !!settings.industryPreset);
+  const showToast = useCallback((message, type = "success") => setToast({ message, type }), []);
   const alertDismissedRef = useRef(new Set());
 
   /* ── AI Chat (extracted to useWoryChat) ── */
@@ -703,7 +716,7 @@ function MainApp({ user, onLogout }) {
 
   return (
     <div className="app-container" style={fontScale !== 1 ? { zoom: fontScale } : undefined}>
-    <Suspense fallback={<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",color:C.muted,fontSize:14}}>Đang tải...</div>}>
+    <Suspense fallback={<Skeleton rows={5} />}>
 
       {/* ── HEADER ── */}
       <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
@@ -725,7 +738,7 @@ function MainApp({ user, onLogout }) {
         )}
         <div style={{ flex: 1, minWidth:2 }} />
         {/* Quick expense / QR scan */}
-        <div className="tap" onClick={() => setQrOpen(true)}
+        <div className="tap" data-guide="qr" onClick={() => setQrOpen(true)}
           style={{ width:26, height:26, borderRadius:6, background:"#f7f5f2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, lineHeight:1, flexShrink:0 }}
           title="Chi tiêu nhanh">
           🧾
@@ -799,7 +812,7 @@ function MainApp({ user, onLogout }) {
         // restore scroll on mount/tab switch
         if (!el._restored) { const s = sessionStorage.getItem("wf_scroll_" + tab); if (s) el.scrollTop = +s; el._restored = true; }
         el.onscroll = () => sessionStorage.setItem("wf_scroll_" + tab, el.scrollTop);
-      }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: tab === "ai" ? 168 : 76 }}>
+      }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: tab === "ai" ? 168 : 76, animation: `${tabDir.current === "right" ? "slideInRight" : "slideInLeft"} .2s ease` }}>
 
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
@@ -876,7 +889,7 @@ function MainApp({ user, onLogout }) {
               projects.forEach(p => deleteProject(p.id));
               setProjFilter("all");
             }} />
-            {filteredTasks.length === 0 && <Empty />}
+            {filteredTasks.length === 0 && <Empty icon="📋" title={`Chưa có ${t("task",settings).toLowerCase()}`} subtitle="Nhấn + để thêm mục đầu tiên" action="Thêm ngay" onAction={() => setAddOpen(true)} />}
             {filteredTasks.map((t, i) => {
               const tDate = t.deadline || null;
               const prev = i > 0 ? filteredTasks[i - 1] : null;
@@ -906,7 +919,7 @@ function MainApp({ user, onLogout }) {
               const projDone = projObj ? tasks.filter(pt => pt.projectId === projObj.id && pt.status === "done").length : 0;
               const projTotal = projObj ? tasks.filter(pt => pt.projectId === projObj.id).length : 0;
               return (
-                <div key={t.id}>
+                <div key={t.id} style={i < 12 ? { animation:"fadeIn .25s ease backwards", animationDelay:`${i*30}ms` } : undefined}>
                   {/* Project header separator */}
                   {showProjHeader && (
                     <div onClick={() => projObj && setProjDetail(projObj)} style={{ display:"flex", alignItems:"center", gap:8, margin: i > 0 ? "14px 0 6px" : "0 0 6px", padding:"7px 10px", background: projObj ? `linear-gradient(135deg, ${C.accent}11, ${C.purple}11)` : C.card, borderRadius:10, border:`1px solid ${projObj ? C.accent + "33" : C.border}`, cursor: projObj ? "pointer" : "default" }}>
@@ -1159,7 +1172,7 @@ function MainApp({ user, onLogout }) {
         }).map(([key, icon, label, badgeCount]) => {
           const active = tab === key;
           return (
-            <button key={key} className="tap" onClick={() => setTab(key)}
+            <button key={key} className="tap" data-guide={`nav-${key}`} onClick={() => setTab(key)}
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "6px 0 5px", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, position:"relative" }}>
               <div style={{ width:36, height:28, borderRadius:10, background: active ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"background .2s", position:"relative" }}>
                 <span style={{ fontSize: 16, lineHeight: 1, filter: active ? "none" : "grayscale(0.6) opacity(0.55)" }}>
@@ -1199,6 +1212,9 @@ function MainApp({ user, onLogout }) {
         }}
       />}
       {changelogBack && !changelogOpen && <ChangelogBackButton onClick={() => { setChangelogOpen(true); setChangelogBack(false); }} />}
+
+      {/* ── ONBOARDING GUIDE ── */}
+      {showGuide && <OnboardingGuide onComplete={() => setShowGuide(false)} />}
 
       {/* ── NEW PROJECT MODAL ── */}
       {newProjOpen && <NewProjectModal onAdd={async (p) => {
@@ -1267,8 +1283,9 @@ function MainApp({ user, onLogout }) {
       {/* ── DESKTOP FLOAT ── */}
       <DesktopFloat onSelectTask={(t) => setSel(t)} onOpenTab={(t) => setTab(t)} />
 
-      {/* ── UNDO TOAST ── */}
+      {/* ── TOASTS ── */}
       <UndoToast toast={undoToast} onUndo={undoDelete} />
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       {/* ── KNOWLEDGE TOAST ── */}
       {knowledgeToast && (

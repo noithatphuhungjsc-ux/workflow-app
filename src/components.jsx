@@ -40,9 +40,20 @@ export function MM({ l, v }) {
   );
 }
 
-/* -- Empty state -- */
-export function Empty() {
-  return <div style={{ textAlign:"center", padding:"40px 20px", color:C.muted, fontSize:16 }}>Không có công việc nào</div>;
+/* -- Empty state (enhanced) -- */
+export function Empty({ icon = "📋", title = "Không có công việc nào", subtitle, action, onAction }) {
+  return (
+    <div style={{ textAlign:"center", padding:"48px 24px", color:C.muted, animation:"scaleIn .3s ease" }}>
+      <div style={{ fontSize:44, marginBottom:8, filter:"grayscale(.3)", opacity:.7 }}>{icon}</div>
+      <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>{title}</div>
+      {subtitle && <div style={{ fontSize:12, color:C.sub, marginBottom:14, lineHeight:1.5 }}>{subtitle}</div>}
+      {action && onAction && (
+        <button className="tap" onClick={onAction} style={{ background:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"10px 20px", fontSize:13, fontWeight:700 }}>
+          {action}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /* -- Sheet (bottom sheet wrapper) -- */
@@ -642,6 +653,67 @@ export function MdBlock({ text }) {
       });
     })}
   </>);
+}
+
+/* -- Skeleton loading shimmer -- */
+function SkeletonBar({ w = "100%", h = 12, r = 6, mb = 6 }) {
+  return <div style={{ width:w, height:h, borderRadius:r, marginBottom:mb, background:"linear-gradient(90deg,#f0eeea 25%,#e8e5de 50%,#f0eeea 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite" }} />;
+}
+export function Skeleton({ rows = 4 }) {
+  return (
+    <div style={{ padding:"12px 14px", animation:"fadeIn .2s" }}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} style={{ background:"#fff", borderRadius:14, padding:"14px 12px", border:`1px solid ${C.border}`, marginBottom:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <SkeletonBar w={20} h={20} r={6} mb={0} />
+            <div style={{ flex:1 }}>
+              <SkeletonBar w="70%" h={13} />
+              <SkeletonBar w="40%" h={10} />
+            </div>
+            <SkeletonBar w={40} h={20} r={10} mb={0} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* -- Toast notification (success/error/info) -- */
+export function Toast({ message, type = "success", onClose }) {
+  const colors = { success: C.green, error: C.red, info: C.accent };
+  const icons = { success: "✓", error: "✕", info: "ℹ" };
+  useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [onClose]);
+  return (
+    <div style={{
+      position:"fixed", bottom:76, left:"50%", transform:"translateX(-50%)", zIndex:9000,
+      background:"#2b2d35", color:"#fff", borderRadius:12, padding:"10px 16px",
+      display:"flex", alignItems:"center", gap:10, maxWidth:360, minWidth:200,
+      boxShadow:"0 8px 32px rgba(0,0,0,.25)", animation:"slideUp .25s ease",
+    }} role="alert">
+      <span style={{ width:22, height:22, borderRadius:"50%", background:colors[type], color:"#fff", fontSize:12, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{icons[type]}</span>
+      <span style={{ fontSize:13, flex:1 }}>{message}</span>
+    </div>
+  );
+}
+
+/* -- LazyImage (IntersectionObserver) -- */
+export function LazyImage({ src, alt = "", style = {}, ...props }) {
+  const [loaded, setLoaded] = useState(false);
+  const [inView, setInView] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setInView(true); obs.disconnect(); } }, { rootMargin:"100px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <div ref={ref} style={{ position:"relative", background:"#f0eeea", borderRadius:8, overflow:"hidden", minHeight:60, ...style }}>
+      {!loaded && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontSize:16 }}>📷</div>}
+      {inView && <img src={src} alt={alt} onLoad={() => setLoaded(true)} style={{ width:"100%", display:"block", borderRadius:8, opacity:loaded?1:0, transition:"opacity .3s" }} {...props} />}
+    </div>
+  );
 }
 
 /* -- Confirm Dialog -- */

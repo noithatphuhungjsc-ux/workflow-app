@@ -17,7 +17,12 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.tap:active { opacity: .75; transform: scale(.97); }
+.tap:active { opacity: .75; transform: scale(.97); box-shadow: inset 0 1px 3px rgba(0,0,0,.08); }
+
+/* -- Reduced motion -- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
 
 /* -- Animations -- */
 @keyframes ping      { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.4);opacity:0} }
@@ -31,6 +36,10 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
 @keyframes blink     { 0%,100%{opacity:1} 50%{opacity:0} }
 @keyframes waveBar   { 0%,100%{height:4px} 50%{height:18px} }
 @keyframes slideRight { from{transform:translateX(100%)} to{transform:translateX(0)} }
+@keyframes slideInRight { from{transform:translateX(30px);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes slideInLeft  { from{transform:translateX(-30px);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes scaleIn      { from{transform:scale(.92);opacity:0} to{transform:scale(1);opacity:1} }
+@keyframes shimmer      { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
 @keyframes pulse     { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
 @keyframes heyPulse  { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(144,117,212,.35)} 50%{transform:scale(1.08);box-shadow:0 6px 28px rgba(144,117,212,.55)} }
 @keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:.5} }

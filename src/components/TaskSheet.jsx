@@ -4,7 +4,7 @@
    ================================================================ */
 import { useState, useRef, useCallback } from "react";
 import { C, PRIORITIES, STATUSES, WORKFLOWS, EXPENSE_CATEGORIES, getElapsed, formatTimer, fmtMoney } from "../constants";
-import { ConfirmDialog } from "../components";
+import { ConfirmDialog, LazyImage } from "../components";
 import { useTasks, useSettings } from "../store";
 
 const IS = { background:C.card, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 12px", color:C.text, fontSize:14, width:"100%" };
@@ -225,7 +225,9 @@ export default function TaskSheet({ task, onClose }) {
         if (w > MAX || h > MAX) { const r = Math.min(MAX / w, MAX / h); w *= r; h *= r; }
         canvas.width = w; canvas.height = h;
         canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+        let dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+        // Re-compress if still too large (>400KB)
+        if (dataUrl.length > 400000) dataUrl = canvas.toDataURL("image/jpeg", 0.4);
         patchTask(task.id, { billPhotos: [...billPhotos, { id: Date.now(), data: dataUrl, ts: new Date().toISOString() }] });
       };
       img.src = e.target.result;
@@ -526,7 +528,7 @@ export default function TaskSheet({ task, onClose }) {
               <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:6, marginBottom:8 }}>
                 {billPhotos.map(p => (
                   <div key={p.id} style={{ position:"relative", borderRadius:8, overflow:"hidden", border:`1px solid ${C.border}` }}>
-                    <img src={p.data} alt="bill" style={{ width:"100%", display:"block", borderRadius:8 }} />
+                    <LazyImage src={p.data} alt="bill" />
                     <button className="tap" onClick={() => deleteBillPhoto(p.id)}
                       style={{ position:"absolute", top:2, right:2, background:"rgba(0,0,0,0.6)", color:"#fff", border:"none", borderRadius:"50%", width:20, height:20, fontSize:11, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
                     <button className="tap" onClick={() => scanBillPhoto(p)} disabled={ocrLoading === p.id}
