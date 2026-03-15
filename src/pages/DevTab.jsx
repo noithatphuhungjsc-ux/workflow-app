@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { C } from "../constants";
 import { supabase } from "../lib/supabase";
+import VConsole from "vconsole";
 
 const PROJECT = "workflow-app";
 
@@ -109,7 +110,17 @@ function StatusBadge({ status }) {
 }
 
 /* ── Main DevTab ── */
+// Init vConsole once (lazy — only when DevTab loads)
+let vConsoleInstance = null;
+function ensureVConsole() {
+  if (!vConsoleInstance) {
+    vConsoleInstance = new VConsole({ theme: "dark" });
+  }
+}
+
 export default function DevTab({ user }) {
+  useEffect(() => { ensureVConsole(); }, []);
+
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
