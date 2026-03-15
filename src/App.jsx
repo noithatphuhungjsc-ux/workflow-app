@@ -5,10 +5,11 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import "./App.css";
 
-import { C, todayStr, fmtDate, isOverdue, t, hasPermission } from "./constants";
+import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, TEAM_EMAILS } from "./constants";
 import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail } from "./services";
+import { useGmail } from "./hooks/useGmail";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
-import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel, Skeleton, Toast } from "./components";
+import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel, Skeleton, Toast, TabErrorBoundary } from "./components";
 import { CHANGELOG } from "./changelog";
 
 /* Static imports — needed immediately */
@@ -47,14 +48,7 @@ const ChangelogBackButton = React.lazy(() => import("./components/ChangelogView"
 /* ================================================================
    AUTO-LOGIN — Supabase auth from local session (runs once at app start)
    ================================================================ */
-const TEAM_ACCOUNTS = [
-  { id: "trinh", email: "trinh@workflow.vn", name: "Nguyen Duy Trinh" },
-  { id: "lien",  email: "lien@workflow.vn",  name: "Lientran" },
-  { id: "hung",  email: "hung@workflow.vn",  name: "Pham Van Hung" },
-  { id: "mai",   email: "mai@workflow.vn",   name: "Tran Thi Mai" },
-  { id: "duc",   email: "duc@workflow.vn",   name: "Le Minh Duc" },
-];
-const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
+/* TEAM_ACCOUNTS & TEAM_EMAILS imported from constants.js */
 
 function SupabaseAutoLogin() {
   const { isConnected, signIn, signUp, signOut, loading, session } = useSupabase();
@@ -214,80 +208,19 @@ function MainApp({ user, onLogout }) {
   const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
   const dismissInstall = () => { setShowInstall(false); localStorage.setItem("wf_install_dismissed", String(Date.now())); };
 
-  /* ── Gmail OAuth callback handler (encrypted storage) ── */
-  const [gmailConnected, setGmailConnected] = useState(false);
-  const [gmailUnread, setGmailUnread] = useState(0);
-  useEffect(() => {
-    (async () => {
-      // Handle OAuth callback
-      const params = new URLSearchParams(window.location.search);
-      const gmailToken = params.get("gmail");
-      if (gmailToken) {
-        try {
-          const data = JSON.parse(atob(gmailToken.replace(/-/g, '+').replace(/_/g, '/')));
-          if (data.refresh_token) {
-            const encrypted = await encryptToken(data, user.id);
-            if (encrypted) localStorage.setItem("wf_gmail_enc", encrypted);
-            saveJSON("gmail_token", { email: data.email, connected_at: data.connected_at });
-            setGmailConnected(true);
-            window.history.replaceState({}, "", window.location.pathname);
-          }
-        } catch {}
-      } else {
-        const meta = loadJSON("gmail_token", null);
-        if (meta?.email) setGmailConnected(true);
-      }
-
-      // Auto-fetch email count on load
-      if (settings.autoFetchEmail !== false) {
-        try {
-          const encStr = localStorage.getItem("wf_gmail_enc");
-          if (encStr) {
-            const tokenData = await decryptToken(encStr, user.id);
-            if (tokenData?.refresh_token) {
-              const res = await fetch("/api/gmail-fetch", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ refresh_token: tokenData.refresh_token, maxResults: settings.emailFetchCount || 15 }),
-              });
-              const data = await res.json();
-              if (data.emails) {
-                saveJSON("gmail_emails", data.emails);
-                setGmailUnread(data.emails.filter(e => e.unread).length);
-              }
-              if (data.needReauth) {
-                localStorage.removeItem("wf_gmail_enc");
-                saveJSON("gmail_token", null);
-                setGmailConnected(false);
-              }
-            }
-          }
-        } catch {}
-      }
-    })();
-
-    // Listen for Gmail connection from Settings popup flow
-    const onGmailMsg = (e) => {
-      if (e.data?.type === "gmail_connected") {
-        const meta = loadJSON("gmail_token", null);
-        if (meta?.email) setGmailConnected(true);
-      }
-    };
-    window.addEventListener("message", onGmailMsg);
-    return () => window.removeEventListener("message", onGmailMsg);
-  }, []); // eslint-disable-line
+  /* ── Gmail OAuth callback + unread count (extracted to useGmail) ── */
+  const { gmailConnected, gmailUnread } = useGmail(user.id, settings);
 
   /* ── Auto backup to email (daily) ── */
   useEffect(() => {
     if (!settings.autoBackup) return;
     const lastBackup = loadJSON("last_backup", null);
-    const oneDayMs = 24 * 60 * 60 * 1000;
-    if (lastBackup && Date.now() - new Date(lastBackup).getTime() < oneDayMs) return;
-    // Send backup (async, fire-and-forget)
+    if (lastBackup && Date.now() - new Date(lastBackup).getTime() < 86400000) return;
     sendBackupEmail(user.id).catch(() => {});
   }, []); // eslint-disable-line
 
   const [addOpen, setAddOpen]         = useState(false);
+  const [searchQ, setSearchQ]         = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [alertToast, setAlertToast]   = useState(null); // { task, type }
   const [bellOpen, setBellOpen]       = useState(false);
@@ -661,6 +594,11 @@ function MainApp({ user, onLogout }) {
     if (!settings.showCompletedTasks && filter === "all") {
       list = list.filter(t => t.status !== "done");
     }
+    // Search filter
+    if (searchQ.trim()) {
+      const q = searchQ.trim().toLowerCase();
+      list = list.filter(t => t.title?.toLowerCase().includes(q) || t.assignee?.toLowerCase().includes(q));
+    }
     // Staff: only see tasks assigned to them or tasks without assignee that they created
     if (isStaff && myName) {
       list = list.filter(t => !t.assignee || t.assignee === myName);
@@ -816,6 +754,21 @@ function MainApp({ user, onLogout }) {
 
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
+            {/* Search bar */}
+            <div style={{ position: "relative", marginBottom: 8 }}>
+              <input
+                className="input-base"
+                value={searchQ}
+                onChange={e => setSearchQ(e.target.value)}
+                placeholder={`Tìm ${t("task", settings).toLowerCase()}...`}
+                style={{ paddingLeft: 32, fontSize: 13, height: 36 }}
+              />
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: C.muted, pointerEvents: "none" }}>🔍</span>
+              {searchQ && (
+                <span className="tap" onClick={() => setSearchQ("")}
+                  style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: C.muted, cursor: "pointer" }}>×</span>
+              )}
+            </div>
             <Filters filter={filter} setFilter={setFilter} />
             {/* Manager project dashboard when viewing all */}
             {!isStaff && (projFilter === "all") && projects.filter(p => !p.archived).length > 0 && (
@@ -964,12 +917,12 @@ function MainApp({ user, onLogout }) {
           </div>
         )}
 
-        {tab === "calendar" && <CalendarTab tasks={tasks} onPress={t => setSel(t)} patchTask={patchTask} />}
-        {tab === "inbox" && <InboxTab tasks={tasks} projects={projects} patchTask={patchTask} settings={settings} user={user} addTask={addTask} openConvId={openConvId} />}
-        {tab === "expense" && <ExpenseTab tasks={tasks} expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} settings={settings} user={user} onOpenQR={() => setQrOpen(true)} />}
-        {tab === "report" && <ReportTab tasks={tasks} history={history} settings={settings} memory={memory} user={user} />}
-        {tab === "dashboard" && <DashboardTab tasks={tasks} expenses={expenses} projects={projects} settings={settings} />}
-        {tab === "dev" && <DevTab user={user} />}
+        {tab === "calendar" && <TabErrorBoundary><CalendarTab tasks={tasks} onPress={t => setSel(t)} patchTask={patchTask} /></TabErrorBoundary>}
+        {tab === "inbox" && <TabErrorBoundary><InboxTab tasks={tasks} projects={projects} patchTask={patchTask} settings={settings} user={user} addTask={addTask} openConvId={openConvId} /></TabErrorBoundary>}
+        {tab === "expense" && <TabErrorBoundary><ExpenseTab tasks={tasks} expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} settings={settings} user={user} onOpenQR={() => setQrOpen(true)} /></TabErrorBoundary>}
+        {tab === "report" && <TabErrorBoundary><ReportTab tasks={tasks} history={history} settings={settings} memory={memory} user={user} /></TabErrorBoundary>}
+        {tab === "dashboard" && <TabErrorBoundary><DashboardTab tasks={tasks} expenses={expenses} projects={projects} settings={settings} onOpenTask={t => setSel(t)} /></TabErrorBoundary>}
+        {tab === "dev" && <TabErrorBoundary><DevTab user={user} /></TabErrorBoundary>}
 
         {tab === "ai" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeIn .2s" }}>

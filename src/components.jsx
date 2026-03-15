@@ -1,8 +1,8 @@
 /* ================================================================
    COMPONENTS — Small reusable UI components
    ================================================================ */
-import { useState, useRef, useEffect, memo } from "react";
-import { C, PRIORITIES, STATUSES, STATUS_ORDER, WORKFLOWS, EXPENSE_CATEGORIES, PAYMENT_SOURCES, getElapsed, formatTimer, isOverdue, todayStr, fmtMoney, fmtDD } from "./constants";
+import { useState, useRef, useEffect, memo, Component } from "react";
+import { C, PRIORITIES, STATUSES, STATUS_ORDER, WORKFLOWS, EXPENSE_CATEGORIES, PAYMENT_SOURCES, getElapsed, formatTimer, isOverdue, todayStr, fmtMoney, fmtDD, TEAM_ACCOUNTS } from "./constants";
 import { useSettings } from "./store";
 import { inlineMd } from "./services";
 
@@ -490,13 +490,7 @@ export const TaskRow = memo(function TaskRow({ task, onPress, onStatusChange, on
 });
 
 /* -- UserMenu -- */
-const DEV_ROLES = [
-  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn", phone: "+84983523868", role: "dev",     title: "Developer",     color: "#9b59b6" },
-  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",  phone: "+84931512984", role: "admin",   title: "Giám đốc",      color: "#e74c3c" },
-  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",  phone: "+84901234567", role: "manager", title: "Quản lý dự án", color: "#3498db" },
-  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",   phone: "+84912345678", role: "staff",   title: "Nhân viên",     color: "#27ae60" },
-  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",   phone: "+84923456789", role: "staff",   title: "Nhân viên",     color: "#8e44ad" },
-];
+const DEV_ROLES = TEAM_ACCOUNTS;
 const ROLE_LABELS = { dev: "DEV", admin: "AD", manager: "QL", staff: "NV" };
 const ROLE_COLORS = { dev: "#9b59b6", admin: "#e74c3c", manager: "#c8956c", staff: "#27ae60" };
 
@@ -717,6 +711,29 @@ export function LazyImage({ src, alt = "", style = {}, ...props }) {
 }
 
 /* -- Confirm Dialog -- */
+/* -- TabErrorBoundary — inline error fallback for lazy tabs -- */
+export class TabErrorBoundary extends Component {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(e, info) { console.error("TabError:", e, info); }
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div style={{ padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>😵</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>Tab gặp lỗi</div>
+        <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>
+          {String(this.state.error?.message || "").slice(0, 120)}
+        </div>
+        <button className="tap" onClick={() => this.setState({ hasError: false, error: null })}
+          style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 10, padding: "8px 20px", fontSize: 13, fontWeight: 700 }}>
+          Thử lại
+        </button>
+      </div>
+    );
+  }
+}
+
 export function ConfirmDialog({ title, message, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay" style={{ zIndex:10000, alignItems:"center", justifyContent:"center" }} role="alertdialog" aria-modal="true" aria-label={title}>

@@ -2,7 +2,7 @@
    STORE — Context + useReducer for Tasks, Settings, History
    Solves: prop drilling, stale closure, centralized state
    ================================================================ */
-import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS } from "./constants";
 import { INDUSTRY_PRESETS } from "./industryPresets";
 import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
@@ -619,7 +619,7 @@ export function AppProvider({ children, userId }) {
     return () => clearInterval(iv);
   }, [tasks]);
 
-  const value = {
+  const value = useMemo(() => ({
     tasks,
     allTasks,
     deletedTasks,
@@ -656,7 +656,10 @@ export function AppProvider({ children, userId }) {
     setSettings,
     applyIndustryPreset,
     userId,
-  };
+  }), [tasks, allTasks, deletedTasks, expenses, projects, timerTick, history, memory, knowledge, pendingKnowledge, undoToast, settings, userId,
+    dispatch, addTask, deleteTask, undoDelete, hardDelete, patchTask, addExpense, patchExpense, deleteExpense,
+    addProject, patchProject, deleteProject, timerStart, timerPause, timerResume, timerDone,
+    setHistory, log, setMemory, setKnowledge, setUndoToast, setSettings, applyIndustryPreset]);
 
   return (
     <TaskContext.Provider value={value}>

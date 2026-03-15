@@ -24,11 +24,29 @@ export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExp
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
+  // Undo delete expense
+  const [undoExpense, setUndoExpense] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  const handleDeleteExpense = useCallback((id) => {
+    const exp = expenses.find(e => e.id === id);
+    if (!exp) { deleteExpense(id); return; }
+    setUndoExpense(exp);
+    deleteExpense(id);
+    clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => setUndoExpense(null), 5000);
+  }, [expenses, deleteExpense]);
+
+  const handleUndo = useCallback(() => {
+    if (undoExpense) { addExpense(undoExpense); setUndoExpense(null); clearTimeout(undoTimerRef.current); }
+  }, [undoExpense, addExpense]);
+
   // Chat chi tiêu state
   const [chatMsgs, setChatMsgs] = useState(() => loadJSON("expense_chat", []));
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
+  const [listLimit, setListLimit] = useState(30);
   const voiceRecRef = useRef(null);
   const chatEndRef = useRef(null);
   const chatInputRef = useRef(null);
@@ -543,7 +561,7 @@ ${last7Text}`;
             <div style={{ textAlign: "center", padding: 24, color: C.muted, fontSize: 13 }}>Chưa có khoản chi nào</div>
           )}
 
-          {filtered.map(e => {
+          {filtered.slice(0, listLimit).map(e => {
             const cat = CATS[e.category] || { label: "Khác", icon: "📦", color: C.muted };
             const src = PAYMENT_SOURCES[e.source] || { label: e.source, icon: "💳" };
             const title = e.description || e.taskTitle || "Chi tiêu";
@@ -584,7 +602,7 @@ ${last7Text}`;
                     <div style={{ fontSize: 9, color: C.red, fontWeight: 600, marginTop: 2 }}>❌ Từ chối</div>
                   )}
                   {e.type === "standalone" && deleteExpense && (
-                    <span className="tap" onClick={() => deleteExpense(e.id)}
+                    <span className="tap" onClick={() => handleDeleteExpense(e.id)}
                       style={{ fontSize: 10, color: C.muted, cursor: "pointer", marginTop: 2, display: "inline-block" }}>×</span>
                   )}
                 </div>
@@ -592,6 +610,12 @@ ${last7Text}`;
             );
           })}
 
+          {filtered.length > listLimit && (
+            <button className="tap" onClick={() => setListLimit(l => l + 30)}
+              style={{ width: "100%", background: C.accentD, color: C.accent, border: `1px solid ${C.accent}33`, borderRadius: 10, padding: "10px", fontSize: 12, fontWeight: 700, marginTop: 4 }}>
+              Xem thêm ({filtered.length - listLimit} còn lại)
+            </button>
+          )}
           {filtered.length > 0 && (
             <div style={{ textAlign: "center", padding: "10px", fontSize: 12, color: C.muted, fontWeight: 600 }}>
               Tổng: {fmtMoney(filtered.reduce((s, e) => s + e.amount, 0))} ({filtered.length} khoản)
@@ -791,6 +815,13 @@ ${last7Text}`;
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Undo delete toast */}
+      {undoExpense && (
+        <div className="undo-toast">
+          <span style={{ fontSize: 13 }}>Đã xóa khoản chi</span>
+          <button onClick={handleUndo}>Hoàn tác</button>
         </div>
       )}
     </div>

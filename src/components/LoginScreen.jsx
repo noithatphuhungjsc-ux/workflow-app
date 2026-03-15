@@ -2,17 +2,11 @@
    LOGIN SCREEN — Authentication (simplified, honest about limits)
    ================================================================ */
 import { useState, useEffect } from "react";
-import { C } from "../constants";
+import { C, TEAM_ACCOUNTS } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
 const ACCOUNTS_VERSION = 6; // bump to force re-init (added email)
-const DEFAULT_ACCOUNTS = [
-  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn",  phone: "+84983523868", pw: "111111", role: "dev",     title: "Developer" },
-  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",   phone: "+84931512984", pw: "111111", role: "admin",   title: "Giám đốc" },
-  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",   phone: "+84901234567", pw: "111111", role: "manager", title: "Quản lý dự án" },
-  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",    phone: "+84912345678", pw: "111111", role: "staff",   title: "Nhân viên" },
-  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",    phone: "+84923456789", pw: "111111", role: "staff",   title: "Nhân viên" },
-];
+const DEFAULT_ACCOUNTS = TEAM_ACCOUNTS.map(a => ({ ...a, pw: "111111" }));
 
 // Init default accounts with hashed passwords
 async function initAccounts() {

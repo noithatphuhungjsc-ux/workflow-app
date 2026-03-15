@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { C, PROJECT_COLORS, WORKFLOWS } from "../constants";
+import { C, PROJECT_COLORS, WORKFLOWS, TEAM_ACCOUNTS } from "../constants";
 import { useSettings } from "../store";
 import { useSupabase } from "../contexts/SupabaseContext";
 import { supabase } from "../lib/supabase";
@@ -44,14 +44,8 @@ export function NewProjectModal({ onAdd, onClose }) {
     });
   };
 
-  // Team accounts — authoritative list (only these show in member picker)
-  const TEAM_STAFF = [
-    { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6", role: "dev",     title: "Developer" },
-    { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c", role: "admin",   title: "Giám đốc" },
-    { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db", role: "manager", title: "Quản lý" },
-    { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60", role: "staff",   title: "Nhân viên" },
-    { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad", role: "staff",   title: "Nhân viên" },
-  ];
+  // Team accounts — derived from constants.js
+  const TEAM_STAFF = TEAM_ACCOUNTS.map(a => ({ id: a.id, display_name: a.name, avatar_color: a.color, role: a.role, title: a.title }));
   const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
   // Use team list as base, enrich with Supabase profile IDs
   const allProfiles = TEAM_STAFF.map(d => {
@@ -395,14 +389,8 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
 
   const statusDot = (s) => s === "done" ? C.green : s === "inprogress" ? "#e67e22" : C.border;
 
-  // Team accounts — authoritative list (filter out random OAuth profiles)
-  const TEAM_STAFF_EDIT = [
-    { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
-    { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
-    { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db" },
-    { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
-    { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
-  ];
+  // Team accounts — derived from constants.js
+  const TEAM_STAFF_EDIT = TEAM_ACCOUNTS.map(a => ({ id: a.id, display_name: a.name, avatar_color: a.color }));
   const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
   // Build clean profile list from team + enrich with Supabase IDs
   const teamList = TEAM_STAFF_EDIT.map(d => {

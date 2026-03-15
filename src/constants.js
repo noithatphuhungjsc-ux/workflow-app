@@ -113,6 +113,16 @@ export const PAYMENT_SOURCES = {
 /* -- PROJECT COLORS -- */
 export const PROJECT_COLORS = ["#2980b9","#e67e22","#27ae60","#9b59b6","#d35400","#16a085","#c0392b","#2c3e50"];
 
+/* -- TEAM ACCOUNTS — single source of truth -- */
+export const TEAM_ACCOUNTS = [
+  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn", phone: "+84983523868", role: "dev",     title: "Developer",     color: "#9b59b6" },
+  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",  phone: "",              role: "admin",   title: "Quản trị",      color: "#e74c3c" },
+  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",  phone: "",              role: "manager", title: "Quản lý",       color: "#6a7fd4" },
+  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",   phone: "",              role: "staff",   title: "Nhân viên",     color: "#3aaa72" },
+  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",   phone: "",              role: "staff",   title: "Nhân viên",     color: "#e67e22" },
+];
+export const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
+
 export const DAY_NAMES = ["T2","T3","T4","T5","T6","T7","CN"];
 export const MONTH_NAMES = ["Tháng 1","Tháng 2","Tháng 3","Tháng 4","Tháng 5","Tháng 6","Tháng 7","Tháng 8","Tháng 9","Tháng 10","Tháng 11","Tháng 12"];
 

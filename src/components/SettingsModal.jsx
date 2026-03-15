@@ -71,17 +71,21 @@ export default function SettingsModal({ user, onClose }) {
     showMsg("Đã lưu hồ sơ!");
   };
 
+  const [savingPw, setSavingPw] = useState(false);
   const handleChangePw = async () => {
     if (!oldPw || !newPw || !cfmPw) { showMsg("Vui lòng nhập đầy đủ.", "error"); return; }
     if (newPw !== cfmPw) { showMsg("Mật khẩu mới không khớp.", "error"); return; }
     if (newPw.length < 6) { showMsg("Mật khẩu mới tối thiểu 6 ký tự.", "error"); return; }
-    const oldHash = await hashPassword(oldPw);
-    if (oldHash !== myAcc.pwHash) { showMsg("Mật khẩu cũ không đúng.", "error"); return; }
-    const newHash = await hashPassword(newPw);
-    const updated = { ...accounts, [user.id]: { ...myAcc, pwHash: newHash } };
-    saveAccounts(updated); setAcct(updated);
-    showMsg("Đổi mật khẩu thành công!");
-    setOldPw(""); setNewPw(""); setCfmPw("");
+    setSavingPw(true);
+    try {
+      const oldHash = await hashPassword(oldPw);
+      if (oldHash !== myAcc.pwHash) { showMsg("Mật khẩu cũ không đúng.", "error"); return; }
+      const newHash = await hashPassword(newPw);
+      const updated = { ...accounts, [user.id]: { ...myAcc, pwHash: newHash } };
+      saveAccounts(updated); setAcct(updated);
+      showMsg("Đổi mật khẩu thành công!");
+      setOldPw(""); setNewPw(""); setCfmPw("");
+    } finally { setSavingPw(false); }
   };
 
   const toggle2FA = () => {
@@ -374,9 +378,9 @@ export default function SettingsModal({ user, onClose }) {
             <div style={{ marginBottom:14 }}>
               <input type="password" value={cfmPw} onChange={e => setCfmPw(e.target.value)} placeholder="Xác nhận mật khẩu mới" style={IS} />
             </div>
-            <button className="tap" onClick={handleChangePw}
-              style={{ width:"100%", background:`linear-gradient(135deg,${C.accent},${C.purple})`, color:"#fff", border:"none", borderRadius:14, padding:"14px", fontSize:15, fontWeight:700, marginBottom:20 }}>
-              Đổi mật khẩu
+            <button className="tap" onClick={handleChangePw} disabled={savingPw}
+              style={{ width:"100%", background: savingPw ? C.muted : `linear-gradient(135deg,${C.accent},${C.purple})`, color:"#fff", border:"none", borderRadius:14, padding:"14px", fontSize:15, fontWeight:700, marginBottom:20, opacity: savingPw ? .6 : 1 }}>
+              {savingPw ? "Đang xử lý..." : "Đổi mật khẩu"}
             </button>
 
             <Section title="Xác nhận 2 bước (SMS)" />

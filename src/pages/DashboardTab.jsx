@@ -65,7 +65,7 @@ function DonutChart({ segments, size = 80 }) {
   );
 }
 
-export default function DashboardTab({ tasks, expenses, projects, settings }) {
+export default function DashboardTab({ tasks, expenses, projects, settings, onOpenTask }) {
   const today = todayStr();
   const now = new Date();
 
@@ -201,7 +201,7 @@ export default function DashboardTab({ tasks, expenses, projects, settings }) {
         <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid #e74c3c33`, marginBottom: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>{t("task", settings)} quá hạn ({stats.overdue.length})</div>
           {stats.overdue.slice(0, 5).map(t => (
-            <div key={t.id} style={{ fontSize: 12, color: C.text, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+            <div key={t.id} className="tap" onClick={() => onOpenTask?.(t)} style={{ fontSize: 12, color: C.text, padding: "6px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
               <span style={{ fontWeight: 600 }}>{t.title}</span>
               <span style={{ color: C.red, fontSize: 10, marginLeft: 6 }}>hạn {t.deadline}</span>
             </div>
@@ -217,7 +217,7 @@ export default function DashboardTab({ tasks, expenses, projects, settings }) {
         <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid ${C.border}`, marginBottom: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>Việc hôm nay ({stats.dueToday.length})</div>
           {stats.dueToday.map(t => (
-            <div key={t.id} style={{ fontSize: 12, color: C.text, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+            <div key={t.id} className="tap" onClick={() => onOpenTask?.(t)} style={{ fontSize: 12, color: C.text, padding: "6px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
               <span style={{ fontWeight: 600 }}>{t.title}</span>
               {t.startTime && <span style={{ color: C.accent, fontSize: 10, marginLeft: 6 }}>{t.startTime}</span>}
             </div>

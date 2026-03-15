@@ -4,6 +4,24 @@
    ================================================================ */
 export const CHANGELOG = [
   {
+    version: "2.4",
+    date: "2026-03-15",
+    title: "Performance & Code Quality — 10 cải tiến",
+    type: "minor",
+    changes: [
+      { icon: "🛡️", text: "Error boundary từng tab — lỗi 1 tab không crash cả app" },
+      { icon: "↩️", text: "Undo xóa chi tiêu — hoàn tác trong 5 giây" },
+      { icon: "👆", text: "Dashboard — nhấn vào task quá hạn/hôm nay để mở chi tiết" },
+      { icon: "⏳", text: "Loading state — nút đổi mật khẩu hiện trạng thái xử lý" },
+      { icon: "🔍", text: "Tìm kiếm task — lọc theo tên hoặc người được giao" },
+      { icon: "⚡", text: "Memoize store — giảm re-render toàn app" },
+      { icon: "📧", text: "Tách useGmail hook — App.jsx gọn hơn" },
+      { icon: "📄", text: "Phân trang chi tiêu — tải 30 khoản/lần, nhấn xem thêm" },
+      { icon: "📦", text: "Gom TEAM_ACCOUNTS — 1 nơi duy nhất thay vì 5 file" },
+      { icon: "🔧", text: "vConsole — debug trên điện thoại không cần USB" },
+    ],
+  },
+  {
     version: "2.3",
     date: "2026-03-15",
     title: "UX Polish — Skeleton, Toast, Onboarding & Animations",
