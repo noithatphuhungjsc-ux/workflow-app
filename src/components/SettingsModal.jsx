@@ -507,7 +507,7 @@ export default function SettingsModal({ user, onClose }) {
             <Section title="Hiển thị" />
             <SelectRow label="Tab mặc định" desc="Tab hiển thị khi mở app"
               value={settings.defaultTab} onChange={v => setSettings({ defaultTab: v })}
-              options={[["tasks","Việc"],["calendar","Lịch"],["inbox","Hộp thư"],["expense","Chi tiêu"],["report","Báo cáo"],["ai","AI"]]} />
+              options={[["tasks",t("task",settings)],["calendar","Lịch"],["inbox","Hộp thư"],["expense",t("expense",settings)],["report","Báo cáo"],["ai","AI"]]} />
             <SelectRow label="Bộ lọc mặc định" value={settings.defaultFilter}
               onChange={v => setSettings({ defaultFilter: v })}
               options={[["all","Tất cả"],["todo","Cần làm"],["inprogress","Đang làm"],["review","Chờ duyệt"],["done","Xong"]]} />
@@ -519,7 +519,7 @@ export default function SettingsModal({ user, onClose }) {
 
             <Section title="Tab hiển thị" />
             <div style={{ fontSize:11, color:C.muted, marginBottom:8 }}>Bật/tắt các tab trên thanh điều hướng</div>
-            {[["tasks","📋","Việc"],["calendar","📅","Lịch"],["inbox","💬","Trao đổi"],["expense","💰","Chi tiêu"],["report","📊","Báo cáo"],["ai","✦","Wory"]].map(([key,icon,label]) => {
+            {[["tasks","📋",t("task",settings)],["calendar","📅","Lịch"],["inbox","💬","Trao đổi"],["expense","💰",t("expense",settings)],["report","📊","Báo cáo"],["ai","✦","Wory"]].map(([key,icon,label]) => {
               const isOn = (settings.visibleTabs || {})[key] !== false;
               return (
                 <Toggle key={key} label={`${icon} ${label}`}

@@ -808,7 +808,7 @@ function MainApp({ user, onLogout }) {
             {!isStaff && (projFilter === "all") && projects.filter(p => !p.archived).length > 0 && (
               <div style={{ marginBottom:12 }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-                  <span style={{ fontSize:13, fontWeight:700, color:C.text }}>Dự án ({projects.filter(p => !p.archived).length})</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{t("project", settings)} ({projects.filter(p => !p.archived).length})</span>
                   <button className="tap" onClick={() => setNewProjOpen(true)}
                     style={{ fontSize:11, padding:"4px 10px", borderRadius:8, border:`1px solid ${C.accent}44`, background:C.accentD, color:C.accent, fontWeight:700 }}>+ Tạo</button>
                 </div>
@@ -1143,7 +1143,7 @@ function MainApp({ user, onLogout }) {
       {/* ── BOTTOM NAV ── */}
       <div className="bottom-nav">
         {[
-          ["tasks","\u{1F4CB}","Việc"],
+          ["tasks","\u{1F4CB}", t("task", settings)],
           ["calendar","\u{1F4C5}","Lịch"],
           ["inbox","\u{1F4AC}","Trao đổi", chatUnread],
           ["expense","\u{1F4B0}", t("expense", settings)],

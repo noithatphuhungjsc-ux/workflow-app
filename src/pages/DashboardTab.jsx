@@ -3,7 +3,7 @@
    No external chart library — pure CSS + inline SVG
    ================================================================ */
 import { useMemo } from "react";
-import { C, fmtMoney, todayStr, fmtDate } from "../constants";
+import { C, fmtMoney, todayStr, fmtDate, t } from "../constants";
 
 const BAR_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#3498db", "#9b59b6"];
 
@@ -125,15 +125,15 @@ export default function DashboardTab({ tasks, expenses, projects, settings }) {
 
       {/* KPI Cards */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        <KpiCard icon="📋" label="Tổng công việc" value={stats.active.length} sub={`${stats.done.length} hoàn thành`} />
+        <KpiCard icon="📋" label={`Tổng ${t("task", settings).toLowerCase()}`} value={stats.active.length} sub={`${stats.done.length} hoàn thành`} />
         <KpiCard icon="✅" label="Tỉ lệ hoàn thành" value={`${stats.completionRate}%`} color={stats.completionRate >= 70 ? C.green : stats.completionRate >= 40 ? "#e67e22" : C.red} />
         <KpiCard icon="⏰" label="Quá hạn" value={stats.overdue.length} color={stats.overdue.length > 0 ? C.red : C.green} sub={stats.overdue.length > 0 ? stats.overdue[0]?.title : "Không có"} />
-        <KpiCard icon="💰" label="Chi tiêu tháng" value={fmtMoney(stats.totalExpense)} sub={settings.monthlyBudget ? `Ngân sách: ${fmtMoney(settings.monthlyBudget)}` : ""} color={settings.monthlyBudget && stats.totalExpense > settings.monthlyBudget ? C.red : C.text} />
+        <KpiCard icon="💰" label={`${t("expense", settings)} tháng`} value={fmtMoney(stats.totalExpense)} sub={settings.monthlyBudget ? `Ngân sách: ${fmtMoney(settings.monthlyBudget)}` : ""} color={settings.monthlyBudget && stats.totalExpense > settings.monthlyBudget ? C.red : C.text} />
       </div>
 
       {/* Task status donut */}
       <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid ${C.border}`, marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>Trạng thái công việc</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>Trạng thái {t("task", settings).toLowerCase()}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <DonutChart segments={[
             { value: stats.todo.length, color: "#bdc3c7" },
@@ -189,7 +189,7 @@ export default function DashboardTab({ tasks, expenses, projects, settings }) {
       {/* Project progress */}
       {stats.projStats.length > 0 && (
         <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid ${C.border}`, marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>Tiến độ dự án</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>Tiến độ {t("project", settings).toLowerCase()}</div>
           {stats.projStats.map((p, i) => (
             <MiniBar key={i} label={p.name} value={p.done} max={p.total} color={BAR_COLORS[i % BAR_COLORS.length]} suffix={`/${p.total} (${p.pct}%)`} />
           ))}
@@ -199,7 +199,7 @@ export default function DashboardTab({ tasks, expenses, projects, settings }) {
       {/* Overdue tasks list */}
       {stats.overdue.length > 0 && (
         <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid #e74c3c33`, marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>Công việc quá hạn ({stats.overdue.length})</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>{t("task", settings)} quá hạn ({stats.overdue.length})</div>
           {stats.overdue.slice(0, 5).map(t => (
             <div key={t.id} style={{ fontSize: 12, color: C.text, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
               <span style={{ fontWeight: 600 }}>{t.title}</span>

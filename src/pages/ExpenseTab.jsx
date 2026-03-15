@@ -3,7 +3,7 @@
    Features: tổng hợp, phân loại, nguồn, Wory chat chi tiêu, gửi email
    ================================================================ */
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { C, EXPENSE_CATEGORIES, PAYMENT_SOURCES, fmtMoney, todayStr, MONTH_NAMES } from "../constants";
+import { C, EXPENSE_CATEGORIES, PAYMENT_SOURCES, fmtMoney, todayStr, MONTH_NAMES, t } from "../constants";
 import { SL, MdBlock } from "../components";
 import { callClaudeStream, loadJSON, saveJSON, decryptToken } from "../services";
 
@@ -413,7 +413,7 @@ ${last7Text}`;
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ fontSize: 28 }}>💰</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>Chi tiêu</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{t("expense", settings)}</div>
             <div style={{ fontSize: 12, color: C.sub }}>{monthLabel(filterMonth)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
