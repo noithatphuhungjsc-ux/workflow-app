@@ -140,17 +140,18 @@ export default function ChangelogView({ onClose, onNavigate, initialScrollY = 0 
   );
 }
 
-/* Floating back-to-changelog button */
+/* Floating back-to-changelog dot */
 export function ChangelogBackButton({ onClick }) {
   return (
-    <button className="tap" onClick={onClick} style={{
-      position: "fixed", bottom: 70, right: 14, zIndex: 999,
-      background: C.accent, color: "#fff", border: "none", borderRadius: 20,
-      padding: "8px 14px", fontSize: 12, fontWeight: 700,
-      boxShadow: "0 2px 12px rgba(0,0,0,.15)", cursor: "pointer",
-      display: "flex", alignItems: "center", gap: 6,
+    <button className="tap" onClick={onClick} title="Quay lại Changelog" style={{
+      position: "fixed", bottom: 72, right: 14, zIndex: 999,
+      background: C.accent, color: "#fff", border: "none",
+      width: 36, height: 36, borderRadius: "50%",
+      fontSize: 14, fontWeight: 700,
+      boxShadow: "0 2px 10px rgba(0,0,0,.18)", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      ← Quay lại Changelog
+      ↩
     </button>
   );
 }
