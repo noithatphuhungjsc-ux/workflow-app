@@ -34,7 +34,7 @@ export default function SettingsModal({ user, onClose }) {
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState("");
   const [showIndustryModal, setShowIndustryModal] = useState(false);
-  const [locked, setLocked] = useState(true);
+  const [locked, setLocked] = useState(false);
   const [lockPw, setLockPw] = useState("");
   const [accounts, setAcct] = useState(loadAccounts);
   const [syncing, setSyncing] = useState(false);
