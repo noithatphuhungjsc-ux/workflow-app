@@ -564,8 +564,8 @@ export function UserMenu({ user, onLogout, onSettings }) {
             </button>
           </div>
 
-          {/* Dev role switcher — only for dev role + ?dev URL */}
-          {currentDev?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && <>
+          {/* Dev role switcher — only for dev role */}
+          {currentDev?.role === "dev" && <>
             <div style={{ padding:"6px 10px 4px", fontSize:9, fontWeight:700, color:C.muted, letterSpacing:.5 }}>CHUYỂN VAI TRÒ (DEV)</div>
             {DEV_ROLES.map(acc => {
               const isCurrent = acc.id === user.id;

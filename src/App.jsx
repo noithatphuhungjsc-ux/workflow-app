@@ -1162,7 +1162,7 @@ function MainApp({ user, onLogout }) {
           ["expense","\u{1F4B0}", t("expense", settings)],
           ["dashboard","\u{1F4CA}","Tổng quan"],
           (user?.role === "admin" || user?.role === "manager") && ["report","\u{1F4C4}","Báo cáo"],
-          user?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && ["dev","\u{1F4BB}","Dev"],
+          user?.role === "dev" && ["dev","\u{1F4BB}","Dev"],
           ["ai","\u2726","Wory"],
         ].filter(Boolean).filter(([key]) => {
           if (key === "dev") return true;
