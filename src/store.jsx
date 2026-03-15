@@ -5,13 +5,13 @@
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS } from "./constants";
 import { INDUSTRY_PRESETS } from "./industryPresets";
+import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
+import { useSupabase } from "./contexts/SupabaseContext";
 
 function getWorkflowsByIds(ids) {
   if (!ids?.length) return [];
   return WORKFLOWS.filter(w => ids.includes(w.id));
 }
-import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
-import { useSupabase } from "./contexts/SupabaseContext";
 
 /* ================================================================
    TASK REDUCER — immutable updates, soft delete support
@@ -465,14 +465,6 @@ export function AppProvider({ children, userId }) {
   const patchProject = useCallback((id, data) => { projDispatch({ type: "PROJ_PATCH", id, data }); }, []);
   const deleteProject = useCallback((id) => { projDispatch({ type: "PROJ_DELETE", id }); }, []);
 
-  const addExpense = useCallback((item) => {
-    // Auto-set approval: staff → pending, manager/owner → approved
-    const role = settings.userIndustryRole || settings.userRole;
-    const needsApproval = role === "staff" || role === "worker" || role === "kitchen" || role === "tech" || role === "reception" || role === "driver" || role === "warehouse" || role === "nurse" || role === "ta" || role === "paralegal";
-    const expenseItem = { ...item, approval: item.approval || (needsApproval ? "pending" : "approved"), createdBy: settings.displayName || "" };
-    expenseDispatch({ type: "EXP_ADD", item: expenseItem });
-    log("expense", item.description || "Chi tiêu", fmtMoney(item.amount));
-  }, [settings]);
   const patchExpense = useCallback((id, data) => { expenseDispatch({ type: "EXP_PATCH", id, data }); }, []);
   const deleteExpense = useCallback((id) => { expenseDispatch({ type: "EXP_DELETE", id }); }, []);
 
@@ -506,6 +498,15 @@ export function AppProvider({ children, userId }) {
       return next;
     });
   }, [cloudId]);
+
+  // --- Expense (needs settings) ---
+  const addExpense = useCallback((item) => {
+    const role = settings.userIndustryRole || settings.userRole;
+    const needsApproval = role === "staff" || role === "worker" || role === "kitchen" || role === "tech" || role === "reception" || role === "driver" || role === "warehouse" || role === "nurse" || role === "ta" || role === "paralegal";
+    const expenseItem = { ...item, approval: item.approval || (needsApproval ? "pending" : "approved"), createdBy: settings.displayName || "" };
+    expenseDispatch({ type: "EXP_ADD", item: expenseItem });
+    log("expense", item.description || "Chi tiêu", fmtMoney(item.amount));
+  }, [settings]);
 
   // --- Industry Preset ---
   const applyIndustryPreset = useCallback((presetId, isFirstTime = false) => {
