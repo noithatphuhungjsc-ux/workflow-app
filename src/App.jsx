@@ -6,7 +6,7 @@ import React, { useState, useRef, useEffect, useCallback, Suspense } from "react
 import "./App.css";
 
 import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, TEAM_EMAILS } from "./constants";
-import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail } from "./services";
+import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail, cloudSave, cloudLoad } from "./services";
 import { useGmail } from "./hooks/useGmail";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
 import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel, Skeleton, Toast, TabErrorBoundary } from "./components";
@@ -827,16 +827,44 @@ function MainApp({ user, onLogout }) {
             <ProjectFilters projects={projects} filter={projFilter} setFilter={setProjFilter} onAdd={() => setNewProjOpen(true)} onOpen={setProjDetail} isStaff={isStaff} myName={myName} onDeleteAll={async () => {
               const choice = prompt("Xóa TẤT CẢ dự án?\n\n1 = Xóa dự án, giữ công việc\n2 = Xóa dự án + công việc + nhóm chat\n\nNhập 1 hoặc 2:");
               if (!choice || !["1","2"].includes(choice)) return;
-              // Delete chats on Supabase
+              // 1. Collect all member localIds from all projects
+              const allLids = new Set();
+              const DEV_NAME_MAP = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.name, a.id]));
+              projects.forEach(p => p.members?.forEach(m => { const lid = DEV_NAME_MAP[m.name]; if (lid) allLids.add(lid); }));
+              const myId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id; } catch { return null; } })();
+              if (myId) allLids.add(myId);
+              const projectIds = new Set(projects.map(p => p.id));
+              // 2. Clean ALL members' cloud data
+              await Promise.all([...allLids].map(async (lid) => {
+                try {
+                  const ep = await cloudLoad(null, lid, "projects");
+                  const cp = Array.isArray(ep?.data) ? ep.data : [];
+                  const filteredP = cp.filter(p => !projectIds.has(p.id));
+                  if (filteredP.length !== cp.length) await cloudSave(null, lid, "projects", filteredP);
+                  const et = await cloudLoad(null, lid, "tasks");
+                  const ct = Array.isArray(et?.data) ? et.data : [];
+                  if (choice === "2") {
+                    const filteredT = ct.filter(t => !projectIds.has(t.projectId));
+                    if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
+                  } else {
+                    const updated = ct.map(t => projectIds.has(t.projectId) ? { ...t, projectId: null, stepIndex: null, assignee: null } : t);
+                    if (JSON.stringify(updated) !== JSON.stringify(ct)) await cloudSave(null, lid, "tasks", updated);
+                  }
+                } catch {}
+              }));
+              // 3. Delete chats on Supabase
               if (supabase) {
                 for (const p of projects) {
                   if (p.chatId) {
-                    await supabase.from("messages").delete().eq("conversation_id", p.chatId);
-                    await supabase.from("conversation_members").delete().eq("conversation_id", p.chatId);
-                    await supabase.from("conversations").delete().eq("id", p.chatId);
+                    try {
+                      await supabase.from("messages").delete().eq("conversation_id", p.chatId);
+                      await supabase.from("conversation_members").delete().eq("conversation_id", p.chatId);
+                      await supabase.from("conversations").delete().eq("id", p.chatId);
+                    } catch {}
                   }
                 }
               }
+              // 4. THEN delete locally
               if (choice === "1") { tasks.filter(t => t.projectId).forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); }
               else { tasks.filter(t => t.projectId).forEach(t => hardDelete(t.id)); }
               projects.forEach(p => deleteProject(p.id));
