@@ -301,7 +301,10 @@ export function AppProvider({ children, userId }) {
             cloudHadData.projects = true;
             const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
             const myNames = [sess.name, sess.id].filter(Boolean).map(n => (n || "").toLowerCase().replace(/\s+/g, ""));
+            const deletedProjIds = deletedProjectIdsRef.current;
             const validCloud = row.data.filter(p => {
+              // Skip projects that were locally deleted
+              if (deletedProjIds.has(p.id)) return false;
               if (!p.members || p.members.length === 0) return true;
               return p.members.some(m => {
                 if (m.supaId && m.supaId === cloudId) return true;
@@ -311,7 +314,7 @@ export function AppProvider({ children, userId }) {
             });
             const cloudIds = new Set(validCloud.map(p => p.id));
             const personalLocal = localProjects.filter(p => !p.members || p.members.length === 0);
-            const personalNotInCloud = personalLocal.filter(p => !cloudIds.has(p.id));
+            const personalNotInCloud = personalLocal.filter(p => !cloudIds.has(p.id) && !deletedProjIds.has(p.id));
             localProjects = [...validCloud, ...personalNotInCloud];
             projDispatch({ type: "PROJ_LOAD", items: localProjects });
             saveJSON("projects", localProjects);
@@ -379,6 +382,7 @@ export function AppProvider({ children, userId }) {
 
   // --- Projects ---
   const [projects, projDispatch] = useReducer(projectReducer, [], () => loadJSON("projects", []));
+  const deletedProjectIdsRef = useRef(new Set(JSON.parse(localStorage.getItem(userKey("deleted_projects")) || "[]")));
   const projLoadedRef = useRef(false);
   useEffect(() => {
     if (!projLoadedRef.current) { projLoadedRef.current = true; return; }
@@ -511,7 +515,18 @@ export function AppProvider({ children, userId }) {
 
   const addProject = useCallback((item) => { projDispatch({ type: "PROJ_ADD", item }); }, []);
   const patchProject = useCallback((id, data) => { projDispatch({ type: "PROJ_PATCH", id, data }); }, []);
-  const deleteProject = useCallback((id) => { projDispatch({ type: "PROJ_DELETE", id }); }, []);
+  const deleteProject = useCallback((id) => {
+    projDispatch({ type: "PROJ_DELETE", id });
+    // Track deleted project ID to prevent cloud restore
+    deletedProjectIdsRef.current.add(id);
+    try { localStorage.setItem(userKey("deleted_projects"), JSON.stringify([...deletedProjectIdsRef.current])); } catch {}
+    // Immediately push updated projects to own cloud (bypass debounce)
+    if (cloudId && cloudPullDoneRef.current) {
+      const updated = loadJSON("projects", []).filter(p => p.id !== id);
+      saveJSON("projects", updated);
+      cloudSave(null, userId, "projects", updated);
+    }
+  }, [cloudId, userId]);
 
   const patchExpense = useCallback((id, data) => { expenseDispatch({ type: "EXP_PATCH", id, data }); }, []);
   const deleteExpense = useCallback((id) => { expenseDispatch({ type: "EXP_DELETE", id }); }, []);
@@ -535,7 +550,14 @@ export function AppProvider({ children, userId }) {
   const pendingKnowledge = knowledge.entries.filter(e => !e.approved);
 
   // --- Settings ---
-  const [settings, setSettingsState] = useState(() => loadSettings(DEFAULT_SETTINGS));
+  const [settings, setSettingsState] = useState(() => {
+    const s = loadSettings(DEFAULT_SETTINGS);
+    // Auto-migrate old role names → new role system
+    const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
+    if (sess.role === "director" && s.userRole !== "director") { s.userRole = "director"; persistSettings(s); }
+    else if (sess.role !== "director" && s.userRole === "manager") { s.userRole = "staff"; persistSettings(s); }
+    return s;
+  });
   const setSettings = useCallback((updater) => {
     setSettingsState(prev => {
       const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
