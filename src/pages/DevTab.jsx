@@ -120,6 +120,9 @@ function ensureVConsole() {
 
 const USER_IDS = ["trinh", "lien", "hung", "mai", "duc"];
 
+const CLOUD_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
+const LOCAL_EXTRA = ["history", "chat_started", "chat_archives", "gmail_token", "expense_wory_report"];
+
 async function clearPersonalTasks() {
   let total = 0;
   for (const uid of USER_IDS) {
@@ -128,21 +131,35 @@ async function clearPersonalTasks() {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const tasks = JSON.parse(raw);
-      const before = tasks.length;
       const kept = tasks.filter(t => !!t.projectId);
-      total += before - kept.length;
+      total += tasks.length - kept.length;
       localStorage.setItem(key, JSON.stringify(kept));
-      // Also push to cloud
+      try { await fetch("/api/cloud-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, key: "tasks", data: kept }) }); } catch {}
+    } catch {}
+  }
+  return total;
+}
+
+async function resetAllDataAllUsers() {
+  for (const uid of USER_IDS) {
+    // Clear localStorage per user
+    for (const k of [...CLOUD_KEYS, ...LOCAL_EXTRA]) {
+      localStorage.removeItem(`wf_${uid}_${k}`);
+    }
+    // Clear cloud — push empty for each key
+    for (const k of CLOUD_KEYS) {
       try {
         await fetch("/api/cloud-sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: uid, key: "tasks", data: kept }),
+          body: JSON.stringify({ userId: uid, key: k, data: k === "settings" ? {} : [] }),
         });
       } catch {}
-    } catch {}
+    }
   }
-  return total;
+  // Clear shared keys
+  ["wf_onboard_done", "wf_install_dismissed", "wf_auth_synced_v3", "wf_cleanup_v2", "wf_accounts_ver", "wf_accounts", "wf_gmail_enc", "wf_schema_version"]
+    .forEach(k => localStorage.removeItem(k));
 }
 
 export default function DevTab({ user }) {
@@ -362,7 +379,17 @@ export default function DevTab({ user }) {
           alert(`Đã xóa ${n} việc cá nhân (local + cloud). Tải lại trang.`);
           window.location.reload();
         }} style={{ flex: 1, background: "#fde8e8", color: "#d95f5f", border: "1px solid #d95f5f33", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700 }}>
-          🗑️ Xóa việc cá nhân (tất cả TK + cloud)
+          🗑️ Xóa việc cá nhân
+        </button>
+        <button className="tap" onClick={async () => {
+          if (!confirm("⚠️ XÓA TOÀN BỘ dữ liệu (tasks, expenses, projects, settings, chat, memory...) của TẤT CẢ 5 tài khoản — cả local + cloud. KHÔNG THỂ HOÀN TÁC!")) return;
+          if (!confirm("Chắc chắn? Mọi thứ sẽ bị xóa sạch.")) return;
+          await resetAllDataAllUsers();
+          alert("Đã xóa toàn bộ dữ liệu. Tải lại trang.");
+          localStorage.removeItem("wf_session");
+          window.location.reload();
+        }} style={{ flex: 1, background: "#d95f5f", color: "#fff", border: "none", borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700 }}>
+          💣 RESET TẤT CẢ
         </button>
       </div>
 
