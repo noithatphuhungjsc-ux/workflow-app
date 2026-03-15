@@ -416,7 +416,7 @@ export function AppProvider({ children, userId }) {
     }
   }, [projects, userId, cloudId]);
 
-  // Cross-user CLOUD sync: push projects+tasks to all members' cloud
+  // Cross-user CLOUD sync: push projects+tasks to all members' cloud (bidirectional)
   const crossSyncTimerRef = useRef(null);
   useEffect(() => {
     if (!cloudId || !cloudPullDoneRef.current) return;
@@ -427,6 +427,13 @@ export function AppProvider({ children, userId }) {
           "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
           "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
         };
+        // Build project→members map for reverse sync
+        const projMemberMap = {};
+        projects.forEach(proj => {
+          if (!proj.members?.length) return;
+          projMemberMap[proj.id] = proj.members.map(m => DEV_NAME_TO_LOCAL_ID[m.name]).filter(Boolean);
+        });
+
         // Collect all member localIds that need sync
         const memberTargets = new Set();
         projects.forEach(proj => {
@@ -442,6 +449,19 @@ export function AppProvider({ children, userId }) {
           if (lid && lid !== userId) memberTargets.add(lid);
         }
 
+        // Reverse sync: collect project tasks that current user modified → push to other members
+        const myProjectTasks = allTasks.filter(t => t.projectId && projMemberMap[t.projectId]);
+        const reverseTasksByMember = {};
+        myProjectTasks.forEach(t => {
+          const members = projMemberMap[t.projectId] || [];
+          members.forEach(lid => {
+            if (lid === userId) return;
+            memberTargets.add(lid);
+            if (!reverseTasksByMember[lid]) reverseTasksByMember[lid] = [];
+            reverseTasksByMember[lid].push(t);
+          });
+        });
+
         // Sync all members in parallel — load both keys at once per member
         await Promise.all([...memberTargets].map(async (localId) => {
           const memberName = Object.entries(DEV_NAME_TO_LOCAL_ID).find(([,v]) => v === localId)?.[0];
@@ -449,12 +469,17 @@ export function AppProvider({ children, userId }) {
             p.members?.some(m => m.name === memberName || DEV_NAME_TO_LOCAL_ID[m.name] === localId)
           );
           const assigneeTasks = tasksByAssignee[memberName] || [];
-          if (!memberProjs.length && !assigneeTasks.length) return;
+          const reverseTasks = reverseTasksByMember[localId] || [];
+          const allSyncTasks = [...assigneeTasks];
+          // Merge reverse tasks (avoid duplicates)
+          const syncIds = new Set(allSyncTasks.map(t => t.id));
+          reverseTasks.forEach(t => { if (!syncIds.has(t.id)) allSyncTasks.push(t); });
+          if (!memberProjs.length && !allSyncTasks.length) return;
 
           // Load both keys in parallel (1 call instead of 2 sequential)
           const [exP, exT] = await Promise.all([
             memberProjs.length ? cloudLoad(null, localId, "projects") : null,
-            assigneeTasks.length ? cloudLoad(null, localId, "tasks") : null,
+            allSyncTasks.length ? cloudLoad(null, localId, "tasks") : null,
           ]);
 
           const saves = [];
@@ -468,10 +493,10 @@ export function AppProvider({ children, userId }) {
             }
             saves.push(cloudSave(null, localId, "projects", mP));
           }
-          if (assigneeTasks.length) {
+          if (allSyncTasks.length) {
             const cT = (exT?.data && Array.isArray(exT.data)) ? exT.data : [];
             let mT = [...cT];
-            for (const t of assigneeTasks) {
+            for (const t of allSyncTasks) {
               const i = mT.findIndex(e => e.id === t.id);
               if (i >= 0) mT[i] = { ...mT[i], ...t };
               else mT.push(t);
