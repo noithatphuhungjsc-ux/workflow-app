@@ -160,7 +160,11 @@ export function AppProvider({ children, userId }) {
     saveJSON("tasks", allTasks);
     // Push to cloud — but suppress during/after poll to prevent stale data overwriting
     if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
-      scheduleSyncDebounced(null, userId, "tasks", allTasks);
+      // Purge tasks deleted > 30 days before pushing to cloud
+      const PURGE_MS = 30 * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const cloudTasks = allTasks.filter(t => !(t.deleted && t.deletedAt && (now - t.deletedAt > PURGE_MS)));
+      scheduleSyncDebounced(null, userId, "tasks", cloudTasks);
     }
 
     // Cross-user sync: copy assigned project tasks to assignee's localStorage + cloud
@@ -256,20 +260,39 @@ export function AppProvider({ children, userId }) {
 
           if (row.key === "tasks") {
             cloudHadData.tasks = true;
-            const cloudTaskIds = new Set(row.data.map(t => t.id));
+            const PURGE_MS = 30 * 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            // Filter out cloud tasks that are permanently expired (deleted > 30 days)
+            const cleanCloud = row.data.filter(t => !(t.deleted && t.deletedAt && (now - t.deletedAt > PURGE_MS)));
+            const cloudTaskIds = new Set(cleanCloud.map(t => t.id));
+            // Build set of locally-deleted task ids (to prevent cloud from restoring them)
+            const localDeletedIds = new Set(localTasks.filter(t => t.deleted).map(t => t.id));
             if (localTasks.length === 0) {
-              localTasks = row.data;
+              localTasks = cleanCloud;
             } else {
               localTasks = localTasks.filter(t => {
                 if (cloudTaskIds.has(t.id)) return true;
                 if (!t.projectId && !t.assignee) return true;
                 return false;
               });
-              for (const ct of row.data) {
+              for (const ct of cleanCloud) {
                 const li = localTasks.findIndex(t => t.id === ct.id);
-                if (li >= 0) { localTasks[li] = { ...localTasks[li], ...ct }; }
-                else { localTasks.push(ct); }
+                if (li >= 0) {
+                  // If local says deleted, keep deleted state (don't let cloud restore)
+                  if (localDeletedIds.has(ct.id)) {
+                    localTasks[li] = { ...localTasks[li], ...ct, deleted: true, deletedAt: localTasks[li].deletedAt };
+                  } else if (ct.deleted) {
+                    // Cloud says deleted — respect it
+                    localTasks[li] = { ...localTasks[li], ...ct };
+                  } else {
+                    localTasks[li] = { ...localTasks[li], ...ct };
+                  }
+                } else if (!localDeletedIds.has(ct.id)) {
+                  localTasks.push(ct);
+                }
               }
+              // Purge local tasks deleted > 30 days
+              localTasks = localTasks.filter(t => !(t.deleted && t.deletedAt && (now - t.deletedAt > PURGE_MS)));
             }
             dispatch({ type: "LOAD", tasks: localTasks });
             saveJSON("tasks", localTasks);
