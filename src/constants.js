@@ -122,6 +122,16 @@ export function t(key, settings) {
   return settings?.terminology?.[key] || DEFAULT_TERMS[key] || key;
 }
 
+/* -- RBAC HELPER -- */
+export function hasPermission(settings, tabOrAction) {
+  const roles = settings?.industryRoles;
+  if (!roles?.length) return true;
+  const myRole = roles.find(r => r.id === settings?.userIndustryRole);
+  if (!myRole) return true;
+  if (myRole.permissions?.includes("all")) return true;
+  return myRole.permissions?.includes(tabOrAction) ?? true;
+}
+
 /* -- DEFAULT SETTINGS -- */
 export const DEFAULT_SETTINGS = {
   // Profile & Role
@@ -131,6 +141,7 @@ export const DEFAULT_SETTINGS = {
 
   // Industry preset
   industryPreset: "",         // preset id ("fnb", "construction", ...)
+  userIndustryRole: "",       // role id from preset ("owner", "staff", ...)
   visibleTabs: { tasks: true, calendar: true, inbox: true, expense: true, report: true, ai: true },
   terminology: {},            // { task, project, deadline, assignee, expense }
   industryExpenseCategories: null, // override EXPENSE_CATEGORIES, null = dùng mặc định

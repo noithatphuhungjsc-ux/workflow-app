@@ -16,10 +16,17 @@ function checkRate(ip) {
   return entry.count <= RATE_LIMIT;
 }
 
+const ALLOWED_ORIGINS = ["https://workflow-app-lemon.vercel.app", "http://localhost:5173"];
+function getAllowedOrigin(req) {
+  const origin = req.headers.get('origin') || "";
+  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  if (origin.startsWith("https://workflow-app-") && origin.endsWith(".vercel.app")) return origin;
+  return ALLOWED_ORIGINS[0];
+}
+
 export default async function handler(req) {
-  const origin = req.headers.get('origin') || '*';
   const cors = {
-    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Origin': getAllowedOrigin(req),
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };

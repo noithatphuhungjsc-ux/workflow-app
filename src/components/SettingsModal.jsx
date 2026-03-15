@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, DEFAULT_SETTINGS, PAYMENT_SOURCES, KNOWLEDGE_CATEGORIES, DEFAULT_PROFILE, WORKFLOWS, t } from "../constants";
 import { INDUSTRY_PRESETS } from "../industryPresets";
 import IndustrySetupModal from "./IndustrySetupModal";
+import StaffManagement from "./StaffManagement";
 import { useStore, useSettings } from "../store";
 import { hashPassword, loadAccounts, saveAccounts, maskPhone, exportAllData, importData, clearAllData, saveJSON, loadJSON, encryptToken, decryptToken, sendBackupEmail, saveKnowledgeProfile, addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry, approveKnowledgeEntry, approveAllPending, cloudSaveAll, cloudLoadAll } from "../services";
 import { useSupabase } from "../contexts/SupabaseContext";
@@ -18,6 +19,7 @@ const TABS = [
   { id: "training", label: "Huấn luyện" },
   { id: "connect",  label: "Kết nối" },
   { id: "expense",  label: "Chi tiêu" },
+  { id: "staff",    label: "Nhân sự" },
   { id: "ui",       label: "Giao diện" },
   { id: "data",     label: "Dữ liệu" },
 ];
@@ -280,18 +282,32 @@ export default function SettingsModal({ user, onClose }) {
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>SỐ ĐIỆN THOẠI</div>
               <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)} style={IS} placeholder="0912 345 678" type="tel" />
             </div>
-            {settings.userRole !== "staff" && <div style={{ marginBottom:14 }}>
+            {/* Vai trò — dùng industry roles nếu có, fallback legacy */}
+            <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:6 }}>VAI TRÒ</div>
-              <div style={{ display:"flex", gap:8 }}>
-                {[["manager","👔 Quản lý","Tạo dự án, giao việc, xem tất cả"],["staff","🔧 Thực thi","Xem việc được giao, báo cáo tiến độ"]].map(([k,label,desc]) => (
-                  <div key={k} className="tap" onClick={() => setSettings({ userRole: k })}
-                    style={{ flex:1, padding:"10px 12px", borderRadius:12, border:`2px solid ${(settings.userRole||"manager")===k?C.accent:C.border}`, background:(settings.userRole||"manager")===k?C.accentD:C.card, cursor:"pointer" }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:(settings.userRole||"manager")===k?C.accent:C.text, marginBottom:2 }}>{label}</div>
-                    <div style={{ fontSize:10, color:C.muted }}>{desc}</div>
-                  </div>
-                ))}
-              </div>
-            </div>}
+              {settings.industryRoles?.length > 0 ? (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {settings.industryRoles.map(r => {
+                    const active = settings.userIndustryRole === r.id;
+                    return (
+                      <div key={r.id} className="tap" onClick={() => setSettings({ userIndustryRole: r.id, userRole: r.id === "owner" || r.id === "manager" ? "manager" : "staff" })}
+                        style={{ flex:"1 1 calc(50% - 4px)", padding:"10px 12px", borderRadius:12, border:`2px solid ${active?C.accent:C.border}`, background:active?C.accentD:C.card, cursor:"pointer" }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:active?C.accent:C.text }}>{r.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ display:"flex", gap:8 }}>
+                  {[["manager","👔 Quản lý"],["staff","🔧 Thực thi"]].map(([k,label]) => (
+                    <div key={k} className="tap" onClick={() => setSettings({ userRole: k })}
+                      style={{ flex:1, padding:"10px 12px", borderRadius:12, border:`2px solid ${(settings.userRole||"manager")===k?C.accent:C.border}`, background:(settings.userRole||"manager")===k?C.accentD:C.card, cursor:"pointer" }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:(settings.userRole||"manager")===k?C.accent:C.text }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:8 }}>AVATAR</div>
               
@@ -466,6 +482,9 @@ export default function SettingsModal({ user, onClose }) {
             </div>
           </>)}
 
+          {/* ======== NHÂN SỰ ======== */}
+          {tab === "staff" && (<StaffManagement currentUserId={user.id} />)}
+
           {/* ======== GIAO DIỆN (Thông báo + Hiển thị gộp) ======== */}
           {tab === "ui" && (<>
             <Section title="Thông báo" />
@@ -496,6 +515,20 @@ export default function SettingsModal({ user, onClose }) {
             <SelectRow label="Thuận tay" value={settings.handSide || "right"}
               onChange={v => setSettings({ handSide: v })}
               options={[["right","Phải"],["left","Trái"]]} />
+
+            <Section title="Tab hiển thị" />
+            <div style={{ fontSize:11, color:C.muted, marginBottom:8 }}>Bật/tắt các tab trên thanh điều hướng</div>
+            {[["tasks","📋","Việc"],["calendar","📅","Lịch"],["inbox","💬","Trao đổi"],["expense","💰","Chi tiêu"],["report","📊","Báo cáo"],["ai","✦","Wory"]].map(([key,icon,label]) => {
+              const isOn = (settings.visibleTabs || {})[key] !== false;
+              return (
+                <Toggle key={key} label={`${icon} ${label}`}
+                  value={isOn}
+                  onChange={() => setSettings(s => ({
+                    ...s,
+                    visibleTabs: { ...(s.visibleTabs || {}), [key]: !isOn }
+                  }))} />
+              );
+            })}
 
             <Section title="Cỡ chữ" />
             <div style={{ display:"flex", gap:8, padding:"4px 0" }}>

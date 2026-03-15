@@ -1,11 +1,12 @@
 /* ================================================================
    CALENDAR TAB — Merged: Daily Schedule + Week + Month + Timeline
+   + Drag-drop: long-press task → drag to different day (week view)
    ================================================================ */
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { C, PRIORITIES, STATUSES, DAY_NAMES, MONTH_NAMES, fmtDate, getWeekDays, getMonthDays, tasksOnDay, todayStr, isOverdue } from "../constants";
 import { Chip, SL, Empty, TaskRow } from "../components";
 
-export default function CalendarTab({ tasks, onPress }) {
+export default function CalendarTab({ tasks, onPress, patchTask }) {
   const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [refDate, setRefDate] = useState(new Date());
   const now = new Date();
@@ -13,6 +14,14 @@ export default function CalendarTab({ tasks, onPress }) {
   const currentHour = now.getHours();
   const currentMin = now.getMinutes();
   const nowMins = currentHour * 60 + currentMin;
+
+  // Drag-drop state
+  const [dragTask, setDragTask] = useState(null);
+  const [dragOverDay, setDragOverDay] = useState(null);
+  const [dragGhost, setDragGhost] = useState(null); // {x, y}
+  const longPressTimer = useRef(null);
+  const dragRef = useRef({ active: false, taskId: null });
+  const dayRefs = useRef({});
 
   const goWeek = (dir) => { const d = new Date(refDate); d.setDate(d.getDate() + dir * 7); setRefDate(d); };
   const goMonth = (dir) => { const d = new Date(refDate); d.setMonth(d.getMonth() + dir); setRefDate(d); };
@@ -59,8 +68,96 @@ export default function CalendarTab({ tasks, onPress }) {
     return (po[a.priority] || 1) - (po[b.priority] || 1);
   });
 
+  // ═══ DRAG-DROP HANDLERS (Week/Month view) ═══
+  const startDrag = useCallback((task, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = { active: true, taskId: task.id };
+    setDragTask(task);
+    const pt = e.touches?.[0] || e;
+    setDragGhost({ x: pt.clientX, y: pt.clientY });
+  }, []);
+
+  const handlePointerDown = useCallback((task, e) => {
+    const pt = e.touches?.[0] || e;
+    const startPos = { x: pt.clientX, y: pt.clientY };
+    longPressTimer.current = setTimeout(() => {
+      if (navigator.vibrate) navigator.vibrate(30);
+      startDrag(task, e);
+    }, 400);
+    // Cancel long press if moved too much
+    const moveCheck = (ev) => {
+      const p = ev.touches?.[0] || ev;
+      if (Math.abs(p.clientX - startPos.x) > 10 || Math.abs(p.clientY - startPos.y) > 10) {
+        clearTimeout(longPressTimer.current);
+        document.removeEventListener("touchmove", moveCheck);
+        document.removeEventListener("mousemove", moveCheck);
+      }
+    };
+    document.addEventListener("touchmove", moveCheck, { passive: true });
+    document.addEventListener("mousemove", moveCheck, { passive: true });
+  }, [startDrag]);
+
+  const handlePointerUp = useCallback(() => {
+    clearTimeout(longPressTimer.current);
+    if (!dragRef.current.active) return;
+
+    // Drop on target day
+    if (dragOverDay && dragTask && patchTask) {
+      const newDeadline = fmtDate(new Date(dragOverDay));
+      if (newDeadline !== dragTask.deadline) {
+        patchTask(dragTask.id, { deadline: newDeadline });
+      }
+    }
+
+    dragRef.current = { active: false, taskId: null };
+    setDragTask(null);
+    setDragOverDay(null);
+    setDragGhost(null);
+  }, [dragOverDay, dragTask, patchTask]);
+
+  const handlePointerMove = useCallback((e) => {
+    if (!dragRef.current.active) return;
+    const pt = e.touches?.[0] || e;
+    setDragGhost({ x: pt.clientX, y: pt.clientY });
+
+    // Find which day cell we're over
+    const refs = dayRefs.current;
+    for (const [dateStr, el] of Object.entries(refs)) {
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (pt.clientX >= rect.left && pt.clientX <= rect.right && pt.clientY >= rect.top && pt.clientY <= rect.bottom) {
+        setDragOverDay(dateStr);
+        return;
+      }
+    }
+    setDragOverDay(null);
+  }, []);
+
+  // Register day cell ref
+  const setDayRef = useCallback((dateStr, el) => {
+    dayRefs.current[dateStr] = el;
+  }, []);
+
   return (
-    <div style={{ animation: "fadeIn .2s" }}>
+    <div style={{ animation: "fadeIn .2s" }}
+      onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp} onTouchCancel={handlePointerUp}
+      onMouseMove={handlePointerMove} onMouseUp={handlePointerUp}
+    >
+      {/* Drag ghost */}
+      {dragTask && dragGhost && (
+        <div style={{
+          position: "fixed", left: dragGhost.x - 60, top: dragGhost.y - 20,
+          width: 120, padding: "6px 10px",
+          background: C.accent, color: "#fff", borderRadius: 10,
+          fontSize: 11, fontWeight: 700, pointerEvents: "none",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.25)", zIndex: 9999,
+          opacity: 0.92, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {dragTask.title}
+        </div>
+      )}
+
       {/* View mode toggle */}
       <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
         {[["day", "Ngày"], ["week", "Tuần"], ["month", "Tháng"]].map(([k, l]) => (
@@ -134,7 +231,7 @@ export default function CalendarTab({ tasks, onPress }) {
         </>
       )}
 
-      {/* ═══ WEEK VIEW ═══ */}
+      {/* ═══ WEEK VIEW (with drag-drop) ═══ */}
       {viewMode === "week" && (
         <>
           <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
@@ -145,22 +242,49 @@ export default function CalendarTab({ tasks, onPress }) {
             <button className="tap" onClick={() => goWeek(1)} aria-label="Tuần sau" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "6px 12px", fontSize: 16, color: C.sub }}>&gt;</button>
           </div>
 
+          {!dragTask && (
+            <div style={{ fontSize: 10, color: C.muted, textAlign: "center", marginBottom: 8 }}>
+              Nhấn giữ task để kéo sang ngày khác
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 16 }}>
             {weekDays.map((d, i) => {
               const ds = fmtDate(d);
               const isToday = ds === todayS;
               const dayTasks = tasksOnDay(tasks, d);
+              const isDragOver = dragOverDay === ds;
               return (
-                <div key={i} style={{ background: isToday ? C.accentD : C.card, borderRadius: 10, border: `1px solid ${isToday ? C.accent : C.border}`, padding: "8px 4px", textAlign: "center", minHeight: 70 }}>
+                <div key={i} ref={(el) => setDayRef(ds, el)}
+                  style={{
+                    background: isDragOver ? C.accentD : isToday ? C.accentD : C.card,
+                    borderRadius: 10,
+                    border: `${isDragOver ? "2px" : "1px"} solid ${isDragOver ? C.accent : isToday ? C.accent : C.border}`,
+                    padding: "8px 4px", textAlign: "center", minHeight: 70,
+                    transition: "border 0.15s, background 0.15s",
+                  }}>
                   <div style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>{DAY_NAMES[i]}</div>
                   <div style={{ fontSize: 16, fontWeight: isToday ? 800 : 600, color: isToday ? C.accent : C.text, marginBottom: 4 }}>{d.getDate()}</div>
                   {dayTasks.slice(0, 3).map(t => (
-                    <div key={t.id} className="tap" onClick={() => onPress(t)}
-                      style={{ background: `${PRIORITIES[t.priority]?.color}22`, borderRadius: 4, padding: "2px 3px", marginBottom: 2, fontSize: 9, color: C.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div key={t.id} className="tap"
+                      onClick={() => { if (!dragRef.current.active) onPress(t); }}
+                      onTouchStart={(e) => handlePointerDown(t, e)}
+                      onMouseDown={(e) => handlePointerDown(t, e)}
+                      style={{
+                        background: dragTask?.id === t.id ? `${C.accent}44` : `${PRIORITIES[t.priority]?.color}22`,
+                        borderRadius: 4, padding: "2px 3px", marginBottom: 2, fontSize: 9,
+                        color: C.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        opacity: dragTask?.id === t.id ? 0.4 : 1,
+                        userSelect: "none", WebkitUserSelect: "none",
+                        cursor: "grab",
+                      }}>
                       {t.title}
                     </div>
                   ))}
                   {dayTasks.length > 3 && <div style={{ fontSize: 9, color: C.muted }}>+{dayTasks.length - 3}</div>}
+                  {isDragOver && dayTasks.length === 0 && (
+                    <div style={{ fontSize: 9, color: C.accent, marginTop: 4 }}>Thả vào đây</div>
+                  )}
                 </div>
               );
             })}
@@ -168,7 +292,7 @@ export default function CalendarTab({ tasks, onPress }) {
         </>
       )}
 
-      {/* ═══ MONTH VIEW ═══ */}
+      {/* ═══ MONTH VIEW (with drag-drop) ═══ */}
       {viewMode === "month" && (
         <>
           <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
@@ -189,17 +313,33 @@ export default function CalendarTab({ tasks, onPress }) {
               const ds = fmtDate(d);
               const isToday = ds === todayS;
               const dayTasks = tasksOnDay(tasks, d);
+              const isDragOver = dragOverDay === ds;
               return (
-                <div key={i} style={{ background: isToday ? C.accentD : C.card, borderRadius: 8, border: `1px solid ${isToday ? C.accent : C.border}`, padding: "6px 2px", textAlign: "center", minHeight: 44 }}>
+                <div key={i} ref={(el) => setDayRef(ds, el)}
+                  style={{
+                    background: isDragOver ? C.accentD : isToday ? C.accentD : C.card,
+                    borderRadius: 8,
+                    border: `${isDragOver ? "2px" : "1px"} solid ${isDragOver ? C.accent : isToday ? C.accent : C.border}`,
+                    padding: "6px 2px", textAlign: "center", minHeight: 44,
+                    transition: "border 0.15s, background 0.15s",
+                  }}>
                   <div style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? C.accent : C.text }}>{d.getDate()}</div>
                   {dayTasks.length > 0 && (
                     <div style={{ display: "flex", justifyContent: "center", gap: 2, marginTop: 3 }}>
                       {dayTasks.slice(0, 3).map(t => (
-                        <div key={t.id} style={{ width: 5, height: 5, borderRadius: "50%", background: PRIORITIES[t.priority]?.color }} />
+                        <div key={t.id}
+                          onTouchStart={(e) => handlePointerDown(t, e)}
+                          onMouseDown={(e) => handlePointerDown(t, e)}
+                          style={{
+                            width: 5, height: 5, borderRadius: "50%",
+                            background: dragTask?.id === t.id ? C.accent : PRIORITIES[t.priority]?.color,
+                            cursor: "grab",
+                          }} />
                       ))}
                     </div>
                   )}
                   {dayTasks.length > 0 && <div style={{ fontSize: 8, color: C.muted, marginTop: 1 }}>{dayTasks.length}</div>}
+                  {isDragOver && <div style={{ fontSize: 7, color: C.accent, marginTop: 2 }}>+</div>}
                 </div>
               );
             })}

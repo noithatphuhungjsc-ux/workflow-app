@@ -59,7 +59,7 @@ export default async function handler(req, res) {
           <div style="font-size:12px;color:#aaa;margin-top:16px">Cửa sổ sẽ tự đóng...</div>
         </div>
         <script>
-          try { window.opener.postMessage({ type:'gmail_connected', token:'${encoded}' }, '*'); }
+          try { window.opener.postMessage({ type:'gmail_connected', token:'${encoded}' }, 'https://workflow-app-lemon.vercel.app'); }
           catch(e) {}
           setTimeout(function(){ window.close(); }, 1500);
         </script>

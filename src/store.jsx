@@ -88,7 +88,7 @@ function taskReducer(state, action) {
 function expenseReducer(state, action) {
   switch (action.type) {
     case "EXP_LOAD": return action.items;
-    case "EXP_ADD": return [...state, { ...action.item, id: Date.now() + Math.random() }];
+    case "EXP_ADD": return [...state, { ...action.item, id: Date.now() + Math.random(), approval: action.item.approval || "approved", createdAt: action.item.createdAt || new Date().toISOString() }];
     case "EXP_PATCH": return state.map(e => e.id === action.id ? { ...e, ...action.data } : e);
     case "EXP_DELETE": return state.filter(e => e.id !== action.id);
     default: return state;
@@ -461,9 +461,13 @@ export function AppProvider({ children, userId }) {
   const deleteProject = useCallback((id) => { projDispatch({ type: "PROJ_DELETE", id }); }, []);
 
   const addExpense = useCallback((item) => {
-    expenseDispatch({ type: "EXP_ADD", item });
+    // Auto-set approval: staff → pending, manager/owner → approved
+    const role = settings.userIndustryRole || settings.userRole;
+    const needsApproval = role === "staff" || role === "worker" || role === "kitchen" || role === "tech" || role === "reception" || role === "driver" || role === "warehouse" || role === "nurse" || role === "ta" || role === "paralegal";
+    const expenseItem = { ...item, approval: item.approval || (needsApproval ? "pending" : "approved"), createdBy: settings.displayName || "" };
+    expenseDispatch({ type: "EXP_ADD", item: expenseItem });
     log("expense", item.description || "Chi tiêu", fmtMoney(item.amount));
-  }, []);
+  }, [settings]);
   const patchExpense = useCallback((id, data) => { expenseDispatch({ type: "EXP_PATCH", id, data }); }, []);
   const deleteExpense = useCallback((id) => { expenseDispatch({ type: "EXP_DELETE", id }); }, []);
 

@@ -568,6 +568,21 @@ ${last7Text}`;
                   <div style={{ fontSize: 9, fontWeight: 600, color: e.paid ? C.green : C.red, background: e.paid ? C.greenD : C.redD, borderRadius: 6, padding: "1px 6px", marginTop: 2 }}>
                     {e.paid ? "Đã chi" : "Chưa chi"}
                   </div>
+                  {e.approval === "pending" && (
+                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      {(settings.userRole === "manager" || settings.userIndustryRole === "owner" || settings.userIndustryRole === "manager") ? (<>
+                        <button className="tap" onClick={() => patchExpense?.(e.id, { approval: "approved" })}
+                          style={{ fontSize: 9, padding: "2px 8px", borderRadius: 6, background: C.green, color: "#fff", border: "none", fontWeight: 700, cursor: "pointer" }}>Duyệt</button>
+                        <button className="tap" onClick={() => patchExpense?.(e.id, { approval: "rejected" })}
+                          style={{ fontSize: 9, padding: "2px 8px", borderRadius: 6, background: C.red, color: "#fff", border: "none", fontWeight: 700, cursor: "pointer" }}>Từ chối</button>
+                      </>) : (
+                        <span style={{ fontSize: 9, color: C.gold, fontWeight: 600 }}>⏳ Chờ duyệt</span>
+                      )}
+                    </div>
+                  )}
+                  {e.approval === "rejected" && (
+                    <div style={{ fontSize: 9, color: C.red, fontWeight: 600, marginTop: 2 }}>❌ Từ chối</div>
+                  )}
                   {e.type === "standalone" && deleteExpense && (
                     <span className="tap" onClick={() => deleteExpense(e.id)}
                       style={{ fontSize: 10, color: C.muted, cursor: "pointer", marginTop: 2, display: "inline-block" }}>×</span>

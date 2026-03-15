@@ -5,7 +5,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
 
-import { C, STATUSES, PRIORITIES, todayStr, fmtDate, isOverdue, t } from "./constants";
+import { C, STATUSES, PRIORITIES, todayStr, fmtDate, isOverdue, t, hasPermission } from "./constants";
 import { setUserPrefix, callClaudeStream, tts, memoryToText, buildKnowledgePrompt, extractKnowledge, addKnowledgeEntry, processTaskCommands, processMemoryCommands, executeTaskActions, addMemory, deleteMemory, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail } from "./services";
 import { useVoice } from "./hooks";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
@@ -30,6 +30,7 @@ import DevTab from "./pages/DevTab";
 import QRScanModal from "./components/QRScanModal";
 import { NewProjectModal, ProjectDetailSheet } from "./components/ProjectModals";
 import IndustrySetupModal from "./components/IndustrySetupModal";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 
 /* ================================================================
@@ -144,7 +145,9 @@ export default function App() {
     <SupabaseProvider>
       <SupabaseAutoLogin />
       <AppProvider userId={user.id}>
-        <MainApp user={user} onLogout={handleLogout} />
+        <ErrorBoundary>
+          <MainApp user={user} onLogout={handleLogout} />
+        </ErrorBoundary>
       </AppProvider>
     </SupabaseProvider>
   );
@@ -1358,7 +1361,7 @@ QUY TAC BAT BUOC:
           </div>
         )}
 
-        {tab === "calendar" && <CalendarTab tasks={tasks} onPress={t => setSel(t)} />}
+        {tab === "calendar" && <CalendarTab tasks={tasks} onPress={t => setSel(t)} patchTask={patchTask} />}
         {tab === "inbox" && <InboxTab tasks={tasks} projects={projects} patchTask={patchTask} settings={settings} user={user} addTask={addTask} openConvId={openConvId} />}
         {tab === "expense" && <ExpenseTab tasks={tasks} expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} settings={settings} user={user} onOpenQR={() => setQrOpen(true)} />}
         {tab === "report" && <ReportTab tasks={tasks} history={history} settings={settings} memory={memory} user={user} />}
@@ -1557,9 +1560,10 @@ QUY TAC BAT BUOC:
           user?.role === "dev" && new URLSearchParams(window.location.search).has("dev") && ["dev","\u{1F4BB}","Dev"],
           ["ai","\u2726","Wory"],
         ].filter(Boolean).filter(([key]) => {
+          if (key === "dev") return true;
           const vt = settings.visibleTabs;
-          if (!vt || key === "dev") return true;
-          return vt[key] !== false;
+          if (vt && vt[key] === false) return false;
+          return hasPermission(settings, key);
         }).map(([key, icon, label, badgeCount]) => {
           const active = tab === key;
           return (

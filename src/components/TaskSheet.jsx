@@ -2,7 +2,7 @@
    TASK SHEET — Full screen task detail
    Features: expense, bill photo, QR payment, notes as bullets
    ================================================================ */
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { C, PRIORITIES, STATUSES, WORKFLOWS, EXPENSE_CATEGORIES, getElapsed, formatTimer, fmtMoney } from "../constants";
 import { ConfirmDialog } from "../components";
 import { useTasks, useSettings } from "../store";
@@ -60,6 +60,8 @@ export default function TaskSheet({ task, onClose }) {
   const [newNote, setNewNote] = useState("");
   const [editingNote, setEditingNote] = useState(null);
   const [editNoteText, setEditNoteText] = useState("");
+  const [ocrLoading, setOcrLoading] = useState(null); // photo id being scanned
+  const [ocrResult, setOcrResult] = useState(null);
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
 
@@ -231,6 +233,58 @@ export default function TaskSheet({ task, onClose }) {
     reader.readAsDataURL(file);
   };
   const deleteBillPhoto = (pid) => patchTask(task.id, { billPhotos: billPhotos.filter(p => p.id !== pid) });
+
+  // OCR — scan bill photo with AI
+  const scanBillPhoto = useCallback(async (photo) => {
+    setOcrLoading(photo.id);
+    setOcrResult(null);
+    try {
+      const base64 = photo.data.split(",")[1];
+      const mediaType = photo.data.startsWith("data:image/png") ? "image/png" : "image/jpeg";
+      const catKeys = Object.keys(CATS);
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: `Bạn là AI đọc hóa đơn. Trả về JSON duy nhất, KHÔNG markdown, KHÔNG giải thích. Format: {"amount":number,"description":"string","items":[{"desc":"string","amount":number}]}. amount là tổng tiền (VND, bỏ dấu chấm/phẩy). items là danh sách từng mục nếu có. Nếu không đọc được thì trả {"amount":0,"description":"Không đọc được","items":[]}.`,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+              { type: "text", text: `Đọc hóa đơn này. Trích xuất tổng tiền và mô tả. Danh mục phù hợp: ${catKeys.join(", ")}. Trả JSON.` }
+            ]
+          }],
+          max_tokens: 500,
+        }),
+      });
+      const data = await res.json();
+      const text = data?.content?.[0]?.text || "";
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        setOcrResult(parsed);
+        // Auto-fill expense if we got valid data
+        if (parsed.amount > 0) {
+          const expense = task.expense || {};
+          const items = expense.items || [];
+          if (parsed.items?.length > 0) {
+            const newItems = parsed.items.map((it, idx) => ({
+              id: Date.now() + idx, desc: it.desc || "", amount: it.amount || 0,
+              category: "other", paid: false,
+            }));
+            patchTask(task.id, { expense: { ...expense, amount: parsed.amount, description: parsed.description || "", items: [...items, ...newItems] } });
+          } else {
+            patchTask(task.id, { expense: { ...expense, amount: parsed.amount, description: parsed.description || expense.description || "" } });
+          }
+        }
+      }
+    } catch (err) {
+      setOcrResult({ error: "Lỗi quét: " + (err.message || "Thử lại") });
+    } finally {
+      setOcrLoading(null);
+    }
+  }, [task, patchTask, CATS]);
 
   // QR Payment — generate VietQR URL
   const generateQR = () => {
@@ -475,6 +529,10 @@ export default function TaskSheet({ task, onClose }) {
                     <img src={p.data} alt="bill" style={{ width:"100%", display:"block", borderRadius:8 }} />
                     <button className="tap" onClick={() => deleteBillPhoto(p.id)}
                       style={{ position:"absolute", top:2, right:2, background:"rgba(0,0,0,0.6)", color:"#fff", border:"none", borderRadius:"50%", width:20, height:20, fontSize:11, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+                    <button className="tap" onClick={() => scanBillPhoto(p)} disabled={ocrLoading === p.id}
+                      style={{ position:"absolute", bottom:2, left:2, right:2, background:"rgba(0,0,0,0.7)", color:"#fff", border:"none", borderRadius:6, padding:"4px 0", fontSize:10, fontWeight:600, cursor:"pointer" }}>
+                      {ocrLoading === p.id ? "Đang quét..." : "🔍 AI Quét"}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -487,6 +545,26 @@ export default function TaskSheet({ task, onClose }) {
               <button className="tap" onClick={() => cameraRef.current?.click()}
                 style={{ flex:1, background:C.card, border:`1px dashed ${C.border}`, borderRadius:8, padding:"8px 0", fontSize:12, color:C.muted, fontWeight:600 }}>📷 Chụp ảnh</button>
             </div>
+            {ocrResult && !ocrResult.error && (
+              <div style={{ marginTop:8, background:C.accentD, borderRadius:8, border:`1px solid ${C.accent}44`, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, fontWeight:700, color:C.accent, marginBottom:4 }}>KẾT QUẢ QUÉT</div>
+                {ocrResult.description && <div style={{ fontSize:12, color:C.text, marginBottom:2 }}>{ocrResult.description}</div>}
+                {ocrResult.amount > 0 && <div style={{ fontSize:14, fontWeight:700, color:C.gold }}>{fmtMoney(ocrResult.amount)}</div>}
+                {ocrResult.items?.length > 0 && (
+                  <div style={{ marginTop:4 }}>
+                    {ocrResult.items.map((it, i) => (
+                      <div key={i} style={{ fontSize:11, color:C.sub, display:"flex", justifyContent:"space-between" }}>
+                        <span>{it.desc}</span><span style={{ fontWeight:600 }}>{fmtMoney(it.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize:10, color:C.muted, marginTop:4 }}>Đã tự động điền vào chi tiêu</div>
+              </div>
+            )}
+            {ocrResult?.error && (
+              <div style={{ marginTop:8, fontSize:11, color:C.red, background:C.redD, borderRadius:8, padding:"6px 10px" }}>{ocrResult.error}</div>
+            )}
           </div>
 
           {/* 9. Category + Workflow */}
