@@ -23,12 +23,37 @@
     <!-- Recovery: if React doesn't render in 4s, nuke SW cache and reload -->
     <script>
       (function() {
-        var RK = 'wf_recovered_v155';
+        var APP_VER = 171;
+        var RK = 'wf_recovered_v' + APP_VER;
+        // Step 0: Force upgrade — if last known version is older, nuke everything
+        var lastVer = parseInt(localStorage.getItem('wf_app_ver') || '0', 10);
+        if (lastVer < APP_VER) {
+          localStorage.setItem('wf_app_ver', String(APP_VER));
+          var nukeTasks = [];
+          if ('serviceWorker' in navigator) {
+            nukeTasks.push(
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                return Promise.all(regs.map(function(r) { return r.unregister(); }));
+              })
+            );
+          }
+          if ('caches' in window) {
+            nukeTasks.push(
+              caches.keys().then(function(keys) {
+                return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+              })
+            );
+          }
+          if (nukeTasks.length && lastVer > 0) {
+            Promise.all(nukeTasks).then(function() { location.reload(); }).catch(function() { location.reload(); });
+            return; // stop — will reload
+          }
+        }
         // Step 1: Always proactively clear old caches on load
         if ('caches' in window) {
           caches.keys().then(function(keys) {
             keys.forEach(function(k) {
-              if (k.indexOf('v155') === -1) caches.delete(k);
+              if (k.indexOf('v' + APP_VER) === -1) caches.delete(k);
             });
           });
         }
@@ -36,7 +61,6 @@
         if (sessionStorage.getItem(RK)) return;
         // Step 3: Set a 4s watchdog — if React mounts, it cancels this
         window.__wfRecoveryTimer = setTimeout(function() {
-          // React didn't mount → app is stuck/crashed
           if (document.getElementById('root') && document.getElementById('root').childNodes.length > 0) return;
           console.warn('[WF] App failed to load, clearing all caches...');
           sessionStorage.setItem(RK, '1');
@@ -63,12 +87,11 @@
     <script type="module" src="/src/main.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
-        // Force update: unregister old SW, clear caches, then register new one
         navigator.serviceWorker.getRegistrations().then(regs => {
           regs.forEach(r => r.update());
         });
         caches.keys().then(keys => keys.forEach(k => {
-          if (!k.includes('v155')) caches.delete(k);
+          if (!k.includes('v171')) caches.delete(k);
         }));
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').catch(() => {});
