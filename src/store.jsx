@@ -570,6 +570,10 @@ export function AppProvider({ children, userId }) {
   const setSettings = useCallback((updater) => {
     setSettingsState(prev => {
       const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+      // Protect: director role cannot be downgraded by settings changes
+      const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
+      const acc = TEAM_ACCOUNTS.find(a => a.id === sess.id);
+      if (acc?.role === "director") next.userRole = "director";
       persistSettings(next);
       if (cloudId) {
         scheduleSyncDebounced(null, userId, "settings", next);

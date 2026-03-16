@@ -295,7 +295,7 @@ export default function SettingsModal({ user, onClose }) {
                   {settings.industryRoles.map(r => {
                     const active = settings.userIndustryRole === r.id;
                     return (
-                      <div key={r.id} className="tap" onClick={() => setSettings({ userIndustryRole: r.id, userRole: r.id === "owner" || r.id === "manager" ? "manager" : "staff" })}
+                      <div key={r.id} className="tap" onClick={() => setSettings({ userIndustryRole: r.id })}
                         style={{ flex:"1 1 calc(50% - 4px)", padding:"10px 12px", borderRadius:12, border:`2px solid ${active?C.accent:C.border}`, background:active?C.accentD:C.card, cursor:"pointer" }}>
                         <div style={{ fontSize:13, fontWeight:700, color:active?C.accent:C.text }}>{r.label}</div>
                       </div>
@@ -303,13 +303,9 @@ export default function SettingsModal({ user, onClose }) {
                   })}
                 </div>
               ) : (
-                <div style={{ display:"flex", gap:8 }}>
-                  {[["director","👔 Giám đốc"],["staff","🔧 Nhân viên"]].map(([k,label]) => (
-                    <div key={k} className="tap" onClick={() => setSettings({ userRole: k })}
-                      style={{ flex:1, padding:"10px 12px", borderRadius:12, border:`2px solid ${(settings.userRole||"director")===k?C.accent:C.border}`, background:(settings.userRole||"director")===k?C.accentD:C.card, cursor:"pointer" }}>
-                      <div style={{ fontSize:13, fontWeight:700, color:(settings.userRole||"director")===k?C.accent:C.text }}>{label}</div>
-                    </div>
-                  ))}
+                <div style={{ padding:"10px 12px", borderRadius:12, border:`2px solid ${C.accent}44`, background:C.accentD }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:C.accent }}>{settings.userRole === "director" ? "👔 Giám đốc" : "🔧 Nhân viên"}</div>
+                  <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>Vai trò được gán theo tài khoản</div>
                 </div>
               )}
             </div>
