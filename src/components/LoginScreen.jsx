@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { C, TEAM_ACCOUNTS } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
-const ACCOUNTS_VERSION = 6; // bump to force re-init (added email)
+const ACCOUNTS_VERSION = 7; // bump to force re-init (new roles: director/accountant/sales/hr/construction)
 const DEFAULT_ACCOUNTS = TEAM_ACCOUNTS.map(a => ({ ...a, pw: "111111" }));
 
 // Init default accounts with hashed passwords
