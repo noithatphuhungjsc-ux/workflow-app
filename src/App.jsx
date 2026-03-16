@@ -162,18 +162,6 @@ export default function App() {
    MAIN APP — Header, Body, Nav, Modals, AI Chat
    ================================================================ */
 function MainApp({ user, onLogout }) {
-  // One-time: migrate session role from old system (dev/admin/manager) to new (director/accountant/sales/hr/construction)
-  useEffect(() => {
-    try {
-      const s = JSON.parse(localStorage.getItem("wf_session") || "{}");
-      const acc = TEAM_ACCOUNTS.find(a => a.id === s.id);
-      if (acc && s.role !== acc.role) {
-        s.role = acc.role; s.title = acc.title;
-        localStorage.setItem("wf_session", JSON.stringify(s));
-      }
-    } catch {}
-  }, []);
-
   const {
     tasks, addTask, deleteTask, patchTask, undoDelete,
     timerStart, timerPause, timerResume, timerDone, timerTick,

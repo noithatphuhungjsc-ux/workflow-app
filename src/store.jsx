@@ -3,7 +3,7 @@
    Solves: prop drilling, stale closure, centralized state
    ================================================================ */
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS } from "./constants";
+import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS, TEAM_ACCOUNTS } from "./constants";
 import { INDUSTRY_PRESETS } from "./industryPresets";
 import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
 import { useSupabase } from "./contexts/SupabaseContext";
@@ -552,10 +552,19 @@ export function AppProvider({ children, userId }) {
   // --- Settings ---
   const [settings, setSettingsState] = useState(() => {
     const s = loadSettings(DEFAULT_SETTINGS);
-    // Auto-migrate old role names → new role system
+    // Auto-migrate old role names → new role system (use TEAM_ACCOUNTS as source of truth)
     const sess = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
-    if (sess.role === "director" && s.userRole !== "director") { s.userRole = "director"; persistSettings(s); }
-    else if (sess.role !== "director" && s.userRole === "manager") { s.userRole = "staff"; persistSettings(s); }
+    const acc = TEAM_ACCOUNTS.find(a => a.id === sess.id);
+    if (acc) {
+      // Migrate session role if outdated
+      if (sess.role !== acc.role) {
+        sess.role = acc.role; sess.title = acc.title;
+        try { localStorage.setItem("wf_session", JSON.stringify(sess)); } catch {}
+      }
+      // Migrate settings userRole
+      const correctRole = acc.role === "director" ? "director" : "staff";
+      if (s.userRole !== correctRole) { s.userRole = correctRole; persistSettings(s); }
+    }
     return s;
   });
   const setSettings = useCallback((updater) => {
