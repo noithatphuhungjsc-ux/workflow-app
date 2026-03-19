@@ -1353,7 +1353,6 @@ function MainApp({ user, onLogout }) {
                 ["attendance","\u{1F552}","Chấm công", C.green],
                 ["dashboard","\u{1F4CA}","Tổng quan", C.purple],
                 isDirector && ["report","\u{1F4C4}","Báo cáo", "#e67e22"],
-                isDirector && ["dev","\u{1F4BB}","Dev", "#95a5a6"],
               ].filter(Boolean).filter(([key]) => {
                 const vt = settings.visibleTabs;
                 if (vt && vt[key] === false) return false;
