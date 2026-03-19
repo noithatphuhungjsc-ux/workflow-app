@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import "./App.css";
 
-import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, TEAM_EMAILS } from "./constants";
+import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, TEAM_EMAILS, STATUSES, STATUS_ORDER } from "./constants";
 import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail, cloudSave, cloudLoad } from "./services";
 import { useGmail } from "./hooks/useGmail";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
@@ -37,6 +37,7 @@ const ReportTab = React.lazy(() => import("./pages/ReportTab"));
 const DevTab = React.lazy(() => import("./pages/DevTab"));
 const QRScanModal = React.lazy(() => import("./components/QRScanModal"));
 const DashboardTab = React.lazy(() => import("./pages/DashboardTab"));
+const AttendanceTab = React.lazy(() => import("./pages/AttendanceTab"));
 const NewProjectModal = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.NewProjectModal })));
 const ProjectDetailSheet = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.ProjectDetailSheet })));
 const IndustrySetupModal = React.lazy(() => import("./components/IndustrySetupModal"));
@@ -124,13 +125,23 @@ export default function App() {
   // CRITICAL: setUserPrefix MUST run synchronously before AppProvider
   // renders, otherwise store initializers load data with wrong prefix
   // and auto-save overwrites real data = data loss on reload.
+  const SESSION_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
   const [user, setUser] = useState(() => {
     try {
       const s = localStorage.getItem("wf_session");
       if (s) {
         const parsed = JSON.parse(s);
+        // Session timeout check — auto-logout after 7 days of inactivity
+        if (parsed.lastActive && (Date.now() - parsed.lastActive > SESSION_TIMEOUT_MS)) {
+          localStorage.removeItem("wf_session");
+          return null;
+        }
         setUserPrefix(parsed.id); // sync — before any store init
         document.title = `WorkFlow — ${parsed.name}`;
+        // Update lastActive timestamp
+        parsed.lastActive = Date.now();
+        try { localStorage.setItem("wf_session", JSON.stringify(parsed)); } catch {}
         return parsed;
       }
       return null;
@@ -144,12 +155,12 @@ export default function App() {
     document.title = "WorkFlow";
   };
 
-  if (!user) return <LoginScreen onLogin={(acc) => { setUserPrefix(acc.id); setUser(acc); document.title = `WorkFlow — ${acc.name}`; }} />;
+  if (!user) return <LoginScreen onLogin={(acc) => { acc.lastActive = Date.now(); setUserPrefix(acc.id); setUser(acc); document.title = `WorkFlow — ${acc.name}`; }} />;
 
   return (
     <SupabaseProvider>
       <SupabaseAutoLogin />
-      <AppProvider userId={user.id}>
+      <AppProvider key={user.id} userId={user.id}>
         <ErrorBoundary>
           <MainApp user={user} onLogout={handleLogout} />
         </ErrorBoundary>
@@ -187,6 +198,8 @@ function MainApp({ user, onLogout }) {
   const [newProjOpen, setNewProjOpen] = useState(false);
   const [projDetail, setProjDetail] = useState(null);
   const [openConvId, setOpenConvId] = useState(null); // for opening project chat
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [statusPickerTask, setStatusPickerTask] = useState(null); // for batch status change
   const [heyOpen, setHeyOpen] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("voice") === "1") {
@@ -670,7 +683,7 @@ function MainApp({ user, onLogout }) {
       {/* ── HEADER ── */}
       <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
         <UserMenu user={{ ...user, name: settings.displayName || user.name }} onLogout={onLogout} onSettings={() => setSettingsOpen(true)} />
-        <span style={{ fontSize:19, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
+        <span style={{ fontSize:17, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
         <span className="tap" onClick={() => { setChangelogOpen(true); setChangelogBack(false); }}
           style={{ fontSize:9, fontWeight:700, color:C.muted, background:"#f0eeea", borderRadius:6, padding:"2px 5px", cursor:"pointer" }}>
           v{CHANGELOG[0]?.version || "2.2"}
@@ -765,55 +778,73 @@ function MainApp({ user, onLogout }) {
 
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
-            {/* Search bar */}
-            <div style={{ position: "relative", marginBottom: 8 }}>
-              <input
-                className="input-base"
-                value={searchQ}
-                onChange={e => setSearchQ(e.target.value)}
-                placeholder={`Tìm ${t("task", settings).toLowerCase()}...`}
-                style={{ paddingLeft: 32, fontSize: 13, height: 36 }}
-              />
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: C.muted, pointerEvents: "none" }}>🔍</span>
-              {searchQ && (
-                <span className="tap" onClick={() => setSearchQ("")}
-                  style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: C.muted, cursor: "pointer" }}>×</span>
-              )}
-            </div>
-            <Filters filter={filter} setFilter={setFilter} pendingDeleteCount={pendingDeleteCount} />
-            {/* ── Multi-select toolbar ── */}
-            {!selectMode ? (
-              <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-                <button className="tap" onClick={() => { setSelectMode("edit"); setSelectedIds(new Set()); }}
-                  style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:`1px solid ${C.accent}44`, background:C.accentD, color:C.accent, fontSize:11, fontWeight:600 }}>
-                  <span style={{ fontSize:13 }}>✏️</span> Sửa
-                </button>
-                <button className="tap" onClick={() => { setSelectMode("delete"); setSelectedIds(new Set()); }}
-                  style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:`1px solid ${C.red}44`, background:C.redD, color:C.red, fontSize:11, fontWeight:600 }}>
-                  <span style={{ fontSize:13 }}>🗑️</span> Xóa
-                </button>
-                {filter === "pending_delete" && filteredTasks.length > 0 && (
-                  <>
-                    <div style={{ flex:1 }} />
-                    <button className="tap" onClick={() => {
-                      if (!window.confirm(`Duyệt xóa TẤT CẢ ${filteredTasks.length} công việc?`)) return;
-                      filteredTasks.forEach(t => deleteTask(t.id));
-                      setFilter("all");
-                    }}
-                      style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
-                      Duyệt tất cả
-                    </button>
-                    <button className="tap" onClick={() => {
-                      filteredTasks.forEach(t => patchTask(t.id, { deleteRequest: null }));
-                      setFilter("all");
-                    }}
-                      style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:11, fontWeight:600 }}>
-                      Từ chối tất cả
-                    </button>
-                  </>
+            {/* Search bar + edit/delete buttons */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <input
+                  className="input-base"
+                  value={searchQ}
+                  onChange={e => setSearchQ(e.target.value)}
+                  placeholder={`Tìm ${t("task", settings).toLowerCase()}...`}
+                  style={{ paddingLeft: 32, fontSize: 15, height: 40 }}
+                />
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: C.muted, pointerEvents: "none" }}>🔍</span>
+                {searchQ && (
+                  <span className="tap" onClick={() => setSearchQ("")}
+                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: C.muted, cursor: "pointer" }}>×</span>
                 )}
               </div>
-            ) : (
+              {!selectMode && (
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <button className="tap" onClick={() => { setSelectMode("edit"); setSelectedIds(new Set()); }}
+                    style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${C.accent}44`, background: C.accentD, color: C.accent, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                    title="Sửa hàng loạt">✏️</button>
+                  <button className="tap" onClick={() => { setSelectMode("delete"); setSelectedIds(new Set()); }}
+                    style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${C.red}44`, background: C.redD, color: C.red, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                    title="Xóa hàng loạt">🗑️</button>
+                </div>
+              )}
+            </div>
+            {/* ── Pending delete approval banner (director only) ── */}
+            {pendingDeleteCount > 0 && filter !== "pending_delete" && (
+              <div className="tap" onClick={() => setFilter("pending_delete")}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", marginBottom:10, borderRadius:12,
+                  background:"linear-gradient(135deg, #e74c3c11, #e74c3c08)", border:`1px solid #e74c3c33`, cursor:"pointer" }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:"#e74c3c18", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🔔</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#e74c3c" }}>{pendingDeleteCount} yêu cầu xóa chờ duyệt</div>
+                  <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>Nhân viên yêu cầu xóa công việc — Nhấn để duyệt</div>
+                </div>
+                <span style={{ fontSize:18, color:C.muted }}>›</span>
+              </div>
+            )}
+            {/* ── Filter pills ── */}
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
+              <div className="no-scrollbar" style={{ display:"flex", gap:6, flex:1, overflowX:"auto", paddingBottom:2 }}>
+                <Filters filter={filter} setFilter={setFilter} pendingDeleteCount={pendingDeleteCount} />
+              </div>
+            </div>
+            {filter === "pending_delete" && filteredTasks.length > 0 && !selectMode && (
+              <div style={{ display:"flex", gap:6, marginBottom:8, justifyContent:"flex-end" }}>
+                <button className="tap" onClick={() => {
+                  if (!window.confirm(`Duyệt xóa TẤT CẢ ${filteredTasks.length} công việc?`)) return;
+                  filteredTasks.forEach(t => deleteTask(t.id));
+                  setFilter("all");
+                }}
+                  style={{ padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:12, fontWeight:700 }}>
+                  Duyệt tất cả
+                </button>
+                <button className="tap" onClick={() => {
+                  filteredTasks.forEach(t => patchTask(t.id, { deleteRequest: null }));
+                  setFilter("all");
+                }}
+                  style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:12, fontWeight:600 }}>
+                  Từ chối tất cả
+                </button>
+              </div>
+            )}
+            {/* ── Multi-select toolbar ── */}
+            {selectMode && (
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"8px 10px", background: selectMode === "delete" ? `${C.red}08` : `${C.accent}08`, borderRadius:10, border:`1px solid ${selectMode === "delete" ? C.red + "33" : C.accent + "33"}` }}>
                 <label className="tap" style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:12, fontWeight:600, color:C.text }}>
                   <input type="checkbox" checked={filteredTasks.length > 0 && selectedIds.size === filteredTasks.length}
@@ -862,13 +893,9 @@ function MainApp({ user, onLogout }) {
                   </div>
                 )}
                 {selectedIds.size > 0 && selectMode === "edit" && (
-                  <button className="tap" onClick={() => {
-                    const status = prompt("Đổi trạng thái:\n1 = Chờ\n2 = Đang làm\n3 = Xong\n4 = Tạm hoãn");
-                    const map = { "1": "todo", "2": "inprogress", "3": "done", "4": "paused" };
-                    if (map[status]) { selectedIds.forEach(id => patchTask(id, { status: map[status] })); exitSelectMode(); }
-                  }}
+                  <button className="tap" onClick={() => setStatusPickerTask({ ids: [...selectedIds] })}
                     style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:11, fontWeight:700 }}>
-                    Đổi trạng thái ({selectedIds.size})
+                    Doi trang thai ({selectedIds.size})
                   </button>
                 )}
                 <button className="tap" onClick={exitSelectMode}
@@ -877,63 +904,10 @@ function MainApp({ user, onLogout }) {
                 </button>
               </div>
             )}
-            {/* Manager project dashboard when viewing all */}
-            {!isStaff && (projFilter === "all") && projects.filter(p => !p.archived).length > 0 && (
-              <div style={{ marginBottom:12 }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-                  <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{t("project", settings)} ({projects.filter(p => !p.archived).length})</span>
-                  <button className="tap" onClick={() => setNewProjOpen(true)}
-                    style={{ fontSize:11, padding:"4px 10px", borderRadius:8, border:`1px solid ${C.accent}44`, background:C.accentD, color:C.accent, fontWeight:700 }}>+ Tạo</button>
-                </div>
-                {projects.filter(p => !p.archived).map(p => {
-                  const pTasks = tasks.filter(t => t.projectId === p.id);
-                  const pDone = pTasks.filter(t => t.status === "done").length;
-                  const pTotal = pTasks.length;
-                  const pct = pTotal > 0 ? Math.round((pDone / pTotal) * 100) : 0;
-                  const pOverdue = pTasks.filter(isOverdue).length;
-                  const pInProgress = pTasks.filter(t => t.status === "inprogress").length;
-                  const members = [...new Set(pTasks.map(t => t.assignee).filter(Boolean))];
-                  return (
-                    <div key={p.id} className="tap" onClick={() => setProjFilter(p.id)}
-                      style={{ marginBottom:6, padding:"10px 12px", background:C.card, borderRadius:12, border:`1px solid ${C.border}`, cursor:"pointer",
-                        borderLeft:`3px solid ${pct === 100 ? C.green : pOverdue > 0 ? C.red : C.accent}` }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                        <span style={{ fontSize:14 }}>{pct === 100 ? "✅" : "📂"}</span>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:13, fontWeight:700, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
-                          <div style={{ fontSize:10, color:C.muted }}>{members.length > 0 ? members.map(m => m.split(" ").pop()).join(", ") : "Chưa giao"}</div>
-                        </div>
-                        <div style={{ textAlign:"right", flexShrink:0 }}>
-                          <div style={{ fontSize:14, fontWeight:800, color: pct === 100 ? C.green : C.accent }}>{pct}%</div>
-                          <div style={{ fontSize:9, color:C.muted }}>{pDone}/{pTotal} việc</div>
-                        </div>
-                      </div>
-                      {/* Progress bar */}
-                      <div style={{ height:4, borderRadius:2, background:C.bg, overflow:"hidden" }}>
-                        <div style={{ height:"100%", width:`${pct}%`, borderRadius:2, background: pct === 100 ? C.green : pOverdue > 0 ? `linear-gradient(90deg,${C.red},${C.accent})` : C.accent, transition:"width .3s" }} />
-                      </div>
-                      {/* Quick stats */}
-                      <div style={{ display:"flex", gap:8, marginTop:5 }}>
-                        {pInProgress > 0 && <span style={{ fontSize:9, color:C.accent, fontWeight:600 }}>▶ {pInProgress} đang làm</span>}
-                        {pOverdue > 0 && <span style={{ fontSize:9, color:C.red, fontWeight:600 }}>⚠ {pOverdue} trễ hạn</span>}
-                        {pTotal - pDone - pInProgress > 0 && <span style={{ fontSize:9, color:C.muted }}>⏳ {pTotal - pDone - pInProgress - pOverdue > 0 ? pTotal - pDone - pInProgress : 0} chờ</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-                {/* Personal tasks separator */}
-                {tasks.filter(t => !t.projectId && t.status !== "done").length > 0 && (
-                  <div style={{ display:"flex", alignItems:"center", gap:8, margin:"12px 0 6px", padding:"7px 10px", background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
-                    <span style={{ fontSize:14 }}>📋</span>
-                    <span style={{ flex:1, fontSize:13, fontWeight:700, color:C.sub }}>Việc cá nhân</span>
-                    <span style={{ fontSize:10, color:C.muted, fontWeight:600 }}>{tasks.filter(t => !t.projectId && t.status !== "done").length} việc</span>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Project dashboard removed — filters below are sufficient */}
             <ProjectFilters projects={projects} filter={projFilter} setFilter={setProjFilter} onAdd={() => setNewProjOpen(true)} onOpen={setProjDetail} isStaff={isStaff} myName={myName} onDeleteAll={async () => {
-              const choice = prompt("Xóa TẤT CẢ dự án?\n\n1 = Xóa dự án, giữ công việc\n2 = Xóa dự án + công việc + nhóm chat\n\nNhập 1 hoặc 2:");
-              if (!choice || !["1","2"].includes(choice)) return;
+              if (!window.confirm("Xoa tat ca du an va cong viec lien quan?")) return;
+              const choice = "2";
               // 1. Collect all member localIds from all projects
               const allLids = new Set();
               const DEV_NAME_MAP = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.name, a.id]));
@@ -978,93 +952,59 @@ function MainApp({ user, onLogout }) {
               setProjFilter("all");
             }} />
             {filteredTasks.length === 0 && <Empty icon="📋" title={`Chưa có ${t("task",settings).toLowerCase()}`} subtitle="Nhấn + để thêm mục đầu tiên" action="Thêm ngay" onAction={() => setAddOpen(true)} />}
-            {filteredTasks.map((t, i) => {
-              const tDate = t.deadline || null;
-              const prev = i > 0 ? filteredTasks[i - 1] : null;
-              const prevDate = prev ? (prev.deadline || null) : "__none__";
-              const showDate = !prev || prevDate !== tDate;
-              const today = todayStr();
-              const isToday = tDate === today;
-              const isPast = tDate && tDate < today;
-              const dotColor = t.status === "done" ? C.green : isPast ? C.red : isToday ? "#e67e22" : C.accent;
-              const isLast = i === filteredTasks.length - 1;
-              const fmtLabel = (d) => {
-                if (!d) return "—";
-                if (d === today) return "Nay";
-                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-                if (d === yesterday.toISOString().slice(0, 10)) return "Qua";
-                const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-                if (d === tomorrow.toISOString().slice(0, 10)) return "Mai";
-                const p = d.split("-");
-                return `${+p[2]}/${+p[1]}`;
-              };
-              // Project header: show when project changes between tasks (all/standalone view)
-              const isAllView = projFilter === "all" || projFilter === "standalone";
-              const prevProjId = prev ? (prev.projectId || "") : "__none__";
-              const curProjId = t.projectId || "";
-              const showProjHeader = isAllView && prevProjId !== curProjId;
-              const projObj = t.projectId ? projects.find(p => p.id === t.projectId) : null;
-              const projDone = projObj ? tasks.filter(pt => pt.projectId === projObj.id && pt.status === "done").length : 0;
-              const projTotal = projObj ? tasks.filter(pt => pt.projectId === projObj.id).length : 0;
-              return (
-                <div key={t.id} style={i < 12 ? { animation:"fadeIn .25s ease backwards", animationDelay:`${i*30}ms` } : undefined}>
-                  {/* Project header separator */}
-                  {showProjHeader && (
-                    <div onClick={() => projObj && setProjDetail(projObj)} style={{ display:"flex", alignItems:"center", gap:8, margin: i > 0 ? "14px 0 6px" : "0 0 6px", padding:"7px 10px", background: projObj ? `linear-gradient(135deg, ${C.accent}11, ${C.purple}11)` : C.card, borderRadius:10, border:`1px solid ${projObj ? C.accent + "33" : C.border}`, cursor: projObj ? "pointer" : "default" }}>
-                      <span style={{ fontSize:14 }}>{projObj ? "📂" : "📋"}</span>
-                      <span style={{ flex:1, fontSize:13, fontWeight:700, color: projObj ? C.accent : C.sub }}>{projObj ? projObj.name : "Việc cá nhân"}</span>
-                      {projObj && <span style={{ fontSize:10, color:C.muted, fontWeight:600 }}>{projDone}/{projTotal}</span>}
-                      {projObj && <span style={{ fontSize:11, color:C.muted }}>›</span>}
-                    </div>
-                  )}
-                  {/* Date separator */}
-                  {showDate && (
-                    <div style={{ display:"flex", alignItems:"center", gap:8, margin: i > 0 ? "10px 0 4px" : "0 0 4px" }}>
-                      <div style={{ width:24, textAlign:"center", fontSize:9, fontWeight:700, color: isPast ? C.red : isToday ? "#e67e22" : C.muted }}>
-                        {fmtLabel(tDate)}
+            {(() => {
+              let lastProjectId = "__none__";
+              const isAllView = projFilter === "all";
+              return filteredTasks.map((tk, i) => {
+                const curProjectId = tk.projectId || null;
+                const showHeader = isAllView && curProjectId !== lastProjectId;
+                lastProjectId = curProjectId;
+                const proj = curProjectId ? projects.find(p => p.id === curProjectId) : null;
+                return (
+                  <div key={tk.id} style={i < 12 ? { animation:"fadeIn .2s ease backwards", animationDelay:`${i*25}ms` } : undefined}>
+                    {showHeader && (
+                      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 2px 6px", marginTop: i > 0 ? 8 : 0 }}>
+                        {proj ? (
+                          <>
+                            <div style={{ width:6, height:6, borderRadius:3, background: proj.color || C.accent, flexShrink:0 }} />
+                            <span style={{ fontSize:13, fontWeight:700, color: proj.color || C.accent }}>{proj.name}</span>
+                            <div style={{ flex:1, height:1, background: C.border }} />
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize:13, fontWeight:700, color: C.muted }}>Công việc riêng</span>
+                            <div style={{ flex:1, height:1, background: C.border }} />
+                          </>
+                        )}
                       </div>
-                      <div style={{ flex:1, height:1, background:C.border }} />
-                    </div>
-                  )}
-                  {/* Timeline row: dot+line | card */}
-                  <div style={{ display:"flex" }}>
-                    <div style={{ width:24, flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center" }}>
-                      <div style={{ fontSize:8, color:C.muted, fontWeight:600, marginBottom:2, minHeight:10 }}>{t.startTime ? t.startTime.replace(/^0/,"").replace(/:00$/,"h").replace(/:/,"h") : ""}</div>
-                      <div style={{ width:10, height:10, borderRadius:"50%", background:dotColor, flexShrink:0, zIndex:1, border:"2px solid " + C.bg }} />
-                      {!isLast && <div style={{ width:1.5, flex:1, background:C.border, minHeight:8 }} />}
-                    </div>
-                    <div style={{ flex:1, minWidth:0, marginBottom: isLast ? 0 : 6, display:"flex", alignItems:"stretch" }}>
+                    )}
+                    <div style={{ display:"flex", alignItems:"stretch", marginBottom:4 }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <TaskRow task={t} onPress={selectMode ? () => toggleSelect(t.id) : () => setSel(t)}
-                          projectName={t.projectId ? projects.find(p => p.id === t.projectId)?.name : null}
-                          onStatusChange={selectMode ? undefined : (tk, s) => patchTask(tk.id, { status: s })}
-                          onPriorityChange={selectMode ? undefined : (tk, p) => patchTask(tk.id, { priority: p })}
+                        <TaskRow task={tk}
+                          onPress={selectMode ? () => toggleSelect(tk.id) : () => setSel(tk)}
+                          projectName={!isAllView && tk.projectId ? proj?.name : null}
+                          onStatusChange={selectMode ? undefined : (t2, s) => patchTask(t2.id, { status: s })}
                           onPatchTask={(id, data) => patchTask(id, data)}
-                          onAdjust={selectMode ? undefined : (tk) => {
-                            setMiniVoice(true); setMiniReply(""); setMiniTask(tk); setMiniTranscript("");
-                            setTimeout(() => startMiniListening(), 200);
-                          }}
-                          timerTick={timerTick} handSide={settings.handSide} />
+                          timerTick={timerTick} />
                       </div>
                       {selectMode && (
-                        <div className="tap" onClick={() => toggleSelect(t.id)}
+                        <div className="tap" onClick={() => toggleSelect(tk.id)}
                           style={{ width:36, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
                           <div style={{
                             width:20, height:20, borderRadius:6,
-                            border: selectedIds.has(t.id) ? "none" : `2px solid ${C.border}`,
-                            background: selectedIds.has(t.id) ? (selectMode === "delete" ? C.red : C.accent) : "transparent",
-                            display:"flex", alignItems:"center", justifyContent:"center",
-                            transition:"all .15s"
+                            border: selectedIds.has(tk.id) ? "none" : `2px solid ${C.border}`,
+                            background: selectedIds.has(tk.id) ? (selectMode === "delete" ? C.red : C.accent) : "transparent",
+                            display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"
                           }}>
-                            {selectedIds.has(t.id) && <span style={{ color:"#fff", fontSize:13, fontWeight:700, lineHeight:1 }}>✓</span>}
+                            {selectedIds.has(tk.id) && <span style={{ color:"#fff", fontSize:13, fontWeight:700, lineHeight:1 }}>&#x2713;</span>}
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         )}
 
@@ -1074,6 +1014,7 @@ function MainApp({ user, onLogout }) {
         {tab === "report" && <TabErrorBoundary><ReportTab tasks={tasks} history={history} settings={settings} memory={memory} user={user} /></TabErrorBoundary>}
         {tab === "dashboard" && <TabErrorBoundary><DashboardTab tasks={tasks} expenses={expenses} projects={projects} settings={settings} onOpenTask={t => setSel(t)} /></TabErrorBoundary>}
         {tab === "dev" && <TabErrorBoundary><DevTab user={user} /></TabErrorBoundary>}
+        {tab === "attendance" && <TabErrorBoundary><AttendanceTab userId={userId} settings={settings} /></TabErrorBoundary>}
 
         {tab === "ai" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeIn .2s" }}>
@@ -1147,51 +1088,36 @@ function MainApp({ user, onLogout }) {
         )}
       </div>
 
-      {/* ── AI INPUT BAR ── */}
+      {/* ── AI INPUT BAR (simplified: input + 1 smart button) ── */}
       {tab === "ai" && (
         <div className="ai-input-bar">
-          {voiceMode && (
-            <div style={{ background: `linear-gradient(90deg,${C.purpleD},${C.accentD})`, borderTop: `1px solid ${C.purple}33`, padding: "8px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 3, height: 18 }}>
-                {[0, 1, 2, 3, 4].map(i => (
-                  <div key={i} style={{ width: 3, background: voice.on ? C.purple : C.muted, borderRadius: 2, animation: voice.on ? `waveBar 0.8s ${i * 0.15}s infinite ease-in-out` : "none", height: voice.on ? undefined : 4 }} />
-                ))}
-              </div>
-              <span style={{ fontSize: 12, color: C.purple, fontWeight: 700, flex: 1 }}>
-                {aiLoad ? "AI đang trả lời..." : voice.on ? "Đang nghe bạn..." : "Chuẩn bị nghe..."}
-              </span>
-              <button className="tap" onClick={toggleVoiceMode} style={{ background: "none", border: `1px solid ${C.purple}55`, borderRadius: 8, padding: "3px 10px", color: C.purple, fontSize: 11, fontWeight: 700 }}>Tat</button>
-            </div>
-          )}
           <div style={{ padding: "10px 12px", display: "flex", gap: 8, alignItems: "center" }}>
-            {voice.ok && (
-              <button className="tap" onClick={toggleVoiceMode} style={{
-                width: 46, height: 46, borderRadius: "50%", border: "none", flexShrink: 0, position: "relative",
-                background: voiceMode ? `linear-gradient(135deg,${C.purple},${C.accent})` : `${C.purple}18`,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
-                boxShadow: voiceMode ? `0 4px 16px ${C.purpleD}` : "none",
-              }}>
-                {voiceMode && <div style={{ position: "absolute", inset: -5, borderRadius: "50%", border: `2px solid ${C.purple}44`, animation: "ping 2s infinite", pointerEvents: "none" }} />}
-                &#x1F399;
-              </button>
-            )}
             <input value={aiIn} onChange={e => setAiIn(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat()}
-              placeholder={voiceMode ? "Đang ở chế độ thoại — hoặc gõ..." : "Nhắn tin hoặc nhấn mic..."}
-              aria-label="Nhắn tin cho Wory"
+              placeholder="Nhan tin cho Wory..."
+              aria-label="Nhan tin cho Wory"
               style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "11px 16px", fontSize: 16, color: C.text }} />
-            {voice.ok && !voiceMode && (
+            {/* Smart button: mic when empty, send when has text */}
+            {aiIn.trim() ? (
+              <button className="tap" onClick={() => sendChat()} disabled={aiLoad}
+                aria-label="Gui tin nhan"
+                style={{ width: 44, height: 44, borderRadius: "50%", border: "none", flexShrink: 0, background: aiLoad ? C.border : C.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff" }}>
+                &#x2191;
+              </button>
+            ) : voice.ok ? (
               <button className="tap" onClick={() => { window.speechSynthesis?.cancel(); voice.toggle(); }}
-                aria-label={voice.on ? "Dừng ghi âm" : "Ghi âm"}
-                style={{ width: 46, height: 46, borderRadius: "50%", border: "none", flexShrink: 0, position: "relative", background: voice.on ? C.red : C.card, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21 }}>
-                {voice.on && <div style={{ position: "absolute", inset: -7, borderRadius: "50%", border: `2px solid ${C.red}`, animation: "ripple 1.1s infinite", pointerEvents: "none" }} />}
-                {voice.on ? "S" : "M"}
+                aria-label={voice.on ? "Dung ghi am" : "Ghi am"}
+                style={{ width: 44, height: 44, borderRadius: "50%", border: "none", flexShrink: 0, position: "relative",
+                  background: voice.on ? C.red : `${C.purple}18`,
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>
+                {voice.on && <div style={{ position: "absolute", inset: -5, borderRadius: "50%", border: `2px solid ${C.red}44`, animation: "ripple 1.1s infinite", pointerEvents: "none" }} />}
+                &#x1F3A4;
+              </button>
+            ) : (
+              <button className="tap" onClick={() => sendChat()} disabled={true}
+                style={{ width: 44, height: 44, borderRadius: "50%", border: "none", flexShrink: 0, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff" }}>
+                &#x2191;
               </button>
             )}
-            <button className="tap" onClick={() => sendChat()} disabled={aiLoad || !aiIn.trim()}
-              aria-label="Gửi tin nhắn"
-              style={{ width: 46, height: 46, borderRadius: "50%", border: "none", flexShrink: 0, background: (!aiLoad && aiIn.trim()) ? C.accent : C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff" }}>
-              &#x2191;
-            </button>
           </div>
         </div>
       )}
@@ -1257,19 +1183,13 @@ function MainApp({ user, onLogout }) {
         </div>
       )}
 
-      {/* ── BOTTOM NAV ── */}
+      {/* ── BOTTOM NAV (simplified: 3 tabs + More) ── */}
       <div className="bottom-nav">
         {[
           ["tasks","\u{1F4CB}", t("task", settings)],
-          ["calendar","\u{1F4C5}","Lịch"],
-          ["inbox","\u{1F4AC}","Trao đổi", chatUnread],
-          ["expense","\u{1F4B0}", t("expense", settings)],
-          ["dashboard","\u{1F4CA}","Tổng quan"],
-          isDirector && ["report","\u{1F4C4}","Báo cáo"],
-          isDirector && ["dev","\u{1F4BB}","Dev"],
+          ["inbox","\u{1F4AC}","Trao doi", chatUnread],
           ["ai","\u2726","Wory"],
-        ].filter(Boolean).filter(([key]) => {
-          if (key === "dev") return true;
+        ].filter(([key]) => {
           const vt = settings.visibleTabs;
           if (vt && vt[key] === false) return false;
           return hasPermission(settings, key);
@@ -1277,22 +1197,80 @@ function MainApp({ user, onLogout }) {
           const active = tab === key;
           return (
             <button key={key} className="tap" data-guide={`nav-${key}`} onClick={() => setTab(key)}
-              style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "6px 0 5px", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, position:"relative" }}>
-              <div style={{ width:36, height:28, borderRadius:10, background: active ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"background .2s", position:"relative" }}>
-                <span style={{ fontSize: 16, lineHeight: 1, filter: active ? "none" : "grayscale(0.6) opacity(0.55)" }}>
+              style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "8px 0 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position:"relative" }}>
+              <div style={{ width:44, height:36, borderRadius:12, background: active ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"background .2s", position:"relative" }}>
+                <span style={{ fontSize: 22, lineHeight: 1, filter: active ? "none" : "grayscale(0.6) opacity(0.55)" }}>
                   {icon}
                 </span>
                 {badgeCount > 0 && !active && (
-                  <div style={{ position:"absolute", top:-2, right:-4, minWidth:16, height:16, borderRadius:8, background:"#e74c3c", color:"#fff", fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px" }}>
+                  <div style={{ position:"absolute", top:-2, right:-2, minWidth:18, height:18, borderRadius:9, background:"#e74c3c", color:"#fff", fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px" }}>
                     {badgeCount > 9 ? "9+" : badgeCount}
                   </div>
                 )}
               </div>
-              <span style={{ fontSize: 9, fontWeight: active ? 700 : 500, color: active ? "#8b6914" : "#999", marginTop: 0, letterSpacing: active ? 0 : 0 }}>{label}</span>
+              <span style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? "#8b6914" : "#999" }}>{label}</span>
             </button>
           );
         })}
+        {/* More menu button */}
+        <button className="tap" onClick={() => setMoreMenuOpen(v => !v)}
+          style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "8px 0 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <div style={{ width:44, height:36, borderRadius:12, background: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <span style={{ fontSize: 22, lineHeight: 1, filter: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? "none" : "grayscale(0.6) opacity(0.55)" }}>&#x2261;</span>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? 700 : 500, color: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? "#8b6914" : "#999" }}>Them</span>
+        </button>
       </div>
+
+      {/* ── MORE MENU (bottom sheet) ── */}
+      {moreMenuOpen && (
+        <>
+          <div style={{ position:"fixed", inset:0, zIndex:998, background:"rgba(0,0,0,.3)" }} onClick={() => setMoreMenuOpen(false)} />
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"#fff", borderRadius:"20px 20px 0 0", zIndex:999, padding:"12px 16px 24px", animation:"slideUp .2s" }}>
+            <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 12px" }} />
+            {[
+              ["calendar","\u{1F4C5}","Lich"],
+              ["expense","\u{1F4B0}", t("expense", settings)],
+              ["attendance","\u{1F552}","Cham cong"],
+              ["dashboard","\u{1F4CA}","Tong quan"],
+              isDirector && ["report","\u{1F4C4}","Bao cao"],
+              isDirector && ["dev","\u{1F4BB}","Dev"],
+            ].filter(Boolean).filter(([key]) => {
+              const vt = settings.visibleTabs;
+              if (vt && vt[key] === false) return false;
+              return hasPermission(settings, key);
+            }).map(([key, icon, label]) => (
+              <button key={key} className="tap" onClick={() => { setTab(key); setMoreMenuOpen(false); }}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"14px 12px", background: tab === key ? `${C.accent}10` : "transparent", border:"none", borderRadius:12, fontSize:15, fontWeight: tab === key ? 700 : 500, color: tab === key ? C.accent : C.text, cursor:"pointer", marginBottom:2 }}>
+                <span style={{ fontSize:20 }}>{icon}</span>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── STATUS PICKER SHEET (replaces window.prompt) ── */}
+      {statusPickerTask && (
+        <>
+          <div style={{ position:"fixed", inset:0, zIndex:998, background:"rgba(0,0,0,.4)" }} onClick={() => setStatusPickerTask(null)} />
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"#fff", borderRadius:"20px 20px 0 0", zIndex:999, padding:"16px 20px 28px", animation:"slideUp .2s" }}>
+            <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 14px" }} />
+            <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:12 }}>Doi trang thai</div>
+            {STATUS_ORDER.map(s => (
+              <button key={s} className="tap" onClick={() => {
+                (statusPickerTask.ids || []).forEach(id => patchTask(id, { status: s }));
+                setStatusPickerTask(null);
+                exitSelectMode();
+              }}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"14px 14px", background:STATUSES[s]?.color + "10", border:"none", borderRadius:12, fontSize:15, fontWeight:600, color:STATUSES[s]?.color, cursor:"pointer", marginBottom:6 }}>
+                <span style={{ width:10, height:10, borderRadius:"50%", background:STATUSES[s]?.color }} />
+                {STATUSES[s]?.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* ── MODALS ── */}
       {sel && <TaskSheet task={tasks.find(t => t.id === sel.id) || sel} onClose={() => setSel(null)} />}
