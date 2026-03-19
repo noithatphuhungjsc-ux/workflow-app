@@ -1185,6 +1185,19 @@ function MainApp({ user, onLogout }) {
         </div>
       )}
 
+      {/* ── FAB: Add task button ── */}
+      {tab === "tasks" && !addOpen && !selectMode && (
+        <button className="tap" onClick={() => setAddOpen(true)}
+          style={{
+            position: "fixed", bottom: 80, right: 16, zIndex: 60,
+            width: 52, height: 52, borderRadius: 16, border: "none",
+            background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`,
+            color: "#fff", fontSize: 26, fontWeight: 700, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 4px 16px ${C.accent}55`,
+          }}>+</button>
+      )}
+
       {/* ── BOTTOM NAV (simplified: 3 tabs + More) ── */}
       <div className="bottom-nav">
         {[
