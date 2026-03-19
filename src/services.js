@@ -704,6 +704,85 @@ export function processTaskCommands(text, tasks, handlers, hasPermission) {
       },
     },
     {
+      rx: /\[SUBTASK_ADD:(.+?):(.+?)\]/,
+      handler: (match) => {
+        const name = match[1].trim().toLowerCase();
+        const subTitle = match[2].trim();
+        const found = tasks.find(t => t.title.toLowerCase().includes(name));
+        if (found) {
+          const subs = Array.isArray(found.subtasks) ? [...found.subtasks] : [];
+          subs.push({ id: Date.now(), title: subTitle, done: false });
+          actions.push({ type: "patch", id: found.id, data: { subtasks: subs } });
+          return `Đã thêm subtask "${subTitle}"!`;
+        }
+        return `Không tìm thấy công việc.`;
+      },
+    },
+    {
+      rx: /\[SUBTASK_DONE:(.+?):(.+?)\]/,
+      handler: (match) => {
+        const name = match[1].trim().toLowerCase();
+        const subName = match[2].trim().toLowerCase();
+        const found = tasks.find(t => t.title.toLowerCase().includes(name));
+        if (found && Array.isArray(found.subtasks)) {
+          const subs = found.subtasks.map(s =>
+            s.title.toLowerCase().includes(subName) ? { ...s, done: true } : s
+          );
+          actions.push({ type: "patch", id: found.id, data: { subtasks: subs } });
+          return `Đã đánh dấu hoàn thành subtask!`;
+        }
+        return `Không tìm thấy subtask.`;
+      },
+    },
+    {
+      rx: /\[SUBTASK_UNDONE:(.+?):(.+?)\]/,
+      handler: (match) => {
+        const name = match[1].trim().toLowerCase();
+        const subName = match[2].trim().toLowerCase();
+        const found = tasks.find(t => t.title.toLowerCase().includes(name));
+        if (found && Array.isArray(found.subtasks)) {
+          const subs = found.subtasks.map(s =>
+            s.title.toLowerCase().includes(subName) ? { ...s, done: false } : s
+          );
+          actions.push({ type: "patch", id: found.id, data: { subtasks: subs } });
+          return `Đã bỏ đánh dấu subtask!`;
+        }
+        return `Không tìm thấy subtask.`;
+      },
+    },
+    {
+      rx: /\[SUBTASK_DELETE:(.+?):(.+?)\]/,
+      handler: (match) => {
+        const name = match[1].trim().toLowerCase();
+        const subName = match[2].trim().toLowerCase();
+        const found = tasks.find(t => t.title.toLowerCase().includes(name));
+        if (found && Array.isArray(found.subtasks)) {
+          const subs = found.subtasks.filter(s => !s.title.toLowerCase().includes(subName));
+          actions.push({ type: "patch", id: found.id, data: { subtasks: subs } });
+          return `Đã xóa subtask!`;
+        }
+        return `Không tìm thấy subtask.`;
+      },
+    },
+    {
+      rx: /\[NOTE_STATUS:(.+?):(.+?):(.+?)\]/,
+      handler: (match) => {
+        const name = match[1].trim().toLowerCase();
+        const noteText = match[2].trim().toLowerCase();
+        const newStatus = match[3].trim().toLowerCase();
+        if (!["pending", "doing", "done"].includes(newStatus)) return `Trạng thái ghi chú không hợp lệ.`;
+        const found = tasks.find(t => t.title.toLowerCase().includes(name));
+        if (found && Array.isArray(found.notes)) {
+          const notes = found.notes.map(n =>
+            n.text?.toLowerCase().includes(noteText) ? { ...n, status: newStatus } : n
+          );
+          actions.push({ type: "patch", id: found.id, data: { notes } });
+          return `Đã cập nhật ghi chú -> ${newStatus}!`;
+        }
+        return `Không tìm thấy ghi chú.`;
+      },
+    },
+    {
       rx: /\[TASK_EXPENSE:(.+?):(.+?)\|(\d+)\|?(.+?)?\]/,
       handler: (match) => {
         const name = match[1].trim().toLowerCase();
@@ -735,7 +814,7 @@ export function processTaskCommands(text, tasks, handlers, hasPermission) {
   }
 
   // Clean remaining brackets
-  result = result.replace(/\[TASK_\w+:.+?\]/g, "");
+  result = result.replace(/\[(TASK|SUBTASK|NOTE)_\w+:.+?\]/g, "");
 
   return { cleanText: result, actions };
 }

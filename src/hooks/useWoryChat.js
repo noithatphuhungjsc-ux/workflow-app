@@ -264,6 +264,23 @@ Ban CO QUYEN them/sua/xoa cong viec. QUY TRINH BAT BUOC:
      [TASK_EXPENSE:ten_task:Taxi|150000|work]
    - Neu nguoi dung noi ve chi tieu/tien → dung TASK_EXPENSE. Neu khong phai chi tieu → dung TASK_NOTES
    - PHAI dien DAY DU ly_do va so_tien. KHONG de trong ly_do hoac so_tien = 0
+
+   SUBTASK / CHECKLIST:
+   - Them subtask: [SUBTASK_ADD:ten_task:tieu_de_subtask]
+   - Danh dau subtask hoan thanh: [SUBTASK_DONE:ten_task:ten_subtask]
+   - Bo danh dau subtask: [SUBTASK_UNDONE:ten_task:ten_subtask]
+   - Xoa subtask: [SUBTASK_DELETE:ten_task:ten_subtask]
+   - Co the them NHIEU subtask, moi cai 1 lenh rieng
+   - VD: "them checklist cho Bao cao: viet noi dung, review, gui email" → GUI 3 LENH:
+     [SUBTASK_ADD:Bao cao:Viet noi dung]
+     [SUBTASK_ADD:Bao cao:Review]
+     [SUBTASK_ADD:Bao cao:Gui email]
+
+   GHI CHU TRANG THAI:
+   - Doi trang thai ghi chu: [NOTE_STATUS:ten_task:noi_dung_ghi_chu:trang_thai]
+     (trang_thai: pending/doing/done)
+   - VD: "ghi chu 'Lien he nha cung cap' cua task Mua vat tu → dang lam"
+     → [NOTE_STATUS:Mua vat tu:Lien he nha cung cap:doing]
 4. KHONG BAO GIO thuc hien ma chua duoc ${shortName} xac nhan
 5. Ten task dung de tim kiem — khong can chinh xac 100%, chi can du nhan ra
 6. Khi ${shortName} noi "u", "ok", "duoc", "dung roi" sau khi ban hoi xac nhan → THUC HIEN NGAY, khong hoi lai
@@ -350,7 +367,7 @@ ${sum}`;
       if (actions.length > 0) {
         executeTaskActions(actions, { addTask, deleteTask, patchTask });
       }
-      cleanText = cleanText.replace(/\[TASK_\w+:.+?\]/g, "");
+      cleanText = cleanText.replace(/\[(TASK|SUBTASK|NOTE)_\w+:.+?\]/g, "");
 
       if (cleanText !== fullText) {
         setMsgs(prev => {
