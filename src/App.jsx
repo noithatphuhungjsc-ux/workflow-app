@@ -965,16 +965,16 @@ function MainApp({ user, onLogout }) {
                 return (
                   <div key={tk.id} style={i < 12 ? { animation:"fadeIn .2s ease backwards", animationDelay:`${i*25}ms` } : undefined}>
                     {showHeader && (
-                      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 2px 6px", marginTop: i > 0 ? 8 : 0 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"12px 4px 8px", marginTop: i > 0 ? 12 : 0 }}>
                         {proj ? (
                           <>
-                            <div style={{ width:6, height:6, borderRadius:3, background: proj.color || C.accent, flexShrink:0 }} />
-                            <span style={{ fontSize:13, fontWeight:700, color: proj.color || C.accent }}>{proj.name}</span>
+                            <div style={{ width:10, height:10, borderRadius:5, background: proj.color || C.accent, flexShrink:0 }} />
+                            <span style={{ fontSize:15, fontWeight:700, color: proj.color || C.accent }}>Dự án: {proj.name}</span>
                             <div style={{ flex:1, height:1, background: C.border }} />
                           </>
                         ) : (
                           <>
-                            <span style={{ fontSize:13, fontWeight:700, color: C.muted }}>Công việc riêng</span>
+                            <span style={{ fontSize:15, fontWeight:700, color: C.muted }}>Công việc riêng</span>
                             <div style={{ flex:1, height:1, background: C.border }} />
                           </>
                         )}
