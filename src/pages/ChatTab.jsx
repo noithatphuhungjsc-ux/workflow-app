@@ -6,7 +6,7 @@ import ChatRoom from "../components/ChatRoom";
 import NewChatModal, { decodeGroupName, getCategoryInfo, GROUP_CATEGORIES } from "../components/NewChatModal";
 import { supabase } from "../lib/supabase";
 
-export default function ChatTab({ openConvId, projects, tasks, patchTask, addTask }) {
+export default function ChatTab({ openConvId, projects, tasks, patchTask, addTask, patchProject }) {
   const { session, isConnected, loading: supaLoading } = useSupabase();
   const userId = session?.user?.id;
   const { conversations, loading, totalUnread, refresh, createDM, createGroup } = useConversations(userId);
@@ -18,17 +18,16 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
       setActiveConv(openConvId);
     }
   }, [openConvId]);
-  const setActiveConv = useCallback(async (id) => {
+  const setActiveConv = useCallback((id) => {
     if (id) {
       sessionStorage.setItem("wf_activeConv", id);
+      // Auto-join membership in background — don't block navigation
       if (supabase && userId) {
-        try {
-          const { data: existing } = await supabase.from("conversation_members")
-            .select("user_id").eq("conversation_id", id).eq("user_id", userId).maybeSingle();
-          if (!existing) {
-            await supabase.from("conversation_members").insert({ conversation_id: id, user_id: userId });
-          }
-        } catch {}
+        supabase.from("conversation_members")
+          .select("user_id").eq("conversation_id", id).eq("user_id", userId).maybeSingle()
+          .then(({ data: existing }) => {
+            if (!existing) supabase.from("conversation_members").insert({ conversation_id: id, user_id: userId });
+          }).catch(() => {});
       }
     } else {
       sessionStorage.removeItem("wf_activeConv");
@@ -125,12 +124,15 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     return projectChats.length > 0 ? [...conversations, ...projectChats] : conversations;
   })();
 
-  // Filter
+  // Filter — hide sub-threads and dept chats from main list
   const filtered = mergedConversations.filter(c => {
+    const cName = c.displayName || c.name || "";
+    if (cName.startsWith("[sub:")) return false; // sub-threads only visible in parent chat
+    if (cName.startsWith("[dept:")) return false; // dept chats shown in DeptTab
     if (filter === "all") return true;
     if (filter === "dm") return c.type === "dm";
     if (c.type !== "group") return false;
-    return decodeGroupName(c.displayName || c.name).category === filter;
+    return decodeGroupName(cName).category === filter;
   });
 
   const groupCounts = {};
@@ -166,6 +168,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
       <ChatRoom conversationId={activeConv} userId={userId}
         convName={name} convType={conv?.type || "dm"} profiles={profiles}
         linkedProject={linkedProject} projectTasks={projectTasks} patchTask={patchTask} addTask={addTask}
+        patchProject={patchProject}
         onBack={() => { setActiveConv(null); refresh(); }} />
     );
   }

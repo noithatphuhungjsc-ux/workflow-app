@@ -60,34 +60,35 @@ export function useChat(conversationId, userId) {
     if (data?.[0]) setOtherLastRead(data[0].last_read_at);
   }, [conversationId, userId]);
 
-  // Initial fetch
+  // Initial fetch — parallel
   useEffect(() => {
     if (!supabase || !conversationId) { setLoading(false); return; }
     setLoading(true);
     lastFetchRef.current = null;
 
     (async () => {
-      await fetchMessages(false);
-      await fetchOtherRead();
-      setLoading(false);
-
+      // Run all initial queries in parallel
+      const tasks = [fetchMessages(false), fetchOtherRead()];
       if (userId) {
-        await supabase
-          .from("conversation_members")
-          .update({ last_read_at: new Date().toISOString() })
-          .eq("conversation_id", conversationId)
-          .eq("user_id", userId);
+        tasks.push(
+          supabase.from("conversation_members")
+            .update({ last_read_at: new Date().toISOString() })
+            .eq("conversation_id", conversationId)
+            .eq("user_id", userId)
+        );
       }
+      await Promise.all(tasks);
+      setLoading(false);
     })();
   }, [conversationId, userId, fetchMessages, fetchOtherRead]);
 
-  // Poll every 2s for new messages + read status
+  // Poll every 5s for new messages + read status (realtime handles instant updates)
   useEffect(() => {
     if (!supabase || !conversationId) return;
     pollingRef.current = setInterval(() => {
       fetchMessages(true);
       fetchOtherRead();
-    }, 2000);
+    }, 5000);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [conversationId, fetchMessages, fetchOtherRead]);
 

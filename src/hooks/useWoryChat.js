@@ -7,7 +7,7 @@ import { STATUSES, PRIORITIES, todayStr, fmtDate } from "../constants";
 import {
   callClaudeStream, tts, memoryToText, buildKnowledgePrompt,
   extractKnowledge, processTaskCommands, processMemoryCommands,
-  executeTaskActions, loadJSON, saveJSON,
+  executeTaskActions, loadJSON, saveJSON, isDataCleared,
 } from "../services";
 import { useVoice } from "../hooks";
 
@@ -18,7 +18,7 @@ export function useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge,
     const t = loadJSON("chat_started", null);
     return t ? Number(t) : Date.now();
   });
-  useEffect(() => { saveJSON("chat_started", chatStartedAt); }, [chatStartedAt]);
+  useEffect(() => { if (!isDataCleared(user?.id)) saveJSON("chat_started", chatStartedAt); }, [chatStartedAt, user?.id]);
 
   const canNewChat = () => (Date.now() - chatStartedAt) > 2 * 24 * 60 * 60 * 1000;
   const archiveChat = () => {
@@ -45,11 +45,11 @@ export function useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge,
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
   useEffect(() => {
-    if (msgs.length > 0 && !aiLoad) {
+    if (msgs.length > 0 && !aiLoad && !isDataCleared(user?.id)) {
       const limit = settings.chatHistoryLimit || 100;
       saveJSON("chat_history", msgs.slice(-limit));
     }
-  }, [msgs, aiLoad, settings.chatHistoryLimit]);
+  }, [msgs, aiLoad, settings.chatHistoryLimit, user?.id]);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
 
   /* ── Chat voice ── */
@@ -93,11 +93,11 @@ export function useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge,
           k = { ...k, entries: [...k.entries, entry] };
         }
         setKnowledge(k);
-        saveJSON("wory_knowledge", k);
+        if (!isDataCleared(user?.id)) saveJSON("wory_knowledge", k);
         setKnowledgeToast(items.length);
         setTimeout(() => setKnowledgeToast(null), 5000);
       }
-    } catch {}
+    } catch (e) { console.warn("[WF] Auto-extract knowledge failed:", e.message); }
   }, [knowledge, setKnowledge]);
 
   /* ── Build system prompt (shared by chat + HeyModal) ── */
@@ -347,10 +347,16 @@ ${sum}`;
         });
       }
       tryAutoExtract(historyMsgs.concat([{ role: "assistant", content: cleanText }]));
-    } catch {
+    } catch (err) {
+      console.error("[WF] Wory chat error:", err);
+      let errMsg = "Loi ket noi. Vui long thu lai.";
+      if (err?.message?.includes("API key")) errMsg = "Loi: API key khong hop le hoac chua cau hinh.";
+      else if (err?.message?.includes("429") || err?.message?.includes("rate")) errMsg = "Qua nhieu yeu cau. Vui long doi 1 phut roi thu lai.";
+      else if (err?.message?.includes("network") || err?.message?.includes("fetch")) errMsg = "Mat ket noi mang. Kiem tra internet va thu lai.";
+      else if (err?.message) errMsg = `Loi: ${err.message}`;
       setMsgs(prev => {
         const u = [...prev];
-        u[u.length - 1] = { role: "assistant", content: "Lỗi kết nối. Vui lòng thử lại." };
+        u[u.length - 1] = { role: "assistant", content: errMsg };
         return u;
       });
     }
@@ -375,5 +381,6 @@ ${sum}`;
   return {
     msgs, setMsgs, aiIn, setAiIn, aiLoad, voiceMode, voice, endRef, knowledgeToast,
     sendChat, toggleVoiceMode, buildSystemPrompt, canNewChat, startNewChat,
+    archiveChat, chatStartedAt,
   };
 }

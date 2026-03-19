@@ -34,8 +34,14 @@ export function loadJSON(key, fallback = null) {
     if (!raw) return fallback;
     let data = JSON.parse(raw);
     data = migrateData(key, data);
+    // Integrity check: if expecting array, ensure it's array
+    if (Array.isArray(fallback) && !Array.isArray(data)) {
+      console.warn(`[WF] Data integrity: ${key} expected array, got ${typeof data}. Using fallback.`);
+      return fallback;
+    }
     return data;
-  } catch {
+  } catch (e) {
+    console.warn(`[WF] Failed to load ${key}:`, e.message);
     return fallback;
   }
 }
@@ -76,10 +82,10 @@ export async function cloudLoad(_supabase, userId, key) {
     const url = `/api/cloud-sync?userId=${encodeURIComponent(userId)}${key ? `&key=${encodeURIComponent(key)}` : ""}`;
     const res = await fetch(url);
     const result = await res.json();
-    if (!res.ok) return null;
+    if (!res.ok) { console.warn("[WF] Cloud load error:", key, result.error); return null; }
     if (key && result.data?.length) return result.data[0];
     return result.data?.length ? result.data : null;
-  } catch { return null; }
+  } catch (e) { console.warn("[WF] Cloud load failed:", key, e.message); return null; }
 }
 
 export async function cloudSaveAll(_supabase, userId) {
@@ -100,9 +106,9 @@ export async function cloudLoadAll(_supabase, userId) {
   try {
     const res = await fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}`);
     const result = await res.json();
-    if (!res.ok) return null;
+    if (!res.ok) { console.warn("[WF] Cloud loadAll error:", result.error); return null; }
     return result.data || null;
-  } catch { return null; }
+  } catch (e) { console.warn("[WF] Cloud loadAll failed:", e.message); return null; }
 }
 
 // Load only specific keys (for polling — avoids fetching settings/memory/knowledge)
@@ -113,16 +119,51 @@ export async function cloudLoadKeys(_supabase, userId, keys) {
       fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}&key=${encodeURIComponent(key)}`)
         .then(r => r.json())
         .then(r => r.data?.[0] || null)
+        .catch(e => { console.warn("[WF] Cloud loadKey failed:", key, e.message); return null; })
     ));
     return results.filter(Boolean);
-  } catch { return null; }
+  } catch (e) { console.warn("[WF] Cloud loadKeys failed:", e.message); return null; }
+}
+
+/* Offline queue — buffers cloud saves when offline, flushes when back online */
+const _offlineQueue = [];
+let _flushingOffline = false;
+
+function isOnline() { return typeof navigator === "undefined" || navigator.onLine !== false; }
+
+async function flushOfflineQueue() {
+  if (_flushingOffline || _offlineQueue.length === 0) return;
+  _flushingOffline = true;
+  while (_offlineQueue.length > 0) {
+    const { userId, key, data } = _offlineQueue[0];
+    const ok = await cloudSave(null, userId, key, data);
+    if (ok) { _offlineQueue.shift(); }
+    else { break; } // still offline or error — stop flushing
+  }
+  _flushingOffline = false;
+}
+
+// Listen for online event to flush queue
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    console.info("[WF] Back online — flushing", _offlineQueue.length, "queued saves");
+    flushOfflineQueue();
+  });
 }
 
 export function scheduleSyncDebounced(_supabase, userId, key, data) {
   if (!userId) return;
   clearTimeout(_syncTimers[key]);
   _syncTimers[key] = setTimeout(() => {
-    cloudSave(null, userId, key, data);
+    if (isOnline()) {
+      cloudSave(null, userId, key, data);
+    } else {
+      // Queue for later — deduplicate by key (keep latest data)
+      const existing = _offlineQueue.findIndex(q => q.userId === userId && q.key === key);
+      if (existing >= 0) _offlineQueue[existing].data = data;
+      else _offlineQueue.push({ userId, key, data });
+      console.info("[WF] Offline — queued", key, "for later sync");
+    }
   }, 3000); // Debounce 3s per key
 }
 
@@ -521,7 +562,11 @@ export async function callClaudeStream(system, messages, onDelta, maxTokens = 15
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system, messages, max_tokens: maxTokens }),
   });
-  if (!res.ok) throw new Error("API error");
+  if (!res.ok) {
+    let errMsg = `API error (${res.status})`;
+    try { const j = await res.json(); errMsg = j.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -775,12 +820,47 @@ export function exportAllData(userId) {
   URL.revokeObjectURL(url);
 }
 
+/* Validate & sanitize imported data — prevents corrupt imports */
+function validateImport(data) {
+  const errors = [];
+  if (!data || typeof data !== "object") return { valid: false, errors: ["File không phải JSON hợp lệ"] };
+
+  // Tasks: must be array of objects with at least id+title
+  if (data.tasks) {
+    if (!Array.isArray(data.tasks)) { errors.push("tasks không phải mảng"); delete data.tasks; }
+    else data.tasks = data.tasks.filter(t => t && typeof t === "object" && t.title);
+  }
+  // Expenses: array of objects with amount
+  if (data.expenses) {
+    if (!Array.isArray(data.expenses)) { errors.push("expenses không phải mảng"); delete data.expenses; }
+    else data.expenses = data.expenses.filter(e => e && typeof e === "object" && typeof e.amount === "number");
+  }
+  // History: array
+  if (data.history && !Array.isArray(data.history)) { errors.push("history không hợp lệ"); delete data.history; }
+  // Memory: array
+  if (data.memory && !Array.isArray(data.memory)) { errors.push("memory không hợp lệ"); delete data.memory; }
+  // Settings: object
+  if (data.settings && typeof data.settings !== "object") { errors.push("settings không hợp lệ"); delete data.settings; }
+  // Knowledge: object with entries array
+  if (data.knowledge) {
+    if (typeof data.knowledge !== "object" || !Array.isArray(data.knowledge.entries)) {
+      errors.push("knowledge không hợp lệ"); delete data.knowledge;
+    }
+  }
+
+  const hasAnyData = data.tasks || data.expenses || data.history || data.memory || data.settings || data.knowledge || data.chatHistory;
+  return { valid: !!hasAnyData, errors, warnings: errors };
+}
+
 export function importData(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
+        const { valid, errors } = validateImport(data);
+        if (!valid) { reject(new Error(errors.join(", ") || "File không chứa dữ liệu hợp lệ")); return; }
+
         if (data.tasks) saveJSON("tasks", data.tasks);
         if (data.expenses) saveJSON("expenses", data.expenses);
         if (data.history) saveJSON("history", data.history);
@@ -788,19 +868,100 @@ export function importData(file) {
         if (data.settings) saveJSON("settings", data.settings);
         if (data.chatHistory) saveJSON("chat_history", data.chatHistory);
         if (data.knowledge) saveJSON("wory_knowledge", data.knowledge);
-        resolve(data);
+        resolve({ ...data, warnings: errors });
       } catch (err) {
-        reject(err);
+        reject(new Error("File JSON không hợp lệ: " + err.message));
       }
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error("Không đọc được file"));
     reader.readAsText(file);
   });
 }
 
 export function clearAllData() {
-  const keys = ["tasks", "expenses", "history", "memory", "wory_knowledge", "settings", "chat_history", "chat_started", "chat_archives"];
+  // Preserve industryPreset so setup modal doesn't re-create sample tasks
+  let industryPreset = null;
+  try {
+    const s = JSON.parse(localStorage.getItem(userKey("settings")) || "{}");
+    industryPreset = s.industryPreset;
+  } catch {}
+  const keys = ["tasks", "expenses", "history", "memory", "wory_knowledge", "settings", "chat_history", "chat_started", "chat_archives", "projects", "deleted_projects", "expense_chat"];
   keys.forEach(k => localStorage.removeItem(userKey(k)));
+  // Restore minimal settings to prevent industry setup modal from showing
+  if (industryPreset) {
+    try { localStorage.setItem(userKey("settings"), JSON.stringify({ industryPreset })); } catch {}
+  }
+}
+
+/* Check if a user's data was cleared (prevents re-sync).
+   Flag is PERMANENT until explicitly cleared by clearDataClearedFlag(). */
+export function isDataCleared(targetUserId) {
+  return !!localStorage.getItem("wf_data_cleared_" + targetUserId);
+}
+
+/* Remove the cleared flag (when user starts working again) */
+export function clearDataClearedFlag(userId) {
+  localStorage.removeItem("wf_data_cleared_" + userId);
+}
+
+/* Helper: push empty to cloud with 1 retry */
+async function cloudClearWithRetry(userId, key) {
+  const emptyVal = key === "wory_knowledge" ? { version: 1, profile: {}, entries: [] } : [];
+  try {
+    const ok = await cloudSave(null, userId, key, emptyVal);
+    if (ok) return true;
+  } catch {}
+  // Retry once after 500ms
+  await new Promise(r => setTimeout(r, 500));
+  try { return await cloudSave(null, userId, key, emptyVal); } catch { return false; }
+}
+
+/* Clear ALL data: local + cloud (call from Settings "Xóa trắng") */
+export async function clearAllDataWithCloud(userId) {
+  // 1. Set "just cleared" flag — PERMANENT until user takes action (addTask, etc.)
+  localStorage.setItem("wf_data_cleared_" + userId, "1");
+  // 2. Clear localStorage
+  clearAllData();
+  // 3. Clear cloud — push empty data for each key with retry
+  const cloudKeys = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "projects", "expense_chat"];
+  const results = await Promise.allSettled(cloudKeys.map(key => cloudClearWithRetry(userId, key)));
+  const ok = results.filter(r => r.status === "fulfilled" && r.value).length;
+  return { localCleared: true, cloudCleared: ok, total: cloudKeys.length };
+}
+
+/* Clear ALL users' data: local + cloud (director only — "Xóa toàn bộ hệ thống") */
+export async function clearAllSystemData() {
+  const ALL_USER_IDS = ["trinh", "lien", "hung", "mai", "duc"];
+  // 1. Preserve industryPreset for each user (prevents setup modal re-creating sample tasks)
+  const presets = {};
+  ALL_USER_IDS.forEach(uid => {
+    try {
+      const s = JSON.parse(localStorage.getItem(`wf_${uid}_settings`) || "{}");
+      if (s.industryPreset) presets[uid] = s.industryPreset;
+    } catch {}
+  });
+  // 2. Set PERMANENT cleared flag for ALL users
+  ALL_USER_IDS.forEach(uid => localStorage.setItem("wf_data_cleared_" + uid, "1"));
+  // 3. Clear localStorage for all user prefixes
+  const dataKeys = ["tasks", "expenses", "history", "memory", "wory_knowledge", "settings", "chat_history", "chat_started", "chat_archives", "projects", "deleted_projects", "expense_chat"];
+  ALL_USER_IDS.forEach(uid => {
+    dataKeys.forEach(k => localStorage.removeItem(`wf_${uid}_${k}`));
+  });
+  // 4. Restore minimal settings (industryPreset) to prevent setup modal
+  ALL_USER_IDS.forEach(uid => {
+    if (presets[uid]) {
+      try { localStorage.setItem(`wf_${uid}_settings`, JSON.stringify({ industryPreset: presets[uid] })); } catch {}
+    }
+  });
+  // 5. Push empty to cloud for all users with retry
+  const cloudKeys = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "projects", "expense_chat"];
+  const allPushes = [];
+  ALL_USER_IDS.forEach(uid => {
+    cloudKeys.forEach(key => allPushes.push(cloudClearWithRetry(uid, key)));
+  });
+  const results = await Promise.allSettled(allPushes);
+  const ok = results.filter(r => r.status === "fulfilled" && r.value).length;
+  return { localCleared: true, cloudCleared: ok, total: allPushes.length };
 }
 
 /* ================================================================

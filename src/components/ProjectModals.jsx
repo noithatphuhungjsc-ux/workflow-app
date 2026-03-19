@@ -44,20 +44,32 @@ export function NewProjectModal({ onAdd, onClose }) {
     });
   };
 
+  // Hardcoded local ID → Supabase UUID mapping (guaranteed fallback)
+  const LOCAL_ID_TO_UUID = {
+    trinh: "52bd2c76-6ff0-404c-8900-d05984e9271b",
+    lien: "8a1fa1fa-e068-4164-981f-fcd20a988744",
+    hung: "bf3cbd15-a783-420c-91dd-823bc2a23702",
+    mai: "80fb3b1e-f0ca-4850-bbda-fb6e8cdd25c9",
+    duc: "516cb441-6615-4df4-9993-0fe16b5acaf0",
+  };
+
   // Team accounts — derived from constants.js
   const TEAM_STAFF = TEAM_ACCOUNTS.map(a => ({ id: a.id, display_name: a.name, avatar_color: a.color, role: a.role, title: a.title }));
   const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
   // Use team list as base, enrich with Supabase profile IDs
   const allProfiles = TEAM_STAFF.map(d => {
+    // 1. Try exact match by normalized name
     const supaMatch = teamProfiles.find(p => normalize(p.display_name) === normalize(d.display_name));
     if (supaMatch) return { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color };
-    // Fallback: try matching by first/last name fragments
+    // 2. Try partial name match
     const fallback = teamProfiles.find(p => {
       const pn = normalize(p.display_name);
       const dn = normalize(d.display_name);
       return pn.includes(dn) || dn.includes(pn);
     });
     if (fallback) return { ...d, supaId: fallback.id, avatar_color: fallback.avatar_color || d.avatar_color };
+    // 3. Hardcoded UUID fallback — ensures member always gets added to chat
+    if (LOCAL_ID_TO_UUID[d.id]) return { ...d, supaId: LOCAL_ID_TO_UUID[d.id] };
     return d;
   });
   // Filter out current user
@@ -286,7 +298,14 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
   const members = project.members || [];
 
   const saveName = () => {
-    if (name.trim() && name.trim() !== project.name) patchProject(project.id, { name: name.trim() });
+    const newName = name.trim();
+    if (newName && newName !== project.name) {
+      patchProject(project.id, { name: newName });
+      // Sync conversation name on Supabase
+      if (supabase && project.chatId) {
+        supabase.from("conversations").update({ name: `[project]${newName}` }).eq("id", project.chatId).then(() => {}).catch(() => {});
+      }
+    }
     setEditName(false);
   };
 
@@ -389,13 +408,25 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
 
   const statusDot = (s) => s === "done" ? C.green : s === "inprogress" ? "#e67e22" : C.border;
 
+  // Hardcoded UUID fallback (same as NewProjectModal)
+  const LOCAL_ID_TO_UUID_EDIT = {
+    trinh: "52bd2c76-6ff0-404c-8900-d05984e9271b",
+    lien: "8a1fa1fa-e068-4164-981f-fcd20a988744",
+    hung: "bf3cbd15-a783-420c-91dd-823bc2a23702",
+    mai: "80fb3b1e-f0ca-4850-bbda-fb6e8cdd25c9",
+    duc: "516cb441-6615-4df4-9993-0fe16b5acaf0",
+  };
+
   // Team accounts — derived from constants.js
   const TEAM_STAFF_EDIT = TEAM_ACCOUNTS.map(a => ({ id: a.id, display_name: a.name, avatar_color: a.color }));
   const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
   // Build clean profile list from team + enrich with Supabase IDs
   const teamList = TEAM_STAFF_EDIT.map(d => {
     const supaMatch = teamProfiles.find(p => norm(p.display_name) === norm(d.display_name));
-    return supaMatch ? { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color } : d;
+    if (supaMatch) return { ...d, supaId: supaMatch.id, avatar_color: supaMatch.avatar_color || d.avatar_color };
+    // Hardcoded UUID fallback
+    if (LOCAL_ID_TO_UUID_EDIT[d.id]) return { ...d, supaId: LOCAL_ID_TO_UUID_EDIT[d.id] };
+    return d;
   });
   // Profiles not yet in project (from team only)
   const availableProfiles = teamList.filter(p =>

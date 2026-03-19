@@ -22,20 +22,22 @@ export const C = {
 
 /* -- DATA -- */
 export const PRIORITIES = {
-  cao:   { label: "Quan trọng\nKhẩn cấp",       color: "#d32f2f" },  // đỏ đậm — LÀM NGAY
-  trung: { label: "Không Q.trọng\nKhẩn cấp",  color: "#e65100" },  // cam đậm — ỦY QUYỀN
-  thap:  { label: "Quan trọng\nKhông K.cấp",   color: "#1565c0" },  // xanh dương đậm — LÊN LỊCH
-  none:  { label: "Không Q.trọng\nKhông K.cấp", color: "#78909c" },  // xám xanh — LOẠI BỎ
+  cao:   { label: "Gap",       color: "#d32f2f", icon: "🔴" },
+  trung: { label: "Binh thuong", color: "#e67e22", icon: "🟡" },
+  none:  { label: "Khi nao cung duoc", color: "#78909c", icon: "⚪" },
 };
+/* Backward compat: "thap" maps to "trung" */
+PRIORITIES.thap = PRIORITIES.trung;
 
 export const STATUSES = {
-  todo:       { label: "Cần làm",      color: "#2980b9" },  // xanh duong
-  prepare:    { label: "Chuẩn bị",     color: "#d35400" },  // do cam
-  inprogress: { label: "Đang làm",     color: "#e67e22" },  // cam
-  done:       { label: "Hoàn thành",   color: "#27ae60" },  // xanh la
+  todo:       { label: "Can lam",      color: "#2980b9" },
+  inprogress: { label: "Dang lam",     color: "#e67e22" },
+  done:       { label: "Xong",         color: "#27ae60" },
 };
+/* Backward compat: "prepare" maps to "todo" */
+STATUSES.prepare = STATUSES.todo;
 
-export const STATUS_ORDER = ["todo","prepare","inprogress","done"];
+export const STATUS_ORDER = ["todo","inprogress","done"];
 
 export const WORKFLOWS = [
   // ── Xây dựng & Kiến trúc ──
@@ -263,8 +265,7 @@ export function tasksOnDay(tasks, date) {
 export function parsePriority(r) {
   const t = r.toLowerCase();
   if (t.includes("cao") || t.includes("khan") || t.includes("gap")) return "cao";
-  if (t.includes("thap") || t.includes("binh thuong")) return "thap";
-  if (t.includes("trung") || t.includes("binh") || t.includes("vua")) return "trung";
+  if (t.includes("thap") || t.includes("binh thuong") || t.includes("trung") || t.includes("binh") || t.includes("vua")) return "trung";
   return null;
 }
 

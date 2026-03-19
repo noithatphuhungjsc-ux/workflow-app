@@ -1,9 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 
+const CACHE_KEY = "wf_convos_cache";
+
 export function useConversations(userId) {
-  const [conversations, setConversations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Restore from cache for instant render
+  const [conversations, setConversations] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) { const d = JSON.parse(cached); if (d.userId === userId && d.list?.length) return d.list; }
+    } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    try { return !sessionStorage.getItem(CACHE_KEY); } catch { return true; }
+  });
 
   const initialLoadDone = useRef(false);
 
@@ -22,11 +33,17 @@ export function useConversations(userId) {
     const convIds = memberRows.map(m => m.conversation_id);
     const readMap = Object.fromEntries(memberRows.map(m => [m.conversation_id, m.last_read_at]));
 
-    // 2. Batch: conversations + all members + all profiles (3 parallel queries)
-    const [convosRes, allMembersRes, profilesRes] = await Promise.all([
+    // 2. Batch: conversations + all members + profiles + recent messages (4 parallel queries)
+    const [convosRes, allMembersRes, profilesRes, msgsRes] = await Promise.all([
       supabase.from("conversations").select("*").in("id", convIds).order("last_message_at", { ascending: false }),
       supabase.from("conversation_members").select("conversation_id, user_id").in("conversation_id", convIds),
       supabase.from("profiles").select("id, display_name, avatar_color"),
+      // Single query for recent messages — fetch enough to cover all conversations
+      supabase.from("messages")
+        .select("conversation_id, content, sender_name, created_at, type, sender_id")
+        .in("conversation_id", convIds)
+        .order("created_at", { ascending: false })
+        .limit(Math.max(convIds.length * 5, 50)),
     ]);
 
     const convos = convosRes.data || [];
@@ -35,20 +52,16 @@ export function useConversations(userId) {
 
     if (!convos.length) { setConversations([]); setLoading(false); return; }
 
-    // 3. Batch: last message per conversation (parallel)
-    const msgPromises = convos.map(c =>
-      supabase.from("messages")
-        .select("content, sender_name, created_at, type, sender_id")
-        .eq("conversation_id", c.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-    );
-    const msgResults = await Promise.all(msgPromises);
+    // 3. Group messages by conversation — take first (latest) per conversation
+    const lastMsgMap = {};
+    for (const msg of (msgsRes.data || [])) {
+      if (!lastMsgMap[msg.conversation_id]) lastMsgMap[msg.conversation_id] = msg;
+    }
 
-    // 4. Enrich without extra queries
-    const enriched = convos.map((c, i) => {
+    // 4. Enrich
+    const enriched = convos.map((c) => {
       const lastRead = readMap[c.id] || c.created_at;
-      const lastMsg = msgResults[i].data?.[0] || null;
+      const lastMsg = lastMsgMap[c.id] || null;
 
       // Display name for DM
       let displayName = c.name;
@@ -72,7 +85,10 @@ export function useConversations(userId) {
     setConversations(prev => {
       const prevKey = JSON.stringify(prev.map(c => ({ id: c.id, lm: c.lastMessage?.created_at, u: c.unreadCount })));
       const nextKey = JSON.stringify(enriched.map(c => ({ id: c.id, lm: c.lastMessage?.created_at, u: c.unreadCount })));
-      return prevKey === nextKey ? prev : enriched;
+      if (prevKey === nextKey) return prev;
+      // Cache for instant next render
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ userId, list: enriched })); } catch {}
+      return enriched;
     });
     setLoading(false);
     initialLoadDone.current = true;
@@ -85,7 +101,7 @@ export function useConversations(userId) {
     if (!supabase || !userId) return;
 
     // Polling fallback — always works even without Realtime enabled
-    const poll = setInterval(fetchConvos, 5000);
+    const poll = setInterval(fetchConvos, 15000);
 
     // Realtime subscription — instant if Realtime is enabled on messages table
     const channel = supabase

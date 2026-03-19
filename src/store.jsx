@@ -5,8 +5,17 @@
 import { createContext, useContext, useReducer, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { DEFAULT_SETTINGS, STATUSES, PRIORITIES, getElapsed, fmtMoney, WORKFLOWS, TEAM_ACCOUNTS } from "./constants";
 import { INDUSTRY_PRESETS } from "./industryPresets";
-import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys } from "./services";
+import { loadJSON, saveJSON, userKey, loadHistory, saveHistory, addLog, loadMemory, saveMemory, loadSettings, saveSettings as persistSettings, loadKnowledge, saveKnowledge, scheduleSyncDebounced, cloudSave, cloudLoad, cloudLoadAll, cloudLoadKeys, isDataCleared, clearDataClearedFlag } from "./services";
+
+/* Unique ID: crypto-safe, no collisions */
+function uid() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback: timestamp + large random
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10) + "-" + Math.random().toString(36).slice(2, 6);
+}
+function now() { return new Date().toISOString(); }
 import { useSupabase } from "./contexts/SupabaseContext";
+import { supabase } from "./lib/supabase";
 
 function getWorkflowsByIds(ids) {
   if (!ids?.length) return [];
@@ -24,8 +33,9 @@ function taskReducer(state, action) {
     case "ADD":
       return [...state, {
         ...action.task,
-        id: Date.now() + Math.random(),
+        id: action.task.id || uid(),
         createdAt: action.task.createdAt || new Date().toISOString().split("T")[0],
+        updatedAt: now(),
         status: "todo",
         step: 0,
         timerState: "idle",
@@ -37,28 +47,20 @@ function taskReducer(state, action) {
         notes: Array.isArray(action.task.notes)
           ? action.task.notes
           : action.task.notes
-            ? [{ id: Date.now(), text: action.task.notes, status: "pending", priority: "normal" }]
+            ? [{ id: uid(), text: action.task.notes, status: "pending", priority: "normal" }]
             : [],
       }];
 
     case "ROLL_OVERDUE": {
-      const today = new Date().toISOString().split("T")[0];
-      return state.map(t => {
-        if (t.deleted || t.status === "done") return t;
-        if (!t.deadline || t.deadline >= today) return t;
-        // Task quá hạn → dồn sang hôm nay, lưu deadline gốc
-        return {
-          ...t,
-          originalDeadline: t.originalDeadline || t.deadline,
-          deadline: today,
-        };
-      });
+      // DO NOT overwrite deadline — just flag overdue tasks
+      // The original deadline is sacred, never change it automatically
+      return state;
     }
 
     case "SOFT_DELETE":
       return state.map(t =>
         t.id === action.id
-          ? { ...t, deleted: true, deletedAt: Date.now() }
+          ? { ...t, deleted: true, deletedAt: Date.now(), updatedAt: now() }
           : t
       );
 
@@ -68,13 +70,13 @@ function taskReducer(state, action) {
     case "UNDO_DELETE":
       return state.map(t =>
         t.id === action.id
-          ? { ...t, deleted: false, deletedAt: null }
+          ? { ...t, deleted: false, deletedAt: null, updatedAt: now() }
           : t
       );
 
     case "PATCH":
       return state.map(t =>
-        t.id === action.id ? { ...t, ...action.data } : t
+        t.id === action.id ? { ...t, ...action.data, updatedAt: now() } : t
       );
 
     case "PURGE_DELETED": {
@@ -93,8 +95,8 @@ function taskReducer(state, action) {
 function expenseReducer(state, action) {
   switch (action.type) {
     case "EXP_LOAD": return action.items;
-    case "EXP_ADD": return [...state, { ...action.item, id: Date.now() + Math.random(), approval: action.item.approval || "approved", createdAt: action.item.createdAt || new Date().toISOString() }];
-    case "EXP_PATCH": return state.map(e => e.id === action.id ? { ...e, ...action.data } : e);
+    case "EXP_ADD": return [...state, { ...action.item, id: action.item.id || uid(), approval: action.item.approval || "approved", createdAt: action.item.createdAt || now(), updatedAt: now() }];
+    case "EXP_PATCH": return state.map(e => e.id === action.id ? { ...e, ...action.data, updatedAt: now() } : e);
     case "EXP_DELETE": return state.filter(e => e.id !== action.id);
     default: return state;
   }
@@ -106,8 +108,8 @@ function expenseReducer(state, action) {
 function projectReducer(state, action) {
   switch (action.type) {
     case "PROJ_LOAD": return action.items;
-    case "PROJ_ADD": return [...state, { ...action.item, id: action.item.id || (Date.now() + Math.random()), createdAt: action.item.createdAt || new Date().toISOString().split("T")[0] }];
-    case "PROJ_PATCH": return state.map(p => p.id === action.id ? { ...p, ...action.data } : p);
+    case "PROJ_ADD": return [...state, { ...action.item, id: action.item.id || uid(), createdAt: action.item.createdAt || new Date().toISOString().split("T")[0], updatedAt: now() }];
+    case "PROJ_PATCH": return state.map(p => p.id === action.id ? { ...p, ...action.data, updatedAt: now() } : p);
     case "PROJ_DELETE": return state.filter(p => p.id !== action.id);
     default: return state;
   }
@@ -131,13 +133,17 @@ export function AppProvider({ children, userId }) {
   // --- Tasks ---
   const [allTasks, dispatch] = useReducer(taskReducer, [], () => {
     const saved = loadJSON("tasks", []);
-    return saved.map(t => ({
+    // Sanitize: filter out corrupt entries (must have id + title)
+    return saved.filter(t => t && typeof t === "object" && (t.title || t.id)).map(t => ({
       deleted: false, deletedAt: null, timerState: "idle", timerStart: null, timerTotal: 0,
-      expense: null, billPhotos: [],
+      expense: null, billPhotos: [], updatedAt: t.updatedAt || null,
       ...t,
+      id: t.id || uid(), // ensure every task has an ID
+      title: t.title || "(không tiêu đề)",
+      status: STATUSES[t.status] ? t.status : "todo", // fix invalid status
       createdAt: t.createdAt || t.deadline || new Date().toISOString().split("T")[0],
       notes: Array.isArray(t.notes) ? t.notes
-        : t.notes ? [{ id: Date.now() + Math.random(), text: t.notes, status: "pending", priority: "normal" }]
+        : t.notes ? [{ id: uid(), text: t.notes, status: "pending", priority: "normal" }]
         : [],
     }));
   });
@@ -157,6 +163,8 @@ export function AppProvider({ children, userId }) {
   useEffect(() => {
     if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
+    // BLOCK save if data was recently cleared
+    if (isDataCleared(userId)) return;
     saveJSON("tasks", allTasks);
     // Push to cloud — but suppress during/after poll to prevent stale data overwriting
     if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
@@ -167,32 +175,83 @@ export function AppProvider({ children, userId }) {
       scheduleSyncDebounced(null, userId, "tasks", cloudTasks);
     }
 
-    // Cross-user sync: copy assigned project tasks to assignee's localStorage + cloud
+    // Cross-user sync: copy assigned/project tasks to members' localStorage + cloud
+    // ALSO sync tasks with pending deleteRequest to director for approval
     const DEV_NAME_TO_ID = {
       "Nguyen Duy Trinh": "trinh", "Lientran": "lien", "Pham Van Hung": "hung",
       "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
     };
+    const DIRECTOR_ID = "trinh";
     const currentPrefix = userKey("");
-    // Group tasks by assignee for cloud sync
+
+    // Build project→members map from current projects state (read from localStorage if projects not yet available)
+    const projMemberMap = {};
+    try {
+      const currentProjects = JSON.parse(localStorage.getItem(userKey("projects")) || "[]");
+      currentProjects.forEach(proj => {
+        if (!proj.members?.length) return;
+        projMemberMap[proj.id] = proj.members.map(m => DEV_NAME_TO_ID[m.name]).filter(Boolean);
+      });
+    } catch {}
+
+    // Group tasks by target user for cloud sync
     const tasksByAssignee = {};
-    allTasks.filter(t => t.assignee && !t.deleted).forEach(t => {
-      const targetId = DEV_NAME_TO_ID[t.assignee];
-      if (!targetId) return;
+
+    // Helper: sync a task to a specific target user's localStorage
+    const syncTaskToLocal = (targetId, syncTask) => {
       const targetKey = `wf_${targetId}_tasks`;
       if (targetKey === currentPrefix + "tasks") return;
-      // localStorage sync (same device)
-      if (cloudPullDoneRef.current) {
-        try {
-          const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
-          const idx = existing.findIndex(e => e.id === t.id);
-          if (idx >= 0) { existing[idx] = { ...existing[idx], ...t }; }
-          else { existing.push(t); }
-          localStorage.setItem(targetKey, JSON.stringify(existing));
-        } catch {}
+      if (isDataCleared(targetId)) return;
+      if (!cloudPullDoneRef.current) return;
+      try {
+        const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
+        const idx = existing.findIndex(e => e.id === syncTask.id);
+        if (idx >= 0) {
+          const localTime = existing[idx].updatedAt ? new Date(existing[idx].updatedAt).getTime() : 0;
+          const srcTime = syncTask.updatedAt ? new Date(syncTask.updatedAt).getTime() : 0;
+          if (srcTime >= localTime) existing[idx] = { ...existing[idx], ...syncTask };
+        } else {
+          existing.push(syncTask);
+        }
+        localStorage.setItem(targetKey, JSON.stringify(existing));
+      } catch (e) { console.warn("[WF] Cross-user task sync:", e.message); }
+    };
+
+    allTasks.filter(t => !t.deleted).forEach(t => {
+      // 1. Assigned tasks → sync to assignee
+      if (t.assignee) {
+        const targetId = DEV_NAME_TO_ID[t.assignee];
+        if (targetId) {
+          syncTaskToLocal(targetId, t);
+          const syncName = t.assignee;
+          if (!tasksByAssignee[syncName]) tasksByAssignee[syncName] = [];
+          tasksByAssignee[syncName].push(t);
+        }
       }
-      // Collect for cloud sync
-      if (!tasksByAssignee[t.assignee]) tasksByAssignee[t.assignee] = [];
-      tasksByAssignee[t.assignee].push(t);
+      // 2. Project tasks → sync to ALL project members (not just assignee)
+      if (t.projectId && projMemberMap[t.projectId]) {
+        const members = projMemberMap[t.projectId];
+        members.forEach(targetId => {
+          if (targetId === userId) return;
+          syncTaskToLocal(targetId, t);
+          // Also collect for cloud sync
+          const syncName = Object.entries(DEV_NAME_TO_ID).find(([,v]) => v === targetId)?.[0];
+          if (syncName) {
+            if (!tasksByAssignee[syncName]) tasksByAssignee[syncName] = [];
+            // Avoid duplicates (task might be both assigned + in project)
+            if (!tasksByAssignee[syncName].some(existing => existing.id === t.id)) {
+              tasksByAssignee[syncName].push(t);
+            }
+          }
+        });
+      }
+      // 3. Delete request sync: staff tasks with pending deleteRequest → sync to director
+      if (t.deleteRequest?.status === "pending" && userId !== DIRECTOR_ID && !t.assignee && !t.projectId) {
+        const syncTask = { ...t, _sourceUserId: userId };
+        syncTaskToLocal(DIRECTOR_ID, syncTask);
+        if (!tasksByAssignee["Nguyen Duy Trinh"]) tasksByAssignee["Nguyen Duy Trinh"] = [];
+        tasksByAssignee["Nguyen Duy Trinh"].push(t);
+      }
     });
     // Store tasksByAssignee for cloud sync in separate effect (after projects is declared)
     crossUserTasksRef.current = tasksByAssignee;
@@ -209,6 +268,11 @@ export function AppProvider({ children, userId }) {
 
   // Reusable pull function — used for initial load + periodic polling
   const pullFromCloud = useCallback(async (isInitial = false) => {
+    // BLOCK pull if data was just cleared (prevents cloud restoring deleted data)
+    if (isDataCleared(userId)) {
+      console.info("[WF] Pull blocked — data recently cleared for", userId);
+      return;
+    }
     // Suppress save effects from pushing during poll (prevents stale data overwriting)
     if (!isInitial) suppressPushRef.current = true;
     let localTasks = loadJSON("tasks", []);
@@ -233,6 +297,11 @@ export function AppProvider({ children, userId }) {
               }
               if (row.key === "memory" && row.data) { setMemory(row.data); saveJSON("memory", row.data); }
               if (row.key === "wory_knowledge" && row.data) { setKnowledge(row.data); saveJSON("wory_knowledge", row.data); }
+            }
+            // Merge deleted_projects from cloud (any time, not just initial)
+            if (row.key === "deleted_projects" && Array.isArray(row.data)) {
+              row.data.forEach(id => deletedProjectIdsRef.current.add(id));
+              try { localStorage.setItem(userKey("deleted_projects"), JSON.stringify([...deletedProjectIdsRef.current])); } catch {}
             }
             continue;
           }
@@ -278,14 +347,18 @@ export function AppProvider({ children, userId }) {
               for (const ct of cleanCloud) {
                 const li = localTasks.findIndex(t => t.id === ct.id);
                 if (li >= 0) {
+                  const local = localTasks[li];
                   // If local says deleted, keep deleted state (don't let cloud restore)
                   if (localDeletedIds.has(ct.id)) {
-                    localTasks[li] = { ...localTasks[li], ...ct, deleted: true, deletedAt: localTasks[li].deletedAt };
+                    localTasks[li] = { ...local, ...ct, deleted: true, deletedAt: local.deletedAt };
                   } else if (ct.deleted) {
                     // Cloud says deleted — respect it
-                    localTasks[li] = { ...localTasks[li], ...ct };
+                    localTasks[li] = { ...local, ...ct };
                   } else {
-                    localTasks[li] = { ...localTasks[li], ...ct };
+                    // LAST-WRITE-WINS: compare updatedAt, keep the newer version
+                    const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+                    const cloudTime = ct.updatedAt ? new Date(ct.updatedAt).getTime() : 0;
+                    localTasks[li] = cloudTime >= localTime ? { ...local, ...ct } : { ...ct, ...local };
                   }
                 } else if (!localDeletedIds.has(ct.id)) {
                   localTasks.push(ct);
@@ -322,24 +395,32 @@ export function AppProvider({ children, userId }) {
           if (row.key === "expenses" && isInitial) {
             if (localExpenses.length === 0) {
               localExpenses = row.data;
-              row.data.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
-              saveJSON("expenses", localExpenses);
             } else {
-              const localIds = new Set(localExpenses.map(e => e.id));
-              const newItems = row.data.filter(e => !localIds.has(e.id));
-              if (newItems.length > 0) {
-                localExpenses = [...localExpenses, ...newItems];
-                newItems.forEach(e => expenseDispatch({ type: "EXP_ADD", item: e }));
+              // Merge: last-write-wins by updatedAt, add new items
+              const localMap = new Map(localExpenses.map(e => [e.id, e]));
+              for (const ce of row.data) {
+                const le = localMap.get(ce.id);
+                if (le) {
+                  const lt = le.updatedAt ? new Date(le.updatedAt).getTime() : 0;
+                  const ct = ce.updatedAt ? new Date(ce.updatedAt).getTime() : 0;
+                  if (ct > lt) localMap.set(ce.id, ce);
+                } else {
+                  localMap.set(ce.id, ce);
+                }
               }
+              localExpenses = [...localMap.values()];
             }
+            expenseDispatch({ type: "EXP_LOAD", items: localExpenses });
+            saveJSON("expenses", localExpenses);
           }
         }
       }
     } catch (e) { console.warn("Cloud pull failed:", e); }
 
-    // Unsuppress push after poll — delay to let React process dispatches first
+    // Unsuppress push after poll — use microtask to wait for React to process dispatches
     if (!isInitial) {
-      setTimeout(() => { suppressPushRef.current = false; }, 3000);
+      // Wait for React to flush state updates from LOAD dispatches, then unsuppress
+      requestAnimationFrame(() => { suppressPushRef.current = false; });
     }
 
     // On initial load: mark done + push merged data up (only if local had extra data to merge)
@@ -361,11 +442,32 @@ export function AppProvider({ children, userId }) {
     cloudLoadedRef.current = true;
     pullFromCloud(true);
 
-    // Poll for new data every 30s (projects + tasks only)
+    // Poll for new data every 10s (projects + tasks only) — faster sync for collaboration
     const pollInterval = setInterval(() => {
       if (cloudPullDoneRef.current) pullFromCloud(false);
-    }, 30000);
-    return () => clearInterval(pollInterval);
+    }, 10000);
+
+    // Realtime: subscribe to user_data changes for instant sync (when another user pushes to our cloud)
+    let realtimeChannel = null;
+    if (supabase) {
+      realtimeChannel = supabase
+        .channel(`user-data-${userId}`)
+        .on("postgres_changes", {
+          event: "*",
+          schema: "public",
+          table: "user_data",
+          filter: `user_id=eq.${cloudId}`,
+        }, () => {
+          // Another user pushed data to our cloud → pull immediately
+          if (cloudPullDoneRef.current) pullFromCloud(false);
+        })
+        .subscribe();
+    }
+
+    return () => {
+      clearInterval(pollInterval);
+      if (realtimeChannel && supabase) supabase.removeChannel(realtimeChannel);
+    };
   }, [cloudId, userId, pullFromCloud]);
 
   // --- Expenses (standalone ledger) ---
@@ -374,6 +476,8 @@ export function AppProvider({ children, userId }) {
   useEffect(() => {
     if (!expLoadedRef.current) { expLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
+    // BLOCK save if data was recently cleared
+    if (isDataCleared(userId)) return;
     saveJSON("expenses", expenses);
     if (cloudId && cloudPullDoneRef.current) {
       scheduleSyncDebounced(null, userId, "expenses", expenses);
@@ -387,6 +491,8 @@ export function AppProvider({ children, userId }) {
   useEffect(() => {
     if (!projLoadedRef.current) { projLoadedRef.current = true; return; }
     if (!userKey("").startsWith("wf_")) return;
+    // BLOCK save if data was recently cleared
+    if (isDataCleared(userId)) return;
     saveJSON("projects", projects);
     if (cloudId && cloudPullDoneRef.current && !suppressPushRef.current) {
       scheduleSyncDebounced(null, userId, "projects", projects);
@@ -404,17 +510,21 @@ export function AppProvider({ children, userId }) {
         proj.members.forEach(m => {
           const devId = DEV_NAME_MAP[m.name];
           if (!devId || `wf_${devId}_` === currentPrefix) return;
+          if (isDataCleared(devId)) return;
           const targetKey = `wf_${devId}_projects`;
           try {
             const existing = JSON.parse(localStorage.getItem(targetKey) || "[]");
             const idx = existing.findIndex(e => e.id === proj.id);
             if (idx >= 0) {
-              existing[idx] = { ...existing[idx], ...proj };
+              // Last-write-wins
+              const existTime = existing[idx].updatedAt ? new Date(existing[idx].updatedAt).getTime() : 0;
+              const srcTime = proj.updatedAt ? new Date(proj.updatedAt).getTime() : 0;
+              if (srcTime >= existTime) existing[idx] = { ...existing[idx], ...proj };
             } else {
               existing.push(proj);
             }
             localStorage.setItem(targetKey, JSON.stringify(existing));
-          } catch {}
+          } catch (e) { console.warn("[WF] Cross-user project sync:", e.message); }
         });
       });
     }
@@ -467,7 +577,9 @@ export function AppProvider({ children, userId }) {
         });
 
         // Sync all members in parallel — load both keys at once per member
-        await Promise.all([...memberTargets].map(async (localId) => {
+        // Filter out members whose data was recently cleared
+        const activeTargets = [...memberTargets].filter(lid => !isDataCleared(lid));
+        await Promise.all(activeTargets.map(async (localId) => {
           const memberName = Object.entries(DEV_NAME_TO_LOCAL_ID).find(([,v]) => v === localId)?.[0];
           const memberProjs = projects.filter(p =>
             p.members?.some(m => m.name === memberName || DEV_NAME_TO_LOCAL_ID[m.name] === localId)
@@ -492,7 +604,12 @@ export function AppProvider({ children, userId }) {
             let mP = [...cP];
             for (const pr of memberProjs) {
               const i = mP.findIndex(e => e.id === pr.id);
-              if (i >= 0) mP[i] = { ...mP[i], ...pr };
+              if (i >= 0) {
+                // Last-write-wins
+                const existTime = mP[i].updatedAt ? new Date(mP[i].updatedAt).getTime() : 0;
+                const srcTime = pr.updatedAt ? new Date(pr.updatedAt).getTime() : 0;
+                if (srcTime >= existTime) mP[i] = { ...mP[i], ...pr };
+              }
               else mP.push(pr);
             }
             saves.push(cloudSave(null, localId, "projects", mP));
@@ -502,7 +619,11 @@ export function AppProvider({ children, userId }) {
             let mT = [...cT];
             for (const t of allSyncTasks) {
               const i = mT.findIndex(e => e.id === t.id);
-              if (i >= 0) mT[i] = { ...mT[i], ...t };
+              if (i >= 0) {
+                const existTime = mT[i].updatedAt ? new Date(mT[i].updatedAt).getTime() : 0;
+                const srcTime = t.updatedAt ? new Date(t.updatedAt).getTime() : 0;
+                if (srcTime >= existTime) mT[i] = { ...mT[i], ...t };
+              }
               else mT.push(t);
             }
             saves.push(cloudSave(null, localId, "tasks", mT));
@@ -519,12 +640,15 @@ export function AppProvider({ children, userId }) {
     projDispatch({ type: "PROJ_DELETE", id });
     // Track deleted project ID to prevent cloud restore
     deletedProjectIdsRef.current.add(id);
-    try { localStorage.setItem(userKey("deleted_projects"), JSON.stringify([...deletedProjectIdsRef.current])); } catch {}
-    // Immediately push updated projects to own cloud (bypass debounce)
+    const deletedList = [...deletedProjectIdsRef.current];
+    try { localStorage.setItem(userKey("deleted_projects"), JSON.stringify(deletedList)); } catch {}
+    // Immediately push updated projects + deleted list to cloud (bypass debounce)
     if (cloudId && cloudPullDoneRef.current) {
       const updated = loadJSON("projects", []).filter(p => p.id !== id);
       saveJSON("projects", updated);
       cloudSave(null, userId, "projects", updated);
+      // Also sync deleted_projects list to cloud so other devices know
+      cloudSave(null, userId, "deleted_projects", deletedList);
     }
   }, [cloudId, userId]);
 
@@ -612,7 +736,7 @@ export function AppProvider({ children, userId }) {
         const newEntries = preset.woryKnowledge
           .filter(k => !existing.some(e => e.content === k.content))
           .map(k => ({
-            id: Date.now() + Math.random(),
+            id: uid(),
             content: k.content,
             category: k.category,
             source: "industry_preset",
@@ -625,8 +749,8 @@ export function AppProvider({ children, userId }) {
         return next;
       });
     }
-    // Sample tasks only on first setup
-    if (isFirstTime && preset.sampleTasks?.length) {
+    // Sample tasks only on first setup — skip if data was just cleared
+    if (isFirstTime && preset.sampleTasks?.length && !isDataCleared(userId)) {
       preset.sampleTasks.forEach(st => {
         dispatch({ type: "ADD", task: { title: st.title, priority: st.priority || "none", source: "industry_preset" } });
       });
@@ -639,14 +763,31 @@ export function AppProvider({ children, userId }) {
 
   // --- Task actions ---
   const addTask = useCallback((taskData) => {
+    // Clear "just cleared" flag — user is working again
+    clearDataClearedFlag(userId);
     dispatch({ type: "ADD", task: taskData });
     log("add", taskData.title || "Cong viec moi");
-  }, [log]);
+  }, [log, userId]);
 
   const deleteTask = useCallback((id) => {
+    clearDataClearedFlag(userId);
     const t = allTasks.find(x => x.id === id);
     dispatch({ type: "SOFT_DELETE", id });
     log("delete", t?.title || "?");
+
+    // If director approves a deleteRequest from another user, sync deletion back to source
+    if (t?._sourceUserId && t._sourceUserId !== userId) {
+      try {
+        const srcKey = `wf_${t._sourceUserId}_tasks`;
+        const srcTasks = JSON.parse(localStorage.getItem(srcKey) || "[]");
+        const updated = srcTasks.map(st =>
+          st.id === id ? { ...st, deleted: true, deletedAt: Date.now(), updatedAt: new Date().toISOString() } : st
+        );
+        localStorage.setItem(srcKey, JSON.stringify(updated));
+        // Also sync to cloud
+        cloudSave(null, t._sourceUserId, "tasks", updated).catch(() => {});
+      } catch (e) { console.warn("[WF] Reverse delete sync:", e.message); }
+    }
 
     // Show undo toast
     clearTimeout(undoTimerRef.current);
@@ -666,11 +807,25 @@ export function AppProvider({ children, userId }) {
   }, []);
 
   const patchTask = useCallback((id, data) => {
+    clearDataClearedFlag(userId);
     dispatch({ type: "PATCH", id, data });
     const t = allTasks.find(x => x.id === id);
     if (data.status) log("status", t?.title || "?", STATUSES[data.status]?.label || data.status);
     if (data.timerState) log("timer", t?.title || "?", data.timerState === "running" ? "Bắt đầu" : data.timerState === "paused" ? "Tạm dừng" : "Hoàn thành");
-  }, [allTasks, log]);
+
+    // If director rejects deleteRequest, sync back to source user
+    if (data.deleteRequest === null && t?._sourceUserId && t._sourceUserId !== userId) {
+      try {
+        const srcKey = `wf_${t._sourceUserId}_tasks`;
+        const srcTasks = JSON.parse(localStorage.getItem(srcKey) || "[]");
+        const updated = srcTasks.map(st =>
+          st.id === id ? { ...st, deleteRequest: null, updatedAt: new Date().toISOString() } : st
+        );
+        localStorage.setItem(srcKey, JSON.stringify(updated));
+        cloudSave(null, t._sourceUserId, "tasks", updated).catch(() => {});
+      } catch (e) { console.warn("[WF] Reverse reject sync:", e.message); }
+    }
+  }, [allTasks, log, userId]);
 
   // Timer actions
   const timerStart = useCallback((id) => {

@@ -437,12 +437,13 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
 /* -- AI input bar -- */
 .ai-input-bar {
   position: fixed;
-  bottom: 68px;
+  bottom: 76px; /* above navbar (~70px + safe gap) */
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
   max-width: 480px;
   background: #ffffff;
   border-top: 1px solid #e8e5de;
-  z-index: 50;
+  z-index: 51;
+  padding-bottom: env(safe-area-inset-bottom);
 }

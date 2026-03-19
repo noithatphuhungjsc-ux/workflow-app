@@ -9,7 +9,7 @@ import { CHANGELOG } from "../changelog";
 import IndustrySetupModal from "./IndustrySetupModal";
 import StaffManagement from "./StaffManagement";
 import { useStore, useSettings } from "../store";
-import { hashPassword, loadAccounts, saveAccounts, maskPhone, exportAllData, importData, clearAllData, saveJSON, loadJSON, encryptToken, decryptToken, sendBackupEmail, saveKnowledgeProfile, addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry, approveKnowledgeEntry, approveAllPending, cloudSaveAll, cloudLoadAll } from "../services";
+import { hashPassword, loadAccounts, saveAccounts, maskPhone, exportAllData, importData, clearAllData, clearAllDataWithCloud, clearAllSystemData, saveJSON, loadJSON, encryptToken, decryptToken, sendBackupEmail, saveKnowledgeProfile, addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry, approveKnowledgeEntry, approveAllPending, cloudSaveAll, cloudLoadAll } from "../services";
 import { useSupabase } from "../contexts/SupabaseContext";
 
 const TABS = [
@@ -39,6 +39,7 @@ export default function SettingsModal({ user, onClose }) {
   const [accounts, setAcct] = useState(loadAccounts);
   const [syncing, setSyncing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const isDirector = settings.userRole === "director" || ["dev","manager"].includes(settings.userRole);
 
   useEffect(() => {
     (async () => {
@@ -115,15 +116,57 @@ export default function SettingsModal({ user, onClose }) {
     e.target.value = "";
   };
 
+  const [clearing, setClearing] = useState(false);
+
+  // Helper: xóa chat data qua server API (dùng service role key, bypass RLS)
+  const clearChatViaAPI = async (mode, targetUserId) => {
+    try {
+      await fetch("/api/clear-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, userId: targetUserId }),
+      });
+    } catch (e) { console.warn("[WF] Clear chat API:", e.message); }
+  };
+
+  // Xóa dữ liệu CÁ NHÂN (1 user)
   const handleClearData = async () => {
-    if (!confirm("Bạn chắc chắn muốn xóa TOÀN BỘ dữ liệu?")) return;
+    if (!confirm("Xóa dữ liệu CÁ NHÂN của bạn (local + cloud + chat)?")) return;
     const pw = prompt("Nhập mật khẩu để xác nhận:");
     if (!pw) return;
     const h = await hashPassword(pw);
     if (h !== myAcc?.pwHash) { showMsg("Sai mật khẩu.", "error"); return; }
-    clearAllData();
-    showMsg("Đã xóa toàn bộ. Đang tải lại...");
-    setTimeout(() => window.location.reload(), 1500);
+    setClearing(true);
+    try {
+      const supaId = session?.user?.id;
+      await Promise.all([
+        clearAllDataWithCloud(userId),
+        supaId ? clearChatViaAPI("personal", supaId) : Promise.resolve(),
+      ]);
+    } catch {
+      clearAllData();
+    }
+    window.location.reload();
+  };
+
+  // Xóa TOÀN BỘ HỆ THỐNG (tất cả user — chỉ director)
+  const handleClearAllSystem = async () => {
+    if (!confirm("XÓA TOÀN BỘ DỮ LIỆU HỆ THỐNG?\nTất cả nhân viên sẽ mất dữ liệu!")) return;
+    if (!confirm("Xác nhận lần 2: KHÔNG THỂ HOÀN TÁC!")) return;
+    const pw = prompt("Nhập mật khẩu giám đốc:");
+    if (!pw) return;
+    const h = await hashPassword(pw);
+    if (h !== myAcc?.pwHash) { showMsg("Sai mật khẩu.", "error"); return; }
+    setClearing(true);
+    try {
+      await Promise.all([
+        clearAllSystemData(),
+        clearChatViaAPI("system"),
+      ]);
+    } catch (e) {
+      console.error("[WF] System clear failed:", e);
+    }
+    window.location.reload();
   };
 
   /* === Helpers === */
@@ -630,7 +673,9 @@ export default function SettingsModal({ user, onClose }) {
                 const h = await hashPassword(pw);
                 if (h !== myAcc?.pwHash) { showMsg("Sai mật khẩu.", "error"); return; }
                 saveJSON("chat_history", []); saveJSON("chat_archives", []);
+                saveJSON("chat_started", Date.now());
                 showMsg("Đã xóa lịch sử chat.");
+                setTimeout(() => window.location.reload(), 500);
               }} style={{ width:"100%", background:C.redD, border:`1px solid ${C.red}44`, borderRadius:12, padding:"12px", fontSize:13, color:C.red, fontWeight:600, marginBottom:8 }}>
                 Xóa lịch sử chat
               </button>
@@ -644,10 +689,16 @@ export default function SettingsModal({ user, onClose }) {
               }} style={{ width:"100%", background:C.redD, border:`1px solid ${C.red}44`, borderRadius:12, padding:"12px", fontSize:13, color:C.red, fontWeight:600, marginBottom:8 }}>
                 Xóa ghi nhớ AI
               </button>
-              <button className="tap" onClick={handleClearData}
-                style={{ width:"100%", background:C.red, border:"none", borderRadius:12, padding:"14px", fontSize:14, color:"#fff", fontWeight:700 }}>
-                XÓA TOÀN BỘ DỮ LIỆU
+              <button className="tap" disabled={clearing} onClick={handleClearData}
+                style={{ width:"100%", background:"#c0392b", border:"none", borderRadius:12, padding:"14px", fontSize:13, color:"#fff", fontWeight:700, opacity: clearing ? 0.6 : 1, marginBottom:8 }}>
+                {clearing ? "Dang xoa..." : "Xoa du lieu CA NHAN (Local + Cloud)"}
               </button>
+              {isDirector && (
+                <button className="tap" disabled={clearing} onClick={handleClearAllSystem}
+                  style={{ width:"100%", background:"#7f1d1d", border:"none", borderRadius:12, padding:"14px", fontSize:13, color:"#fff", fontWeight:700, opacity: clearing ? 0.6 : 1 }}>
+                  {clearing ? "Dang xoa he thong..." : "XOA TOAN BO HE THONG (Tat ca nhan vien)"}
+                </button>
+              )}
             </div>
           </>)}
 

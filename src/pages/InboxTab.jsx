@@ -18,7 +18,7 @@ const SOURCES = [
   { id: "instagram", label: "Instagram", icon: "📸", color: "#e1306c" },
 ];
 
-export default function InboxTab({ tasks, projects, patchTask, settings, user, addTask, openConvId }) {
+export default function InboxTab({ tasks, projects, patchTask, patchProject, settings, user, addTask, openConvId }) {
   const [subTab, setSubTab] = useState("email"); // email | summary | actions
   const [sourceFilter, setSourceFilter] = useState("all");
   const [emails, setEmails] = useState(() => loadJSON("gmail_emails", null));
@@ -225,7 +225,7 @@ Nếu email nào cần hành động, gợi ý CỤ THỂ:
       {/* Chat sub-tab */}
       {mainTab === "chat" && (
         <div style={{ flex: 1, overflow: "hidden" }}>
-          <ChatTab openConvId={openConvId} projects={projects} tasks={tasks} patchTask={patchTask} addTask={addTask} />
+          <ChatTab openConvId={openConvId} projects={projects} tasks={tasks} patchTask={patchTask} patchProject={patchProject} addTask={addTask} />
         </div>
       )}
 

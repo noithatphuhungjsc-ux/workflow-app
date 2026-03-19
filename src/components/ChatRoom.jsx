@@ -10,10 +10,9 @@ const PIN_MSG_KEY = (convId) => `wf_pinned_msgs_${convId}`;
 const getPinnedMsgs = (convId) => { try { return JSON.parse(localStorage.getItem(PIN_MSG_KEY(convId)) || "[]"); } catch { return []; } };
 const setPinnedMsgsStore = (convId, ids) => localStorage.setItem(PIN_MSG_KEY(convId), JSON.stringify(ids));
 
-export default function ChatRoom({ conversationId, userId, convName, convType = "dm", profiles, onBack, linkedProject, projectTasks = [], patchTask, addTask }) {
+export default function ChatRoom({ conversationId, userId, convName, convType = "dm", profiles, onBack, linkedProject, projectTasks = [], patchTask, addTask, patchProject, isSubThread, parentConvName, parentProjectMemberList }) {
   const { messages, loading, sendMessage, deleteMessage, otherTyping, setTyping, otherLastRead } = useChat(conversationId, userId);
   const [callState, setCallState] = useState(null);
-  // showTaskPanel removed — task management stays in tab Việc
   const [text, setText] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [pinnedMsgs, setPinnedMsgs] = useState(() => getPinnedMsgs(conversationId));
@@ -22,6 +21,12 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [showThreads, setShowThreads] = useState(false);
+  const [activeThread, setActiveThread] = useState(null); // {convId, name}
+  const [newThreadName, setNewThreadName] = useState("");
+  const [creatingThread, setCreatingThread] = useState(false);
+  const [threadMembers, setThreadMembers] = useState([]); // selected supaIds for new thread
+  const [showMemberMgmt, setShowMemberMgmt] = useState(false); // sub-thread member management
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -31,6 +36,125 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+
+  /* ─── SUB-THREADS: 100% Supabase, zero dependency on linkedProject ─── */
+
+  // 1) Load sub-threads from Supabase — any group chat can have threads
+  const [subChats, setSubChats] = useState([]);
+  useEffect(() => {
+    if (!supabase || !conversationId || isSubThread) return;
+    supabase.from("conversations").select("id, name, created_at")
+      .like("name", `[sub:${conversationId}]%`)
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) { console.warn("[WF] load sub-threads:", error); return; }
+        setSubChats((data || []).map(c => ({
+          convId: c.id,
+          name: c.name.replace(`[sub:${conversationId}]`, ""),
+          createdAt: c.created_at,
+        })));
+      });
+  }, [conversationId, isSubThread]);
+
+  // 2) Load ALL members of THIS conversation (for picker when creating thread)
+  const [chatMembers, setChatMembers] = useState([]); // [{supaId, name, color}]
+  useEffect(() => {
+    if (!supabase || !userId || !conversationId) return;
+    supabase.from("conversation_members").select("user_id").eq("conversation_id", conversationId)
+      .then(({ data }) => {
+        if (!data) return;
+        const others = data.map(d => d.user_id).filter(id => id !== userId);
+        setChatMembers(others.map(uid => {
+          const p = (profiles || []).find(pr => pr.id === uid);
+          return { supaId: uid, name: p?.display_name || uid.slice(0, 6), color: p?.avatar_color || C.accent };
+        }));
+      });
+  }, [conversationId, userId, profiles]);
+
+  // 3) For sub-thread: load current members + available from parent
+  const [threadCurrentMembers, setThreadCurrentMembers] = useState([]);
+  useEffect(() => {
+    if (!isSubThread || !supabase || !conversationId) return;
+    supabase.from("conversation_members").select("user_id").eq("conversation_id", conversationId)
+      .then(({ data }) => { if (data) setThreadCurrentMembers(data.map(d => d.user_id)); });
+  }, [isSubThread, conversationId]);
+
+  // parentProjectMemberList comes from parent ChatRoom's chatMembers
+  const availableForThread = (() => {
+    if (!isSubThread) return [];
+    const src = parentProjectMemberList?.length > 0
+      ? parentProjectMemberList
+      : (profiles || []).filter(p => p.id !== userId).map(p => ({ supaId: p.id, name: p.display_name || "?", color: p.avatar_color }));
+    return src.filter(m => !threadCurrentMembers.includes(m.supaId));
+  })();
+
+  // 4) Toggle member selection when creating new thread
+  const toggleThreadMember = (supaId) => {
+    setThreadMembers(prev => prev.includes(supaId) ? prev.filter(id => id !== supaId) : [...prev, supaId]);
+  };
+
+  // 5) Create sub-thread
+  const createSubThread = async () => {
+    const name = newThreadName.trim();
+    if (!name || !supabase || !userId || creatingThread) return;
+    setCreatingThread(true);
+    try {
+      const chatName = `[sub:${conversationId}]${name}`;
+      const { data: conv, error } = await supabase.from("conversations")
+        .insert({ type: "group", name: chatName, created_by: userId })
+        .select().single();
+      if (error) { console.error("[WF] create sub-thread conv:", error); setCreatingThread(false); return; }
+
+      // Add creator + selected (or all) members
+      const addedIds = threadMembers.length > 0 ? threadMembers : chatMembers.map(m => m.supaId);
+      const memberInserts = [{ conversation_id: conv.id, user_id: userId }];
+      addedIds.forEach(uid => { if (uid !== userId) memberInserts.push({ conversation_id: conv.id, user_id: uid }); });
+      const { error: memErr } = await supabase.from("conversation_members").insert(memberInserts);
+      if (memErr) console.warn("[WF] insert sub-thread members:", memErr);
+
+      // Names for system message
+      const addedNames = addedIds.map(uid => {
+        const p = (profiles || []).find(pr => pr.id === uid);
+        return p?.display_name || "";
+      }).filter(Boolean);
+
+      // System messages
+      await supabase.from("messages").insert({
+        conversation_id: conv.id, sender_id: userId,
+        content: `📑 Chủ đề "${name}" — ${addedNames.length > 0 ? addedNames.join(", ") : "tất cả thành viên"}`,
+        type: "system",
+      });
+      await sendMessage(`📑 Đã tạo chủ đề mới: "${name}"`, "system");
+
+      // Update state immediately
+      setSubChats(prev => [...prev, { convId: conv.id, name, createdAt: new Date().toISOString() }]);
+      setNewThreadName("");
+      setThreadMembers([]);
+      setActiveThread({ convId: conv.id, name });
+      setShowThreads(false);
+    } catch (e) { console.error("[WF] createSubThread:", e); }
+    setCreatingThread(false);
+  };
+
+  // 6) Add/remove member from current sub-thread
+  const addThreadMember = async (supaId) => {
+    if (!supabase || !conversationId || !supaId) return;
+    const { error } = await supabase.from("conversation_members").insert({ conversation_id: conversationId, user_id: supaId });
+    if (error) { console.warn("[WF] addThreadMember:", error); return; }
+    const p = (profiles || []).find(pr => pr.id === supaId);
+    await sendMessage(`👤 ${p?.display_name || "?"} đã được thêm vào chủ đề`, "system");
+    setThreadCurrentMembers(prev => [...prev, supaId]);
+  };
+
+  const removeThreadMember = async (supaId) => {
+    if (!supabase || !conversationId || !supaId || supaId === userId) return;
+    const { error } = await supabase.from("conversation_members").delete()
+      .eq("conversation_id", conversationId).eq("user_id", supaId);
+    if (error) { console.warn("[WF] removeThreadMember:", error); return; }
+    const p = (profiles || []).find(pr => pr.id === supaId);
+    await sendMessage(`👤 ${p?.display_name || "?"} đã rời khỏi chủ đề`, "system");
+    setThreadCurrentMembers(prev => prev.filter(id => id !== supaId));
+  };
 
   useEffect(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -322,12 +446,30 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {convName || "Trò chuyện"}
+            {isSubThread ? `📑 ${convName}` : (convName || "Trò chuyện")}
           </div>
-          <div style={{ fontSize: 10, fontWeight: 500, color: otherTyping ? C.accent : C.green }}>
-            {otherTyping ? "Đang nhập..." : "Đang hoạt động"}
+          <div style={{ fontSize: 10, fontWeight: 500, color: isSubThread ? C.muted : (otherTyping ? C.accent : C.green) }}>
+            {isSubThread ? `← ${parentConvName} · ${threadCurrentMembers.length} thành viên` : (otherTyping ? "Đang nhập..." : "Đang hoạt động")}
           </div>
         </div>
+        {isSubThread && (
+          <button className="tap" onClick={() => setShowMemberMgmt(true)}
+            style={{ position:"relative", background:"none", border:"none", width:36, height:36, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, color:C.accent }}>
+            👥
+            <span style={{ position:"absolute", top:2, right:1, background:C.accent, color:"#fff", fontSize:8, fontWeight:700, borderRadius:8, minWidth:14, height:14, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 2px" }}>
+              {threadCurrentMembers.length}
+            </span>
+          </button>
+        )}
+        {convType === "group" && !isSubThread && (
+          <button className="tap" onClick={() => setShowThreads(true)}
+            style={{ position:"relative", background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: linkedProject?.color || C.accent }}>
+            📑
+            {subChats.length > 0 && (
+              <span style={{ position:"absolute", top:2, right:2, background:C.accent, color:"#fff", fontSize:8, fontWeight:700, borderRadius:8, minWidth:14, height:14, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 2px" }}>{subChats.length}</span>
+            )}
+          </button>
+        )}
         {(linkedProject || convType === "group") && (
           <button className="tap" onClick={() => setShowProjectInfo(true)}
             style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: linkedProject?.color || C.accent }}>
@@ -644,16 +786,212 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
           profiles={mergedProfiles}
           userId={userId}
           linkedProject={linkedProject}
-          projectTasks={projectTasks}
-          addTask={addTask}
-          patchTask={patchTask}
           onClose={() => setShowProjectInfo(false)}
+        />
+      )}
+
+      {/* ── Sub-thread panel (slide from right) ── */}
+      {showThreads && convType === "group" && (
+        <div onClick={() => setShowThreads(false)} style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,.5)" }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            position:"absolute", top:0, bottom:0, right:0, width:"85%", maxWidth:360,
+            background:C.surface, display:"flex", flexDirection:"column",
+            animation:"slideLeft .2s ease-out", boxShadow:"-4px 0 20px rgba(0,0,0,.15)",
+          }}>
+            {/* Panel header */}
+            <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
+              <button className="tap" onClick={() => setShowThreads(false)} style={{ background:"none", border:"none", fontSize:20, color:C.muted, padding:2 }}>✕</button>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:15, fontWeight:700, color:C.text }}>📑 Chủ đề</div>
+                <div style={{ fontSize:11, color:C.muted }}>{linkedProject?.name || convName}</div>
+              </div>
+            </div>
+
+            {/* Thread list */}
+            <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
+              {subChats.length === 0 && (
+                <div style={{ textAlign:"center", padding:"30px 16px", color:C.muted }}>
+                  <div style={{ fontSize:32, marginBottom:8 }}>📑</div>
+                  <div style={{ fontSize:13, fontWeight:600 }}>Chưa có chủ đề nào</div>
+                  <div style={{ fontSize:11, marginTop:4 }}>Tạo chủ đề để bàn chuyên sâu về từng vấn đề</div>
+                </div>
+              )}
+              {subChats.map(sc => {
+                const memberCount = chatMembers.length + 1; // +1 for self
+                return (
+                  <div key={sc.convId} className="tap" onClick={() => { setActiveThread(sc); setShowThreads(false); }}
+                    style={{
+                      display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
+                      background:C.card, borderRadius:12, border:`1px solid ${C.border}`, marginBottom:8, cursor:"pointer",
+                    }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:`${linkedProject?.color || C.accent}12`,
+                      display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>💬</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sc.name}</div>
+                      <div style={{ fontSize:10, color:C.muted }}>
+                        {memberCount} thành viên · {sc.createdAt ? new Date(sc.createdAt).toLocaleDateString("vi-VN") : ""}
+                      </div>
+                    </div>
+                    <span style={{ fontSize:12, color:C.muted }}>›</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Create new thread */}
+            <div style={{ padding:"12px 14px", borderTop:`1px solid ${C.border}`, background:C.card }}>
+              <div style={{ display:"flex", gap:8, marginBottom: chatMembers.length > 0 ? 8 : 0 }}>
+                <input value={newThreadName} onChange={e => setNewThreadName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") createSubThread(); }}
+                  placeholder="Tên chủ đề mới..."
+                  style={{ flex:1, padding:"10px 12px", borderRadius:10, border:`1.5px solid ${C.border}`, background:C.bg, fontSize:14, color:C.text, outline:"none" }} />
+                <button className="tap" onClick={createSubThread} disabled={!newThreadName.trim() || creatingThread}
+                  style={{
+                    padding:"10px 16px", borderRadius:10, border:"none", fontWeight:700, fontSize:13, cursor:"pointer",
+                    background: newThreadName.trim() ? (linkedProject?.color || C.accent) : C.border,
+                    color: newThreadName.trim() ? "#fff" : C.muted, transition:"all .2s",
+                  }}>
+                  {creatingThread ? "..." : "+ Tạo"}
+                </button>
+              </div>
+              {chatMembers.length > 0 && (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  <span style={{ fontSize:11, color:C.muted, lineHeight:"28px", marginRight:2 }}>Thành viên:</span>
+                  {chatMembers.map(m => {
+                    const sel = threadMembers.includes(m.supaId);
+                    const accent = linkedProject?.color || C.accent;
+                    return (
+                      <div key={m.supaId} className="tap" onClick={() => toggleThreadMember(m.supaId)}
+                        style={{
+                          display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px",
+                          borderRadius:14, cursor:"pointer", fontSize:12, fontWeight:sel ? 600 : 400,
+                          background: sel ? `${accent}18` : C.bg,
+                          border: `1.5px solid ${sel ? accent : C.border}`,
+                          color: sel ? accent : C.muted, transition:"all .15s",
+                        }}>
+                        <span style={{
+                          width:20, height:20, borderRadius:"50%", fontSize:10, fontWeight:700, color:"#fff",
+                          background: m.color || accent, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                        }}>{(m.name || "?").charAt(0).toUpperCase()}</span>
+                        {m.name || m.supaId.slice(0,6)}
+                        {sel && <span style={{ fontSize:14, lineHeight:1 }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                  {threadMembers.length === 0 && (
+                    <span style={{ fontSize:10, color:C.muted, fontStyle:"italic", lineHeight:"28px" }}>
+                      (chưa chọn = tất cả)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sub-thread member management panel ── */}
+      {showMemberMgmt && isSubThread && (
+        <div onClick={() => setShowMemberMgmt(false)} style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,.5)" }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            position:"absolute", top:0, bottom:0, right:0, width:"85%", maxWidth:360,
+            background:C.surface, display:"flex", flexDirection:"column",
+            animation:"slideLeft .2s ease-out", boxShadow:"-4px 0 20px rgba(0,0,0,.15)",
+          }}>
+            {/* Header */}
+            <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
+              <button className="tap" onClick={() => setShowMemberMgmt(false)} style={{ background:"none", border:"none", fontSize:20, color:C.muted, padding:2 }}>✕</button>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:15, fontWeight:700, color:C.text }}>👥 Thành viên</div>
+                <div style={{ fontSize:11, color:C.muted }}>{convName} · {threadCurrentMembers.length} người</div>
+              </div>
+            </div>
+
+            <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
+              {/* Current members */}
+              <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:8, textTransform:"uppercase", letterSpacing:.5 }}>Trong chủ đề</div>
+              {threadCurrentMembers.map(uid => {
+                const p = (profiles || []).find(pr => pr.id === uid);
+                const name = p?.display_name || uid.slice(0, 6);
+                const color = p?.avatar_color || C.accent;
+                const isMe = uid === userId;
+                return (
+                  <div key={uid} style={{
+                    display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
+                    background:C.card, borderRadius:12, border:`1px solid ${C.border}`, marginBottom:6,
+                  }}>
+                    <span style={{
+                      width:32, height:32, borderRadius:"50%", fontSize:13, fontWeight:700, color:"#fff",
+                      background:color, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                    }}>{name.charAt(0).toUpperCase()}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:C.text }}>{name}{isMe ? " (bạn)" : ""}</div>
+                    </div>
+                    {!isMe && (
+                      <button className="tap" onClick={() => removeThreadMember(uid)}
+                        style={{ background:`${C.red}15`, border:"none", borderRadius:8, padding:"5px 10px", fontSize:11, fontWeight:600, color:C.red, cursor:"pointer" }}>
+                        Xóa
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Available to add */}
+              {availableForThread.length > 0 && (
+                <>
+                  <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginTop:16, marginBottom:8, textTransform:"uppercase", letterSpacing:.5 }}>Thêm thành viên</div>
+                  {availableForThread.map(m => (
+                    <div key={m.supaId} style={{
+                      display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
+                      background:C.card, borderRadius:12, border:`1px solid ${C.border}`, marginBottom:6,
+                    }}>
+                      <span style={{
+                        width:32, height:32, borderRadius:"50%", fontSize:13, fontWeight:700, color:"#fff",
+                        background: m.color || C.accent, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                      }}>{(m.name || "?").charAt(0).toUpperCase()}</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight:600, color:C.text }}>{m.name}</div>
+                      </div>
+                      <button className="tap" onClick={() => addThreadMember(m.supaId)}
+                        style={{ background:`${C.accent}15`, border:"none", borderRadius:8, padding:"5px 10px", fontSize:11, fontWeight:600, color:C.accent, cursor:"pointer" }}>
+                        + Thêm
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {availableForThread.length === 0 && threadCurrentMembers.length > 0 && (
+                <div style={{ textAlign:"center", padding:"20px 16px", color:C.muted, fontSize:12 }}>
+                  Tất cả thành viên dự án đã trong chủ đề
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Active sub-thread (nested ChatRoom) ── */}
+      {activeThread && (
+        <ChatRoom
+          conversationId={activeThread.convId}
+          userId={userId}
+          convName={activeThread.name}
+          convType="group"
+          profiles={profiles}
+          linkedProject={null}
+          isSubThread
+          parentConvName={convName}
+          parentProjectMemberList={chatMembers}
+          onBack={() => setActiveThread(null)}
         />
       )}
 
       <style>{`
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
         @keyframes typeDot { 0%,60%,100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
+        @keyframes slideLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }
       `}</style>
     </div>
   );

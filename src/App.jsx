@@ -38,6 +38,8 @@ const DevTab = React.lazy(() => import("./pages/DevTab"));
 const QRScanModal = React.lazy(() => import("./components/QRScanModal"));
 const DashboardTab = React.lazy(() => import("./pages/DashboardTab"));
 const AttendanceTab = React.lazy(() => import("./pages/AttendanceTab"));
+const DeptTab = React.lazy(() => import("./pages/DeptTab"));
+const RequestTab = React.lazy(() => import("./pages/RequestTab"));
 const NewProjectModal = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.NewProjectModal })));
 const ProjectDetailSheet = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.ProjectDetailSheet })));
 const IndustrySetupModal = React.lazy(() => import("./components/IndustrySetupModal"));
@@ -181,7 +183,8 @@ function MainApp({ user, onLogout }) {
     projects, addProject, patchProject, deleteProject, hardDelete,
   } = useStore();
 
-  const TAB_ORDER = ["tasks","calendar","inbox","expense","dashboard","report","ai"];
+  const TAB_ORDER = ["tasks","dept","requests","inbox","calendar","expense","dashboard","report","ai"];
+  const [woryOpen, setWoryOpen] = useState(false);
   const [tab, _setTab]        = useState(() => sessionStorage.getItem("wf_tab") || settings.defaultTab || "tasks");
   const prevTabRef = useRef(tab);
   const tabDir = useRef("right");
@@ -255,6 +258,7 @@ function MainApp({ user, onLogout }) {
   const {
     msgs, setMsgs, aiIn, setAiIn, aiLoad, voiceMode, voice, endRef, knowledgeToast,
     sendChat, toggleVoiceMode, buildSystemPrompt, canNewChat, startNewChat,
+    archiveChat, chatStartedAt,
   } = useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge, settings, user, addTask, deleteTask, patchTask });
 
   /* ── Offline detection + mutation queue ── */
@@ -578,6 +582,36 @@ function MainApp({ user, onLogout }) {
   const isStaff = !isDirector;
   const myName = settings.displayName || user.name;
 
+  /* ── Ensure every project has a chat (auto-create if missing) ── */
+  const ensuredChatRef = useRef(new Set());
+  useEffect(() => {
+    if (!supabase || !supaSession?.user?.id || !projects?.length) return;
+    const uid = supaSession.user.id;
+    projects.forEach(async (proj) => {
+      if (proj.chatId || proj.deleted || ensuredChatRef.current.has(proj.id)) return;
+      ensuredChatRef.current.add(proj.id);
+      try {
+        const chatName = `[project]${proj.name}`;
+        const { data: conv } = await supabase.from("conversations")
+          .insert({ type: "group", name: chatName, created_by: uid })
+          .select().single();
+        if (!conv) return;
+        // Add creator + project members
+        const memberInserts = [{ conversation_id: conv.id, user_id: uid }];
+        (proj.members || []).forEach(m => {
+          if (m.supaId && m.supaId !== uid) memberInserts.push({ conversation_id: conv.id, user_id: m.supaId });
+        });
+        await supabase.from("conversation_members").insert(memberInserts);
+        await supabase.from("messages").insert({
+          conversation_id: conv.id, sender_id: uid,
+          content: `📋 Nhóm chat dự án "${proj.name}" đã được tạo tự động`,
+          type: "system",
+        });
+        patchProject(proj.id, { chatId: conv.id });
+      } catch (e) { console.warn("[WF] auto-create chat for project:", proj.name, e); }
+    });
+  }, [projects, supaSession]);
+
   /* ── Project chat notification — track task status changes ── */
   const prevTasksRef = useRef(null);
   useEffect(() => {
@@ -776,7 +810,7 @@ function MainApp({ user, onLogout }) {
         // restore scroll on mount/tab switch
         if (!el._restored) { const s = sessionStorage.getItem("wf_scroll_" + tab); if (s) el.scrollTop = +s; el._restored = true; }
         el.onscroll = () => sessionStorage.setItem("wf_scroll_" + tab, el.scrollTop);
-      }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: tab === "ai" ? 168 : 76, animation: `${tabDir.current === "right" ? "slideInRight" : "slideInLeft"} .2s ease` }}>
+      }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: 76, animation: `${tabDir.current === "right" ? "slideInRight" : "slideInLeft"} .2s ease` }}>
 
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
@@ -788,7 +822,7 @@ function MainApp({ user, onLogout }) {
                   value={searchQ}
                   onChange={e => setSearchQ(e.target.value)}
                   placeholder={`Tìm ${t("task", settings).toLowerCase()}...`}
-                  style={{ paddingLeft: 34, paddingTop: 0, paddingBottom: 0, fontSize: 14, height: 40, boxSizing: "border-box", margin: 0 }}
+                  style={{ paddingLeft: 34, paddingTop: 0, paddingBottom: 0, fontSize: 15, height: 40, boxSizing: "border-box", margin: 0 }}
                 />
                 <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: C.muted, pointerEvents: "none" }}>🔍</span>
                 {searchQ && (
@@ -848,13 +882,13 @@ function MainApp({ user, onLogout }) {
             {/* ── Multi-select toolbar ── */}
             {selectMode && (
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"8px 10px", background: selectMode === "delete" ? `${C.red}08` : `${C.accent}08`, borderRadius:10, border:`1px solid ${selectMode === "delete" ? C.red + "33" : C.accent + "33"}` }}>
-                <label className="tap" style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:12, fontWeight:600, color:C.text }}>
+                <label className="tap" style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:13, fontWeight:600, color:C.text }}>
                   <input type="checkbox" checked={filteredTasks.length > 0 && selectedIds.size === filteredTasks.length}
                     onChange={() => setSelectedIds(prev => prev.size === filteredTasks.length ? new Set() : new Set(filteredTasks.map(t => t.id)))}
                     style={{ width:16, height:16, accentColor: selectMode === "delete" ? C.red : C.accent }} />
                   Chọn tất cả
                 </label>
-                <span style={{ fontSize:11, color:C.muted }}>{selectedIds.size}/{filteredTasks.length}</span>
+                <span style={{ fontSize:13, color:C.muted }}>{selectedIds.size}/{filteredTasks.length}</span>
                 <div style={{ flex:1 }} />
                 {selectedIds.size > 0 && selectMode === "delete" && (
                   <div style={{ display:"flex", gap:4 }}>
@@ -865,14 +899,14 @@ function MainApp({ user, onLogout }) {
                           selectedIds.forEach(id => deleteTask(id));
                           exitSelectMode(); if (pendingDeleteCount <= selectedIds.size) setFilter("all");
                         }}
-                          style={{ padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                          style={{ padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:13, fontWeight:700 }}>
                           Duyệt ({selectedIds.size})
                         </button>
                         <button className="tap" onClick={() => {
                           selectedIds.forEach(id => patchTask(id, { deleteRequest: null }));
                           exitSelectMode();
                         }}
-                          style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:11, fontWeight:600 }}>
+                          style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:13, fontWeight:600 }}>
                           Từ chối
                         </button>
                       </>
@@ -888,7 +922,7 @@ function MainApp({ user, onLogout }) {
                         }
                         exitSelectMode();
                       }}
-                        style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                        style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:13, fontWeight:700 }}>
                         {isStaff ? "Yêu cầu xóa" : `Xóa (${selectedIds.size})`}
                       </button>
                     )}
@@ -896,12 +930,12 @@ function MainApp({ user, onLogout }) {
                 )}
                 {selectedIds.size > 0 && selectMode === "edit" && (
                   <button className="tap" onClick={() => setStatusPickerTask({ ids: [...selectedIds] })}
-                    style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:11, fontWeight:700 }}>
+                    style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:13, fontWeight:700 }}>
                     Doi trang thai ({selectedIds.size})
                   </button>
                 )}
                 <button className="tap" onClick={exitSelectMode}
-                  style={{ padding:"5px 10px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:11, fontWeight:600 }}>
+                  style={{ padding:"5px 10px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:13, fontWeight:600 }}>
                   Huỷ
                 </button>
               </div>
@@ -966,10 +1000,10 @@ function MainApp({ user, onLogout }) {
                   <div key={tk.id} style={i < 12 ? { animation:"fadeIn .2s ease backwards", animationDelay:`${i*25}ms` } : undefined}>
                     {showHeader && (
                       <div style={{ display:"flex", alignItems:"center", gap:8, padding:"12px 4px 8px", marginTop: i > 0 ? 12 : 0 }}>
-                        {proj ? (
+                        {curProjectId ? (
                           <>
-                            <div style={{ width:10, height:10, borderRadius:5, background: proj.color || C.accent, flexShrink:0 }} />
-                            <span style={{ fontSize:15, fontWeight:700, color: proj.color || C.accent }}>Dự án: {proj.name}</span>
+                            <div style={{ width:10, height:10, borderRadius:5, background: proj?.color || C.accent, flexShrink:0 }} />
+                            <span style={{ fontSize:15, fontWeight:700, color: proj?.color || C.accent }}>Dự án: {proj?.name || "Dự án"}</span>
                             <div style={{ flex:1, height:1, background: C.border }} />
                           </>
                         ) : (
@@ -984,7 +1018,7 @@ function MainApp({ user, onLogout }) {
                       <div style={{ flex:1, minWidth:0 }}>
                         <TaskRow task={tk}
                           onPress={selectMode ? () => toggleSelect(tk.id) : () => setSel(tk)}
-                          projectName={!isAllView && tk.projectId ? proj?.name : null}
+                          projectName={!isAllView && tk.projectId ? (proj?.name || "Dự án") : null}
                           onStatusChange={selectMode ? undefined : (t2, s) => patchTask(t2.id, { status: s })}
                           onPatchTask={(id, data) => patchTask(id, data)}
                           timerTick={timerTick} />
@@ -1011,12 +1045,14 @@ function MainApp({ user, onLogout }) {
         )}
 
         {tab === "calendar" && <TabErrorBoundary><CalendarTab tasks={tasks} onPress={t => setSel(t)} patchTask={patchTask} /></TabErrorBoundary>}
-        {tab === "inbox" && <TabErrorBoundary><InboxTab tasks={tasks} projects={projects} patchTask={patchTask} settings={settings} user={user} addTask={addTask} openConvId={openConvId} /></TabErrorBoundary>}
+        {tab === "inbox" && <TabErrorBoundary><InboxTab tasks={tasks} projects={projects} patchTask={patchTask} patchProject={patchProject} settings={settings} user={user} addTask={addTask} openConvId={openConvId} /></TabErrorBoundary>}
         {tab === "expense" && <TabErrorBoundary><ExpenseTab tasks={tasks} expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} settings={settings} user={user} onOpenQR={() => setQrOpen(true)} /></TabErrorBoundary>}
         {tab === "report" && <TabErrorBoundary><ReportTab tasks={tasks} history={history} settings={settings} memory={memory} user={user} /></TabErrorBoundary>}
         {tab === "dashboard" && <TabErrorBoundary><DashboardTab tasks={tasks} expenses={expenses} projects={projects} settings={settings} onOpenTask={t => setSel(t)} /></TabErrorBoundary>}
         {tab === "dev" && <TabErrorBoundary><DevTab user={user} /></TabErrorBoundary>}
         {tab === "attendance" && <TabErrorBoundary><AttendanceTab userId={userId} settings={settings} /></TabErrorBoundary>}
+        {tab === "dept" && <TabErrorBoundary><DeptTab /></TabErrorBoundary>}
+        {tab === "requests" && <TabErrorBoundary><RequestTab userId={userId} settings={settings} /></TabErrorBoundary>}
 
         {tab === "ai" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeIn .2s" }}>
@@ -1090,40 +1126,6 @@ function MainApp({ user, onLogout }) {
         )}
       </div>
 
-      {/* ── AI INPUT BAR (simplified: input + 1 smart button) ── */}
-      {tab === "ai" && (
-        <div className="ai-input-bar">
-          <div style={{ padding: "10px 12px", display: "flex", gap: 8, alignItems: "center" }}>
-            <input value={aiIn} onChange={e => setAiIn(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat()}
-              placeholder="Nhan tin cho Wory..."
-              aria-label="Nhan tin cho Wory"
-              style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "11px 16px", fontSize: 16, color: C.text }} />
-            {/* Smart button: mic when empty, send when has text */}
-            {aiIn.trim() ? (
-              <button className="tap" onClick={() => sendChat()} disabled={aiLoad}
-                aria-label="Gui tin nhan"
-                style={{ width: 44, height: 44, borderRadius: "50%", border: "none", flexShrink: 0, background: aiLoad ? C.border : C.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff" }}>
-                &#x2191;
-              </button>
-            ) : voice.ok ? (
-              <button className="tap" onClick={() => { window.speechSynthesis?.cancel(); voice.toggle(); }}
-                aria-label={voice.on ? "Dung ghi am" : "Ghi am"}
-                style={{ width: 44, height: 44, borderRadius: "50%", border: "none", flexShrink: 0, position: "relative",
-                  background: voice.on ? C.red : `${C.purple}18`,
-                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>
-                {voice.on && <div style={{ position: "absolute", inset: -5, borderRadius: "50%", border: `2px solid ${C.red}44`, animation: "ripple 1.1s infinite", pointerEvents: "none" }} />}
-                &#x1F3A4;
-              </button>
-            ) : (
-              <button className="tap" onClick={() => sendChat()} disabled={true}
-                style={{ width: 44, height: 44, borderRadius: "50%", border: "none", flexShrink: 0, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff" }}>
-                &#x2191;
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── MINI VOICE/TEXT WIDGET (tasks tab only) ── */}
       {tab === "tasks" && (
         <div style={{ position:"fixed", bottom:150, right:14, zIndex:55, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8 }}>
@@ -1185,55 +1187,156 @@ function MainApp({ user, onLogout }) {
         </div>
       )}
 
-      {/* ── FAB: Add task button ── */}
+      {/* ── FAB: Add task button (tasks tab only) ── */}
       {tab === "tasks" && !addOpen && !selectMode && (
         <button className="tap" onClick={() => setAddOpen(true)}
           style={{
-            position: "fixed", bottom: 80, right: 16, zIndex: 60,
-            width: 52, height: 52, borderRadius: 16, border: "none",
-            background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`,
-            color: "#fff", fontSize: 26, fontWeight: 700, cursor: "pointer",
+            position: "fixed", bottom: 140, right: 16, zIndex: 60,
+            width: 48, height: 48, borderRadius: 14, border: "none",
+            background: C.card, border: `1px solid ${C.border}`,
+            color: C.accent, fontSize: 24, fontWeight: 700, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: `0 4px 16px ${C.accent}55`,
+            boxShadow: "0 2px 12px rgba(0,0,0,.1)",
           }}>+</button>
       )}
 
-      {/* ── BOTTOM NAV (simplified: 3 tabs + More) ── */}
+      {/* ── WORY FAB — floating assistant button ── */}
+      <button className="tap" onClick={() => setWoryOpen(v => !v)}
+        style={{
+          position: "fixed", bottom: 80, right: 16, zIndex: 70,
+          width: 52, height: 52, borderRadius: "50%", border: "none",
+          background: woryOpen ? C.muted : `linear-gradient(135deg, ${C.accent}, ${C.purple})`,
+          color: "#fff", fontSize: woryOpen ? 18 : 20, fontWeight: 700, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `0 4px 16px ${woryOpen ? "rgba(0,0,0,.15)" : C.accent + "55"}`,
+          transition: "all .2s",
+        }}>
+        {woryOpen ? "✕" : "✦"}
+        {!woryOpen && aiLoad && (
+          <div style={{ position:"absolute", top:-2, right:-2, width:12, height:12, borderRadius:"50%", background:C.green, border:"2px solid #fff" }} />
+        )}
+      </button>
+
+      {/* ── WORY OVERLAY (bottom sheet chat) ── */}
+      {woryOpen && (
+        <>
+          <div style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,.3)" }} onClick={() => setWoryOpen(false)} />
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480,
+            height:"75vh", background:"#fff", borderRadius:"20px 20px 0 0", zIndex:201,
+            display:"flex", flexDirection:"column", animation:"slideUp .25s" }}>
+            {/* Header */}
+            <div style={{ padding:"14px 16px 10px", borderBottom:`1px solid ${C.border}`, flexShrink:0, display:"flex", alignItems:"center", gap:8 }}>
+              <div style={{ width:28, height:28, borderRadius:"50%", background:`linear-gradient(135deg,${C.accent},${C.purple})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, color:"#fff" }}>W</div>
+              <span style={{ fontSize:15, fontWeight:700, color:C.text, flex:1 }}>Wory</span>
+              <button className="tap" onClick={() => {
+                if (!canNewChat()) {
+                  const h = Math.ceil((2 * 24 * 60 * 60 * 1000 - (Date.now() - chatStartedAt)) / 3600000);
+                  alert(`Chưa đủ 2 ngày. Còn ~${h}h nữa.`);
+                  return;
+                }
+                if (!confirm("Lưu trữ và bắt đầu chat mới?")) return;
+                startNewChat();
+              }} style={{ background:C.card, color: canNewChat() ? C.accent : C.muted, border:`1px solid ${canNewChat() ? C.accent+"44" : C.border}`, borderRadius:8, padding:"4px 10px", fontSize:12, fontWeight:600, opacity: canNewChat() ? 1 : 0.6 }}>
+                + Mới
+              </button>
+              <button className="tap" onClick={() => setWoryOpen(false)}
+                style={{ background:"none", border:"none", fontSize:18, color:C.muted, cursor:"pointer", padding:"4px" }}>✕</button>
+            </div>
+            {/* Quick prompts */}
+            <div className="no-scrollbar" style={{ display:"flex", gap:6, padding:"8px 14px", overflowX:"auto", flexShrink:0 }}>
+              {["Lên kế hoạch hôm nay", "Hôm nay làm gì trước?", "Tôi bị stress quá", "Kể chuyện vui đi"].map(q => (
+                <button key={q} className="tap" onClick={() => sendChat(q)}
+                  style={{ flexShrink:0, background:C.card, color:C.sub, border:`1px solid ${C.border}`, borderRadius:20, padding:"5px 12px", fontSize:12 }}>{q}</button>
+              ))}
+            </div>
+            {/* Messages */}
+            <div style={{ flex:1, overflowY:"auto", padding:"8px 14px" }}>
+              {msgs.map((m, i) => (
+                <div key={i} style={{ display:"flex", flexDirection:"column", alignItems: m.role === "user" ? "flex-end" : "flex-start", marginBottom:8 }}>
+                  {m.role === "assistant" && (
+                    <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
+                      <div style={{ width:18, height:18, borderRadius:"50%", background:`linear-gradient(135deg,${C.accent},${C.purple})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, color:"#fff" }}>W</div>
+                      <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>Wory</span>
+                    </div>
+                  )}
+                  {m.role === "user" ? (
+                    <div style={{ maxWidth:"85%", background:C.accent, borderRadius:"16px 16px 4px 16px", padding:"10px 14px", fontSize:14, lineHeight:1.5, color:"#fff", whiteSpace:"pre-wrap", marginLeft:"auto" }}>{m.content}</div>
+                  ) : (
+                    <div style={{ maxWidth:"92%" }}>
+                      <div style={{ background:C.card, borderRadius:"16px 16px 16px 4px", border:`1px solid ${C.border}`, padding:"10px 14px", fontSize:14, lineHeight:1.6, color:C.text }}>
+                        <MdBlock text={m.content} />
+                        {aiLoad && i === msgs.length - 1 && <span style={{ display:"inline-block", width:2, height:14, background:C.accent, marginLeft:2, animation:"blink 1s infinite", verticalAlign:"text-bottom" }} />}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {aiLoad && msgs[msgs.length - 1]?.content === "" && (
+                <div style={{ display:"flex" }}><div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:"16px 16px 16px 4px", padding:"10px 14px" }}><div className="dots"><span /><span /><span /></div></div></div>
+              )}
+              <div ref={endRef} />
+            </div>
+            {/* Input */}
+            <div style={{ padding:"10px 12px", borderTop:`1px solid ${C.border}`, flexShrink:0, display:"flex", gap:8, alignItems:"center", paddingBottom:"calc(10px + env(safe-area-inset-bottom))" }}>
+              <input value={aiIn} onChange={e => setAiIn(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat()}
+                placeholder="Nhắn tin cho Wory..."
+                style={{ flex:1, background:C.card, border:`1px solid ${C.border}`, borderRadius:24, padding:"10px 14px", fontSize:15, color:C.text }} />
+              {aiIn.trim() ? (
+                <button className="tap" onClick={() => sendChat()} disabled={aiLoad}
+                  style={{ width:40, height:40, borderRadius:"50%", border:"none", flexShrink:0, background: aiLoad ? C.border : C.accent, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, color:"#fff" }}>
+                  &#x2191;
+                </button>
+              ) : voice.ok ? (
+                <button className="tap" onClick={() => { window.speechSynthesis?.cancel(); voice.toggle(); }}
+                  style={{ width:40, height:40, borderRadius:"50%", border:"none", flexShrink:0, position:"relative",
+                    background: voice.on ? C.red : `${C.purple}18`,
+                    display:"flex", alignItems:"center", justifyContent:"center", fontSize:17 }}>
+                  {voice.on && <div style={{ position:"absolute", inset:-4, borderRadius:"50%", border:`2px solid ${C.red}44`, animation:"ripple 1.1s infinite", pointerEvents:"none" }} />}
+                  &#x1F3A4;
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── BOTTOM NAV (5 tabs: Việc, Phòng ban, Yêu cầu, Chat, Thêm) ── */}
       <div className="bottom-nav">
         {[
           ["tasks","\u{1F4CB}", t("task", settings)],
-          ["inbox","\u{1F4AC}","Trao doi", chatUnread],
-          ["ai","\u2726","Wory"],
+          ["dept","\u{1F3E2}","Phòng ban"],
+          ["requests","\u{1F4CB}","Yêu cầu"],
+          ["inbox","\u{1F4AC}","Chat", chatUnread],
         ].filter(([key]) => {
           const vt = settings.visibleTabs;
           if (vt && vt[key] === false) return false;
-          return hasPermission(settings, key);
+          return true;
         }).map(([key, icon, label, badgeCount]) => {
           const active = tab === key;
           return (
             <button key={key} className="tap" data-guide={`nav-${key}`} onClick={() => setTab(key)}
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "8px 0 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position:"relative" }}>
-              <div style={{ width:44, height:36, borderRadius:12, background: active ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"background .2s", position:"relative" }}>
-                <span style={{ fontSize: 22, lineHeight: 1, filter: active ? "none" : "grayscale(0.6) opacity(0.55)" }}>
+              <div style={{ width:40, height:32, borderRadius:10, background: active ? `${C.accent}15` : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all .2s", position:"relative" }}>
+                <span style={{ fontSize: 20, lineHeight: 1, filter: active ? "none" : "grayscale(0.5) opacity(0.5)" }}>
                   {icon}
                 </span>
                 {badgeCount > 0 && !active && (
-                  <div style={{ position:"absolute", top:-2, right:-2, minWidth:18, height:18, borderRadius:9, background:"#e74c3c", color:"#fff", fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px" }}>
+                  <div style={{ position:"absolute", top:-2, right:-4, minWidth:16, height:16, borderRadius:8, background:"#e74c3c", color:"#fff", fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px" }}>
                     {badgeCount > 9 ? "9+" : badgeCount}
                   </div>
                 )}
               </div>
-              <span style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? "#8b6914" : "#999" }}>{label}</span>
+              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? C.accent : "#999" }}>{label}</span>
             </button>
           );
         })}
         {/* More menu button */}
         <button className="tap" onClick={() => setMoreMenuOpen(v => !v)}
           style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "8px 0 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <div style={{ width:44, height:36, borderRadius:12, background: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? "#f5ebe0" : "transparent", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <span style={{ fontSize: 22, lineHeight: 1, filter: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? "none" : "grayscale(0.6) opacity(0.55)" }}>&#x2261;</span>
+          <div style={{ width:40, height:32, borderRadius:10, background: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? `${C.accent}15` : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all .2s" }}>
+            <span style={{ fontSize: 20, lineHeight: 1, filter: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? "none" : "grayscale(0.5) opacity(0.5)" }}>&#x2261;</span>
           </div>
-          <span style={{ fontSize: 11, fontWeight: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? 700 : 500, color: ["calendar","expense","dashboard","report","dev","attendance"].includes(tab) ? "#8b6914" : "#999" }}>Them</span>
+          <span style={{ fontSize: 10, fontWeight: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? 700 : 500, color: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? C.accent : "#999" }}>Thêm</span>
         </button>
       </div>
 
@@ -1241,26 +1344,39 @@ function MainApp({ user, onLogout }) {
       {moreMenuOpen && (
         <>
           <div style={{ position:"fixed", inset:0, zIndex:998, background:"rgba(0,0,0,.3)" }} onClick={() => setMoreMenuOpen(false)} />
-          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"#fff", borderRadius:"20px 20px 0 0", zIndex:999, padding:"12px 16px 24px", animation:"slideUp .2s" }}>
-            <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 12px" }} />
-            {[
-              ["calendar","\u{1F4C5}","Lich"],
-              ["expense","\u{1F4B0}", t("expense", settings)],
-              ["attendance","\u{1F552}","Cham cong"],
-              ["dashboard","\u{1F4CA}","Tong quan"],
-              isDirector && ["report","\u{1F4C4}","Bao cao"],
-              isDirector && ["dev","\u{1F4BB}","Dev"],
-            ].filter(Boolean).filter(([key]) => {
-              const vt = settings.visibleTabs;
-              if (vt && vt[key] === false) return false;
-              return hasPermission(settings, key);
-            }).map(([key, icon, label]) => (
-              <button key={key} className="tap" onClick={() => { setTab(key); setMoreMenuOpen(false); }}
-                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"14px 12px", background: tab === key ? `${C.accent}10` : "transparent", border:"none", borderRadius:12, fontSize:15, fontWeight: tab === key ? 700 : 500, color: tab === key ? C.accent : C.text, cursor:"pointer", marginBottom:2 }}>
-                <span style={{ fontSize:20 }}>{icon}</span>
-                {label}
-              </button>
-            ))}
+          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"#fff", borderRadius:"20px 20px 0 0", zIndex:999, padding:"14px 16px 28px", animation:"slideUp .2s" }}>
+            <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 14px" }} />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {[
+                ["calendar","\u{1F4C5}","Lịch", C.accent],
+                ["expense","\u{1F4B0}", t("expense", settings), C.gold],
+                ["attendance","\u{1F552}","Chấm công", C.green],
+                ["dashboard","\u{1F4CA}","Tổng quan", C.purple],
+                isDirector && ["report","\u{1F4C4}","Báo cáo", "#e67e22"],
+                isDirector && ["dev","\u{1F4BB}","Dev", "#95a5a6"],
+              ].filter(Boolean).filter(([key]) => {
+                const vt = settings.visibleTabs;
+                if (vt && vt[key] === false) return false;
+                return hasPermission(settings, key);
+              }).map(([key, icon, label, iconColor]) => {
+                const active = tab === key;
+                return (
+                  <button key={key} className="tap" onClick={() => { setTab(key); setMoreMenuOpen(false); }}
+                    style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8,
+                      padding:"16px 10px", borderRadius:16, cursor:"pointer", transition:"all .15s",
+                      background: active ? `${iconColor}12` : C.card,
+                      border: active ? `1.5px solid ${iconColor}35` : `1px solid ${C.border}`,
+                      boxShadow: active ? `0 2px 8px ${iconColor}20` : "none" }}>
+                    <div style={{ width:48, height:48, borderRadius:14, background:`${iconColor}15`,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      boxShadow:`0 2px 6px ${iconColor}18` }}>
+                      <span style={{ fontSize:24, lineHeight:1 }}>{icon}</span>
+                    </div>
+                    <span style={{ fontSize:13, fontWeight: active ? 700 : 600, color: active ? iconColor : C.text }}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </>
       )}
@@ -1350,26 +1466,65 @@ function MainApp({ user, onLogout }) {
         }
 
         addProject(proj);
-        // Auto-create tasks from workflow steps (with stepIndex for ordering)
+        // Auto-create tasks from workflow steps — round-robin assign to members
+        const assignableMembers = (p.members || []).filter(m => m.supaId !== supaSession?.user?.id);
         if (p.steps && p.steps.length > 0) {
+          const createdTasks = [];
           p.steps.forEach((step, i) => {
-            setTimeout(() => addTask({
+            const assignee = assignableMembers.length > 0 ? assignableMembers[i % assignableMembers.length] : null;
+            const taskData = {
               title: `${i+1}. ${step}`,
               projectId: id,
               stepIndex: i,
               category: "work",
-            }), i * 10);
+              ...(assignee ? { assignee: assignee.name } : {}),
+            };
+            createdTasks.push({ step, assignee: assignee?.name || null });
+            setTimeout(() => addTask(taskData), i * 10);
           });
+          // Send assignment summary to project chat
+          if (proj.chatId && supabase && supaSession?.user?.id && assignableMembers.length > 0) {
+            const byMember = {};
+            createdTasks.forEach((t, i) => {
+              if (t.assignee) {
+                if (!byMember[t.assignee]) byMember[t.assignee] = [];
+                byMember[t.assignee].push(`${i+1}. ${t.step}`);
+              }
+            });
+            const lines = Object.entries(byMember).map(([name, tasks]) =>
+              `👤 ${name}:\n${tasks.map(t => `   ✅ ${t}`).join("\n")}`
+            ).join("\n\n");
+            supabase.from("messages").insert({
+              conversation_id: proj.chatId,
+              sender_id: supaSession.user.id,
+              content: `📌 Phân công công việc:\n\n${lines}`,
+              type: "system",
+            }).then(() => {}).catch(() => {});
+          }
         }
         setNewProjOpen(false);
         setProjFilter(id);
-        setProjDetail(proj);
+        // Auto-open project chat if available, otherwise open project detail
+        if (proj.chatId) {
+          setOpenConvId(proj.chatId);
+          setTab("inbox");
+        } else {
+          setProjDetail(proj);
+        }
       }} onClose={() => setNewProjOpen(false)} />}
 
       {/* ── PROJECT DETAIL ── */}
       {projDetail && <ProjectDetailSheet project={projects.find(p => p.id === projDetail.id) || projDetail} tasks={tasks} patchTask={patchTask} addTask={addTask} patchProject={patchProject} hardDelete={hardDelete} deleteProject={async (id) => {
         const proj = projects.find(p => p.id === id);
         if (supabase && proj?.chatId) {
+          // Delete sub-threads first
+          const { data: subs } = await supabase.from("conversations").select("id").like("name", `[sub:${proj.chatId}]%`);
+          for (const sub of (subs || [])) {
+            await supabase.from("messages").delete().eq("conversation_id", sub.id);
+            await supabase.from("conversation_members").delete().eq("conversation_id", sub.id);
+            await supabase.from("conversations").delete().eq("id", sub.id);
+          }
+          // Delete main project chat
           await supabase.from("messages").delete().eq("conversation_id", proj.chatId);
           await supabase.from("conversation_members").delete().eq("conversation_id", proj.chatId);
           await supabase.from("conversations").delete().eq("id", proj.chatId);
