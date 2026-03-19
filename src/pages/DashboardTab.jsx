@@ -2,8 +2,10 @@
    DashboardTab — KPI overview with simple CSS charts
    No external chart library — pure CSS + inline SVG
    ================================================================ */
-import { useMemo } from "react";
-import { C, fmtMoney, todayStr, fmtDate, t } from "../constants";
+import { useMemo, useState, useEffect, useCallback } from "react";
+import { C, fmtMoney, todayStr, fmtDate, t, TEAM_ACCOUNTS } from "../constants";
+import { supabase } from "../lib/supabase";
+import { useSupabase } from "../contexts/SupabaseContext";
 
 const BAR_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#3498db", "#9b59b6"];
 
@@ -65,9 +67,62 @@ function DonutChart({ segments, size = 80 }) {
   );
 }
 
+const REQ_TYPE_LABELS = { purchase: "Mua sắm", advance: "Tạm ứng", payment: "Thanh toán", document: "Giấy tờ", record: "Hồ sơ" };
+const REQ_STATUS_LABELS = { pending: "Chờ duyệt", approved: "Đã duyệt", rejected: "Từ chối", processing: "Đang xử lý", completed: "Hoàn thành" };
+const REQ_STATUS_COLORS = { pending: "#e67e22", approved: "#2ecc71", rejected: "#e74c3c", processing: "#3498db", completed: "#27ae60" };
+
 export default function DashboardTab({ tasks, expenses, projects, settings, onOpenTask }) {
   const today = todayStr();
   const now = new Date();
+  const { session } = useSupabase();
+  const supaUserId = session?.user?.id;
+  const isDirector = settings?.userRole === "director";
+
+  /* ── Fetch requests from Supabase ── */
+  const [requests, setRequests] = useState([]);
+  const [profileMap, setProfileMap] = useState({});
+
+  useEffect(() => {
+    if (!supabase || !supaUserId) return;
+    (async () => {
+      try {
+        let query = supabase.from("requests").select("*").order("created_at", { ascending: false });
+        if (!isDirector) query = query.or(`created_by.eq.${supaUserId},assigned_to.eq.${supaUserId}`);
+        const { data } = await query;
+        setRequests(data || []);
+        // Load profile names for assigned_to
+        const ids = [...new Set((data || []).flatMap(r => [r.assigned_to, r.created_by]).filter(Boolean))];
+        if (ids.length > 0) {
+          const { data: profiles } = await supabase.from("profiles").select("id, display_name").in("id", ids);
+          if (profiles) setProfileMap(Object.fromEntries(profiles.map(p => [p.id, p.display_name])));
+        }
+      } catch (e) { console.warn("[WF] Dashboard requests:", e.message); }
+    })();
+  }, [supaUserId, isDirector]);
+
+  /* ── Request stats ── */
+  const reqStats = useMemo(() => {
+    const byStatus = {};
+    const byType = {};
+    let totalAmount = 0;
+    let pendingAmount = 0;
+    let longWait = 0; // waiting >10min
+
+    for (const r of requests) {
+      byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+      byType[r.type] = (byType[r.type] || 0) + 1;
+      if (r.amount) totalAmount += Number(r.amount);
+      if (r.status === "pending" && r.amount) pendingAmount += Number(r.amount);
+      if (r.status === "pending" && r.updated_at) {
+        const mins = (Date.now() - new Date(r.updated_at).getTime()) / 60000;
+        if (mins >= 10) longWait++;
+      }
+    }
+    // Assigned to me
+    const assignedToMe = requests.filter(r => r.assigned_to === supaUserId && ["pending", "processing"].includes(r.status));
+
+    return { byStatus, byType, totalAmount, pendingAmount, longWait, assignedToMe, total: requests.length };
+  }, [requests, supaUserId]);
 
   const stats = useMemo(() => {
     const active = tasks.filter(t => !t.deleted);
@@ -193,6 +248,131 @@ export default function DashboardTab({ tasks, expenses, projects, settings, onOp
           {stats.projStats.map((p, i) => (
             <MiniBar key={i} label={p.name} value={p.done} max={p.total} color={BAR_COLORS[i % BAR_COLORS.length]} suffix={`/${p.total} (${p.pct}%)`} />
           ))}
+        </div>
+      )}
+
+      {/* ═══════ REQUEST PROGRESS TABLE ═══════ */}
+      {requests.length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid ${C.border}`, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>📋 Tiến độ yêu cầu</span>
+            <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>{reqStats.total} tổng</span>
+          </div>
+
+          {/* Alert: long waiting */}
+          {reqStats.longWait > 0 && (
+            <div style={{
+              background: "#e74c3c12", border: "1px solid #e74c3c33", borderRadius: 10,
+              padding: "8px 12px", marginBottom: 10, fontSize: 12, color: "#e74c3c", fontWeight: 600,
+            }}>
+              🔴 {reqStats.longWait} yêu cầu chờ quá 10 phút!
+            </div>
+          )}
+
+          {/* Status summary row */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+            {["pending", "processing", "completed", "rejected"].map(s => {
+              const count = reqStats.byStatus[s] || 0;
+              if (count === 0) return null;
+              return (
+                <div key={s} style={{
+                  padding: "6px 12px", borderRadius: 10, fontSize: 11, fontWeight: 600,
+                  background: `${REQ_STATUS_COLORS[s]}12`, color: REQ_STATUS_COLORS[s],
+                  border: `1px solid ${REQ_STATUS_COLORS[s]}33`,
+                }}>
+                  {REQ_STATUS_LABELS[s]}: {count}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Amount summary */}
+          {reqStats.totalAmount > 0 && (
+            <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+              <div style={{ flex: 1, padding: "8px 10px", borderRadius: 10, background: "#f7f5f2" }}>
+                <div style={{ fontSize: 10, color: C.muted }}>Tổng giá trị</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{fmtMoney(reqStats.totalAmount)}</div>
+              </div>
+              {reqStats.pendingAmount > 0 && (
+                <div style={{ flex: 1, padding: "8px 10px", borderRadius: 10, background: "#e67e2208" }}>
+                  <div style={{ fontSize: 10, color: "#e67e22" }}>Đang chờ duyệt</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#e67e22" }}>{fmtMoney(reqStats.pendingAmount)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* By type breakdown */}
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Theo loại</div>
+          {Object.entries(reqStats.byType).map(([type, count]) => (
+            <MiniBar key={type} label={REQ_TYPE_LABELS[type] || type} value={count} max={reqStats.total} color={BAR_COLORS[Object.keys(REQ_TYPE_LABELS).indexOf(type) % BAR_COLORS.length]} />
+          ))}
+
+          {/* Assigned to me — action needed */}
+          {reqStats.assignedToMe.length > 0 && (
+            <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+              <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, marginBottom: 6 }}>
+                Cần xử lý ({reqStats.assignedToMe.length})
+              </div>
+              {reqStats.assignedToMe.slice(0, 5).map(r => {
+                const waitMins = r.updated_at ? Math.floor((Date.now() - new Date(r.updated_at).getTime()) / 60000) : 0;
+                const isLong = waitMins >= 10;
+                return (
+                  <div key={r.id} style={{
+                    fontSize: 12, padding: "6px 0", borderBottom: `1px solid ${C.border}22`,
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 600, color: C.text }}>{r.title}</span>
+                      <span style={{ fontSize: 10, color: C.muted, marginLeft: 6 }}>{REQ_TYPE_LABELS[r.type]}</span>
+                    </div>
+                    <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      {r.amount && <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>{fmtMoney(r.amount)}</span>}
+                      {isLong && <span style={{ fontSize: 9, color: "#e74c3c", fontWeight: 700 }}>🔴 {waitMins}p</span>}
+                      <span style={{
+                        fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4,
+                        color: REQ_STATUS_COLORS[r.status], background: `${REQ_STATUS_COLORS[r.status]}15`,
+                      }}>
+                        {REQ_STATUS_LABELS[r.status]}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              {reqStats.assignedToMe.length > 5 && (
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>+{reqStats.assignedToMe.length - 5} yêu cầu khác</div>
+              )}
+            </div>
+          )}
+
+          {/* Recent pending requests (for director) */}
+          {isDirector && (reqStats.byStatus.pending || 0) > 0 && (
+            <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+              <div style={{ fontSize: 11, color: "#e67e22", fontWeight: 700, marginBottom: 6 }}>
+                Chờ duyệt ({reqStats.byStatus.pending})
+              </div>
+              {requests.filter(r => r.status === "pending").slice(0, 5).map(r => {
+                const waitMins = r.updated_at ? Math.floor((Date.now() - new Date(r.updated_at).getTime()) / 60000) : 0;
+                const creatorName = r.created_by ? profileMap[r.created_by] : null;
+                const assignedName = r.assigned_to ? profileMap[r.assigned_to] : null;
+                return (
+                  <div key={r.id} style={{
+                    fontSize: 12, padding: "6px 0", borderBottom: `1px solid ${C.border}22`,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, color: C.text }}>{r.title}</span>
+                      {waitMins >= 10 && <span style={{ fontSize: 9, color: "#e74c3c", fontWeight: 700 }}>🔴 {waitMins >= 60 ? `${Math.floor(waitMins/60)}h` : `${waitMins}p`}</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                      {creatorName && <span>Từ: {creatorName}</span>}
+                      {assignedName && <span style={{ marginLeft: 8 }}>→ Chờ: {assignedName}</span>}
+                      {r.amount && <span style={{ marginLeft: 8, color: C.accent }}>{fmtMoney(r.amount)}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
