@@ -210,102 +210,7 @@ export default function AttendanceTab({ userId, settings }) {
             )}
 
             {/* ── Hướng dẫn sử dụng ── */}
-            <div style={{ padding: "0 16px", marginTop: 20 }}>
-
-              {/* Mục đích */}
-              <div style={{ background: "#f0f7ff", borderRadius: 14, padding: "14px 16px", border: "1px solid #d0e3f7", marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#1a73e8", marginBottom: 8 }}>🎯 Muc dich cham cong</div>
-                <div style={{ fontSize: 13, color: "#333", lineHeight: 1.6 }}>
-                  He thong cham cong giup <b>quan ly thoi gian lam viec</b> cua toan bo nhan su mot cach chinh xac, minh bach:
-                </div>
-                <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13, color: "#444", lineHeight: 1.7 }}>
-                  <li><b>Ghi nhan</b> gio vao — gio ra hang ngay cua tung nhan vien</li>
-                  <li><b>Xac minh</b> vi tri (GPS) va danh tinh (selfie) — chong gian lan</li>
-                  <li><b>Tinh toan</b> tu dong: ngay cong, gio lam, tang ca, di tre</li>
-                  <li><b>Bao cao</b> tong hop theo thang de tinh luong chinh xac</li>
-                </ul>
-              </div>
-
-              {/* Phương pháp chấm công */}
-              <div style={{ background: "#f5f0ff", borderRadius: 14, padding: "14px 16px", border: "1px solid #ddd0f7", marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#7c3aed", marginBottom: 8 }}>📋 Phuong phap cham cong</div>
-                <div style={{ fontSize: 13, color: "#333", lineHeight: 1.5, marginBottom: 10 }}>He thong ho tro <b>3 phuong phap</b>, co the ket hop:</div>
-
-                {[
-                  ["📍", "GPS + Selfie", "Cham cong bang vi tri thuc te + anh chup. He thong tu dong kiem tra ban co dung tai cong trinh/van phong hay khong (geofence). Day la phuong phap chinh."],
-                  ["📱", "Quet ma QR", "Giam doc tao ma QR tai cong trinh. Nhan vien quet ma de cham cong. Ma tu dong doi moi moi 5 phut — chong chup anh gui cho nguoi khac."],
-                  ["📝", "Yeu cau thu cong", "Quen cham cong? Gui yeu cau dieu chinh. Giam doc se duyet. Cung dung de xin nghi phep, dang ky tang ca."],
-                ].map(([icon, title, desc]) => (
-                  <div key={title} style={{ display: "flex", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#fff", borderRadius: 10 }}>
-                    <span style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>{icon}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed", marginBottom: 3 }}>{title}</div>
-                      <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Hướng dẫn nhân viên */}
-              <div style={{ background: "#f0faf0", borderRadius: 14, padding: "14px 16px", border: "1px solid #c8e6c9", marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#2e7d32", marginBottom: 10 }}>👤 Huong dan cho nhan vien</div>
-                {[
-                  ["1", "Den noi lam viec", "Mo app → nhan nut \"Cham cong VAO\" mau xanh"],
-                  ["2", "Xac minh vi tri", "Cho phep truy cap GPS khi trinh duyet hoi. He thong tu dong ghi nhan toa do va kiem tra geofence"],
-                  ["3", "Chup selfie", "Camera truoc tu dong mo. Chup 1 tam xac nhan danh tinh — anh duoc luu lai lam bang chung"],
-                  ["4", "Xac nhan", "Kiem tra thong tin vi tri + anh → nhan \"Xac nhan\" de hoan tat cham cong vao"],
-                  ["5", "Ket thuc ngay", "Cuoi ngay lam viec, nhan \"Cham cong RA\" mau do. Lam tuong tu buoc 2-4"],
-                  ["6", "Quet QR (neu co)", "Neu giam doc dat ma QR tai cong trinh → nhan \"Quet QR\" → dua camera vao ma — tu dong cham cong"],
-                  ["7", "Gui yeu cau", "Quen cham cong / xin nghi / dang ky tang ca → nhan \"Yeu cau\" → chon loai → nhap ly do → Gui"],
-                ].map(([n, title, desc]) => (
-                  <div key={n} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
-                    <span style={{ width: 22, height: 22, borderRadius: 11, background: "#2e7d32", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{n}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#2e7d32" }}>{title}</div>
-                      <div style={{ fontSize: 12, color: "#555", lineHeight: 1.4, marginTop: 1 }}>{desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Hướng dẫn giám đốc */}
-              {isDirector && (
-                <div style={{ background: "#fff8f0", borderRadius: 14, padding: "14px 16px", border: "1px solid #ffe0b2", marginBottom: 12 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#e65100", marginBottom: 10 }}>👔 Huong dan cho giam doc</div>
-
-                  {[
-                    ["🏢", "Thiet lap dia diem", "Vao tab \"Dia diem\" → nhan \"+\" → nhap ten, dia chi, toa do (hoac nhan \"Lay vi tri hien tai\" khi dung tai cong trinh). Dat ban kinh geofence (mac dinh 200m). Nhan vien cham cong ngoai pham vi se bi ghi nhan canh bao."],
-                    ["📱", "Tao ma QR", "O trang chinh, chon dia diem → nhan \"Tao QR\". Ma hien thi tren man hinh — nhan vien quet de cham cong. Ma tu dong het han sau 5 phut, chong chup anh gui cho nguoi khac."],
-                    ["📊", "Theo doi realtime", "Tab \"Quan ly\" hien thi: ai da cham cong / di tre / vang mat NGAY HOM NAY. Thong tin cap nhat tu dong, khong can reload."],
-                    ["✅", "Duyet yeu cau", "Khi nhan vien gui yeu cau dieu chinh / nghi phep / tang ca → hien o tab \"Quan ly\". Nhan Duyet hoac Tu choi."],
-                    ["📈", "Xem bao cao thang", "Tab \"Lich su\" → chon thang → xem tong hop: so ngay cong, tong gio lam, gio tang ca, so lan di tre cua tung nhan vien. Du lieu dung de tinh luong cuoi thang."],
-                  ].map(([icon, title, desc]) => (
-                    <div key={title} style={{ display: "flex", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#fff", borderRadius: 10 }}>
-                      <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{icon}</span>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#e65100", marginBottom: 3 }}>{title}</div>
-                        <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{desc}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Quy định & lưu ý */}
-              <div style={{ background: "#fff9e6", borderRadius: 14, padding: "14px 16px", border: "1px solid #f0e4a8" }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#8a6d3b", marginBottom: 8 }}>⚙️ Quy dinh & luu y</div>
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#6d5a2e", lineHeight: 1.8 }}>
-                  <li><b>Gio lam viec:</b> 8:00 — 17:00 (co the thay doi trong Cai dat)</li>
-                  <li><b>Di tre:</b> Cham cong vao sau 8:15 duoc tinh la di tre</li>
-                  <li><b>Tang ca:</b> Lam tren 8 tieng/ngay — phan du duoc tinh OT</li>
-                  <li><b>Offline:</b> Khong co mang van cham cong duoc. Du lieu tu dong dong bo khi co wifi/4G</li>
-                  <li><b>GPS:</b> Can bat vi tri tren dien thoai. Do chinh xac phu thuoc vao thiet bi (thuong 5-20m)</li>
-                  <li><b>Selfie:</b> Anh duoc luu lam bang chung — khong the su dung anh cu hoac anh nguoi khac</li>
-                  <li><b>QR Code:</b> Chi co hieu luc 5 phut — dam bao nhan vien phai co mat tai cong trinh</li>
-                </ul>
-              </div>
-
-            </div>
+            <AttendanceGuide isDirector={isDirector} />
           </div>
         )}
 
@@ -364,6 +269,139 @@ export default function AttendanceTab({ userId, settings }) {
         )}
 
       </Suspense>
+    </div>
+  );
+}
+
+/* ── Attendance Guide ── */
+function AttendanceGuide({ isDirector }) {
+  const [reading, setReading] = useState(false);
+
+  const handleWoryRead = (text) => {
+    if (reading) { window.speechSynthesis?.cancel(); setReading(false); return; }
+    setReading(true);
+    import("../services").then(({ tts }) => {
+      tts(text, 1.05, () => setReading(false));
+    });
+  };
+
+  const ReadBtn = ({ text }) => (
+    <button className="tap" onClick={() => handleWoryRead(text)}
+      style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", padding: "2px 4px", flexShrink: 0 }}
+      title={reading ? "Dừng đọc" : "Wory đọc giúp"}>
+      {reading ? "⏹" : "🔊"}
+    </button>
+  );
+
+  return (
+    <div style={{ padding: "0 16px", marginTop: 20 }}>
+
+      {/* Mục đích */}
+      <div style={{ background: "#f0f7ff", borderRadius: 14, padding: "14px 16px", border: "1px solid #d0e3f7", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#1a73e8" }}>🎯 Mục đích chấm công</div>
+          <ReadBtn text="Mục đích chấm công. Hệ thống chấm công giúp quản lý thời gian làm việc của toàn bộ nhân sự một cách chính xác và minh bạch. Gồm có: Ghi nhận giờ vào, giờ ra hàng ngày. Xác minh vị trí bằng GPS và danh tính bằng ảnh selfie để chống gian lận. Tự động tính toán ngày công, giờ làm, tăng ca, đi trễ. Báo cáo tổng hợp theo tháng để tính lương chính xác." />
+        </div>
+        <div style={{ fontSize: 13, color: "#333", lineHeight: 1.6 }}>
+          Hệ thống chấm công giúp <b>quản lý thời gian làm việc</b> của toàn bộ nhân sự một cách chính xác, minh bạch:
+        </div>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13, color: "#444", lineHeight: 1.7 }}>
+          <li><b>Ghi nhận</b> giờ vào — giờ ra hàng ngày của từng nhân viên</li>
+          <li><b>Xác minh</b> vị trí (GPS) và danh tính (selfie) — chống gian lận</li>
+          <li><b>Tính toán</b> tự động: ngày công, giờ làm, tăng ca, đi trễ</li>
+          <li><b>Báo cáo</b> tổng hợp theo tháng để tính lương chính xác</li>
+        </ul>
+      </div>
+
+      {/* Phương pháp chấm công */}
+      <div style={{ background: "#f5f0ff", borderRadius: 14, padding: "14px 16px", border: "1px solid #ddd0f7", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>📋 Phương pháp chấm công</div>
+          <ReadBtn text="Phương pháp chấm công. Hệ thống hỗ trợ 3 phương pháp. Thứ nhất: GPS và Selfie. Chấm công bằng vị trí thực tế kết hợp ảnh chụp. Hệ thống tự động kiểm tra bạn có đúng tại công trình hay văn phòng hay không. Đây là phương pháp chính. Thứ hai: Quét mã QR. Giám đốc tạo mã QR tại công trình. Nhân viên quét mã để chấm công. Mã tự động đổi mới mỗi 5 phút, chống chụp ảnh gửi cho người khác. Thứ ba: Yêu cầu thủ công. Quên chấm công thì gửi yêu cầu điều chỉnh. Giám đốc sẽ duyệt. Cũng dùng để xin nghỉ phép hoặc đăng ký tăng ca." />
+        </div>
+        <div style={{ fontSize: 13, color: "#333", lineHeight: 1.5, marginBottom: 10 }}>Hệ thống hỗ trợ <b>3 phương pháp</b>, có thể kết hợp:</div>
+        {[
+          ["📍", "GPS + Selfie", "Chấm công bằng vị trí thực tế + ảnh chụp. Hệ thống tự động kiểm tra bạn có đúng tại công trình/văn phòng hay không. Đây là phương pháp chính."],
+          ["📱", "Quét mã QR", "Giám đốc tạo mã QR tại công trình. Nhân viên quét mã để chấm công. Mã tự động đổi mới mỗi 5 phút — chống chụp ảnh gửi cho người khác."],
+          ["📝", "Yêu cầu thủ công", "Quên chấm công? Gửi yêu cầu điều chỉnh. Giám đốc sẽ duyệt. Cũng dùng để xin nghỉ phép, đăng ký tăng ca."],
+        ].map(([icon, title, desc]) => (
+          <div key={title} style={{ display: "flex", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#fff", borderRadius: 10 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>{icon}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed", marginBottom: 3 }}>{title}</div>
+              <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Hướng dẫn nhân viên */}
+      <div style={{ background: "#f0faf0", borderRadius: 14, padding: "14px 16px", border: "1px solid #c8e6c9", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#2e7d32" }}>👤 Hướng dẫn cho nhân viên</div>
+          <ReadBtn text="Hướng dẫn cho nhân viên. Bước 1: Đến nơi làm việc. Mở ứng dụng rồi nhấn nút Chấm công VÀO màu xanh. Bước 2: Xác minh vị trí. Cho phép truy cập GPS khi trình duyệt hỏi. Hệ thống tự động ghi nhận tọa độ và kiểm tra phạm vi địa điểm. Bước 3: Chụp selfie. Camera trước tự động mở. Chụp một tấm xác nhận danh tính. Ảnh được lưu lại làm bằng chứng. Bước 4: Xác nhận. Kiểm tra thông tin vị trí và ảnh rồi nhấn Xác nhận để hoàn tất chấm công vào. Bước 5: Kết thúc ngày. Cuối ngày làm việc, nhấn Chấm công RA màu đỏ. Làm tương tự các bước trên. Bước 6: Quét QR nếu có. Nếu giám đốc đặt mã QR tại công trình, nhấn Quét QR rồi đưa camera vào mã, hệ thống tự động chấm công. Bước 7: Gửi yêu cầu. Quên chấm công hoặc xin nghỉ hoặc đăng ký tăng ca, nhấn Yêu cầu, chọn loại, nhập lý do rồi gửi." />
+        </div>
+        {[
+          ["1", "Đến nơi làm việc", "Mở ứng dụng → nhấn nút \"Chấm công VÀO\" màu xanh"],
+          ["2", "Xác minh vị trí", "Cho phép truy cập GPS khi trình duyệt hỏi. Hệ thống tự động ghi nhận tọa độ và kiểm tra phạm vi địa điểm"],
+          ["3", "Chụp selfie", "Camera trước tự động mở. Chụp 1 tấm xác nhận danh tính — ảnh được lưu lại làm bằng chứng"],
+          ["4", "Xác nhận", "Kiểm tra thông tin vị trí + ảnh → nhấn \"Xác nhận\" để hoàn tất chấm công vào"],
+          ["5", "Kết thúc ngày", "Cuối ngày làm việc, nhấn \"Chấm công RA\" màu đỏ. Làm tương tự bước 2-4"],
+          ["6", "Quét QR (nếu có)", "Nếu giám đốc đặt mã QR tại công trình → nhấn \"Quét QR\" → đưa camera vào mã — tự động chấm công"],
+          ["7", "Gửi yêu cầu", "Quên chấm công / xin nghỉ / đăng ký tăng ca → nhấn \"Yêu cầu\" → chọn loại → nhập lý do → Gửi"],
+        ].map(([n, title, desc]) => (
+          <div key={n} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
+            <span style={{ width: 22, height: 22, borderRadius: 11, background: "#2e7d32", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{n}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#2e7d32" }}>{title}</div>
+              <div style={{ fontSize: 12, color: "#555", lineHeight: 1.4, marginTop: 1 }}>{desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Hướng dẫn giám đốc */}
+      {isDirector && (
+        <div style={{ background: "#fff8f0", borderRadius: 14, padding: "14px 16px", border: "1px solid #ffe0b2", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#e65100" }}>👔 Hướng dẫn cho giám đốc</div>
+            <ReadBtn text="Hướng dẫn cho giám đốc. Thiết lập địa điểm: Vào tab Địa điểm, nhấn dấu cộng, nhập tên, địa chỉ, tọa độ hoặc nhấn Lấy vị trí hiện tại khi đứng tại công trình. Đặt bán kính phạm vi, mặc định 200 mét. Nhân viên chấm công ngoài phạm vi sẽ bị ghi nhận cảnh báo. Tạo mã QR: Ở trang chính, chọn địa điểm rồi nhấn Tạo QR. Mã hiển thị trên màn hình, nhân viên quét để chấm công. Mã tự động hết hạn sau 5 phút. Theo dõi trực tiếp: Tab Quản lý hiển thị ai đã chấm công, ai đi trễ, ai vắng mặt ngay hôm nay. Thông tin cập nhật tự động. Duyệt yêu cầu: Khi nhân viên gửi yêu cầu điều chỉnh, nghỉ phép, tăng ca sẽ hiện ở tab Quản lý. Nhấn Duyệt hoặc Từ chối. Xem báo cáo tháng: Tab Lịch sử, chọn tháng, xem tổng hợp số ngày công, tổng giờ làm, giờ tăng ca, số lần đi trễ của từng nhân viên. Dữ liệu dùng để tính lương cuối tháng." />
+          </div>
+          {[
+            ["🏢", "Thiết lập địa điểm", "Vào tab \"Địa điểm\" → nhấn \"+\" → nhập tên, địa chỉ, tọa độ (hoặc nhấn \"Lấy vị trí hiện tại\" khi đứng tại công trình). Đặt bán kính phạm vi (mặc định 200m). Nhân viên chấm công ngoài phạm vi sẽ bị ghi nhận cảnh báo."],
+            ["📱", "Tạo mã QR", "Ở trang chính, chọn địa điểm → nhấn \"Tạo QR\". Mã hiển thị trên màn hình — nhân viên quét để chấm công. Mã tự động hết hạn sau 5 phút, chống chụp ảnh gửi cho người khác."],
+            ["📊", "Theo dõi trực tiếp", "Tab \"Quản lý\" hiển thị: ai đã chấm công / đi trễ / vắng mặt NGAY HÔM NAY. Thông tin cập nhật tự động, không cần tải lại."],
+            ["✅", "Duyệt yêu cầu", "Khi nhân viên gửi yêu cầu điều chỉnh / nghỉ phép / tăng ca → hiện ở tab \"Quản lý\". Nhấn Duyệt hoặc Từ chối."],
+            ["📈", "Xem báo cáo tháng", "Tab \"Lịch sử\" → chọn tháng → xem tổng hợp: số ngày công, tổng giờ làm, giờ tăng ca, số lần đi trễ của từng nhân viên. Dữ liệu dùng để tính lương cuối tháng."],
+          ].map(([icon, title, desc]) => (
+            <div key={title} style={{ display: "flex", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#fff", borderRadius: 10 }}>
+              <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{icon}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#e65100", marginBottom: 3 }}>{title}</div>
+                <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Quy định & lưu ý */}
+      <div style={{ background: "#fff9e6", borderRadius: 14, padding: "14px 16px", border: "1px solid #f0e4a8" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#8a6d3b" }}>⚙️ Quy định & lưu ý</div>
+          <ReadBtn text="Quy định và lưu ý. Giờ làm việc: 8 giờ sáng đến 5 giờ chiều, có thể thay đổi trong Cài đặt. Đi trễ: Chấm công vào sau 8 giờ 15 phút được tính là đi trễ. Tăng ca: Làm trên 8 tiếng một ngày, phần dư được tính tăng ca. Offline: Không có mạng vẫn chấm công được. Dữ liệu tự động đồng bộ khi có wifi hoặc 4G. GPS: Cần bật vị trí trên điện thoại. Độ chính xác phụ thuộc vào thiết bị, thường từ 5 đến 20 mét. Selfie: Ảnh được lưu làm bằng chứng, không thể sử dụng ảnh cũ hoặc ảnh người khác. Mã QR: Chỉ có hiệu lực 5 phút, đảm bảo nhân viên phải có mặt tại công trình." />
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#6d5a2e", lineHeight: 1.8 }}>
+          <li><b>Giờ làm việc:</b> 8:00 — 17:00 (có thể thay đổi trong Cài đặt)</li>
+          <li><b>Đi trễ:</b> Chấm công vào sau 8:15 được tính là đi trễ</li>
+          <li><b>Tăng ca:</b> Làm trên 8 tiếng/ngày — phần dư được tính tăng ca</li>
+          <li><b>Offline:</b> Không có mạng vẫn chấm công được. Dữ liệu tự động đồng bộ khi có wifi/4G</li>
+          <li><b>GPS:</b> Cần bật vị trí trên điện thoại. Độ chính xác phụ thuộc vào thiết bị (thường 5-20m)</li>
+          <li><b>Selfie:</b> Ảnh được lưu làm bằng chứng — không thể sử dụng ảnh cũ hoặc ảnh người khác</li>
+          <li><b>Mã QR:</b> Chỉ có hiệu lực 5 phút — đảm bảo nhân viên phải có mặt tại công trình</li>
+        </ul>
+      </div>
+
     </div>
   );
 }
