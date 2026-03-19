@@ -1,6 +1,7 @@
 /* ================================================================
    REQUEST TAB — Yêu cầu: mua sắm, tạm ứng, thanh toán, giấy tờ, hồ sơ
-   Status flow: draft → pending → approved/rejected → processing → completed → archived
+   Multi-level approval: Người tạo → Kế toán → Giám đốc → Xử lý
+   Status flow: draft → pending → approved → processing → completed → archived
    ================================================================ */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { C, TEAM_ACCOUNTS } from "../constants";
@@ -25,12 +26,36 @@ const STATUS_MAP = {
   archived:   { label: "Lưu trữ",   color: "#95a5a6" },
 };
 
+/* Auto-route after final approval: type → role that processes */
 const ROUTING_MAP = {
   purchase: "accountant",
   advance: "accountant",
   payment: "accountant",
   document: "hr",
   record: "hr",
+};
+
+/* Multi-level approval chain: [Kế toán, Giám đốc]
+   - Creator = KT → skip KT step, go straight to GĐ
+   - Creator = GĐ → skip GĐ step, only KT reviews
+   The chain order is: accountant first, then director */
+const FULL_CHAIN = ["accountant", "director"];
+
+function getApprovalChain(creatorRole) {
+  return FULL_CHAIN.filter(r => r !== creatorRole);
+}
+
+function getApprovalStep(request) {
+  const approvedSteps = (request.approvals || []).filter(a => a.action === "approved").length;
+  return approvedSteps;
+}
+
+const ROLE_LABELS = {
+  accountant: "Kế toán",
+  director: "Giám đốc",
+  hr: "Nhân sự",
+  sales: "Kinh doanh",
+  construction: "Thi công",
 };
 
 const fmtMoney = (n) => {
@@ -132,15 +157,20 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
     return true;
   });
 
-  // Approve — auto-route to handler
+  // Approve — multi-level chain: KT → GĐ → auto-route to handler
   const handleApprove = async (id) => {
     if (!supabase) return;
     const req = requests.find(r => r.id === id);
     if (!req) return;
 
-    const approvals = req.approvals || [];
+    const creatorRole = req.dept_role || "staff";
+    const chain = getApprovalChain(creatorRole);
+    const currentStep = getApprovalStep(req);
+
+    const approvals = [...(req.approvals || [])];
     approvals.push({
       userId: supaUserId,
+      role: userRole,
       action: "approved",
       timestamp: new Date().toISOString(),
     });
@@ -150,33 +180,45 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
       updated_at: new Date().toISOString(),
     };
 
-    // Auto-routing: look up target role and resolve UUID
-    const targetRole = ROUTING_MAP[req.type];
-    if (targetRole) {
-      const profile = await resolveProfileByRole(targetRole);
-      if (profile) {
-        updates.assigned_to = profile.id;
-        updates.status = "processing";
-        // Cache the name
-        setProfileCache(prev => ({ ...prev, [profile.id]: profile.display_name }));
-
-        // Add assigned person to chat thread if chat_id exists
+    const nextStepIdx = currentStep + 1;
+    if (nextStepIdx < chain.length) {
+      // More approvers in chain → advance to next approver
+      const nextRole = chain[nextStepIdx];
+      const nextProfile = await resolveProfileByRole(nextRole);
+      if (nextProfile) {
+        updates.assigned_to = nextProfile.id;
+        updates.status = "pending"; // still pending, waiting for next approver
+        setProfileCache(prev => ({ ...prev, [nextProfile.id]: nextProfile.display_name }));
+        // Add next approver to chat thread
         if (req.chat_id) {
           try {
-            await supabase.from("conversation_members").insert({
+            await supabase.from("conversation_members").upsert({
               conversation_id: req.chat_id,
-              user_id: profile.id,
-            });
-          } catch (e) {
-            console.warn("[WF] Add chat member:", e.message);
-          }
+              user_id: nextProfile.id,
+            }, { onConflict: "conversation_id,user_id" });
+          } catch (e) { console.warn("[WF] Add chat member:", e.message); }
         }
-      } else {
-        // No profile found for role, fall back to approved
-        updates.status = "approved";
       }
     } else {
+      // All approvers done → final approval → auto-route to handler
       updates.status = "approved";
+      const targetRole = ROUTING_MAP[req.type];
+      if (targetRole) {
+        const handler = await resolveProfileByRole(targetRole);
+        if (handler) {
+          updates.assigned_to = handler.id;
+          updates.status = "processing";
+          setProfileCache(prev => ({ ...prev, [handler.id]: handler.display_name }));
+          if (req.chat_id) {
+            try {
+              await supabase.from("conversation_members").upsert({
+                conversation_id: req.chat_id,
+                user_id: handler.id,
+              }, { onConflict: "conversation_id,user_id" });
+            } catch (e) { console.warn("[WF] Add chat member:", e.message); }
+          }
+        }
+      }
     }
 
     const { error } = await supabase.from("requests").update(updates).eq("id", id);
@@ -227,9 +269,15 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
     if (detail?.id === id) setDetail(null);
   };
 
-  // Create request — with auto-create chat thread
+  // Create request — assign to first approver + auto-create chat thread
   const handleCreate = async (form) => {
     if (!supabase || !supaUserId) return;
+
+    // Determine first approver in chain
+    const chain = getApprovalChain(userRole);
+    const firstRole = chain[0]; // "accountant" (or "director" if creator is KT)
+    const firstApprover = firstRole ? await resolveProfileByRole(firstRole) : null;
+
     const { data: reqData, error } = await supabase.from("requests").insert({
       type: form.type,
       title: form.title,
@@ -239,13 +287,19 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
       status: "pending",
       priority: form.priority || "normal",
       created_by: supaUserId,
+      assigned_to: firstApprover?.id || null,
       dept_role: userRole,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).select().single();
     if (error) { alert("Lỗi: " + error.message); return; }
 
-    // Auto-create chat thread
+    // Cache first approver name
+    if (firstApprover) {
+      setProfileCache(prev => ({ ...prev, [firstApprover.id]: firstApprover.display_name }));
+    }
+
+    // Auto-create chat thread with creator + first approver
     try {
       const chatName = `[request]${form.title}`;
       const { data: conv } = await supabase.from("conversations")
@@ -253,22 +307,11 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
         .select().single();
 
       if (conv) {
-        // Add creator as member
-        await supabase.from("conversation_members").insert({
-          conversation_id: conv.id,
-          user_id: supaUserId,
-        });
-
-        // Add director as member
-        const directorProfile = await resolveProfileByRole("director");
-        if (directorProfile) {
-          await supabase.from("conversation_members").insert({
-            conversation_id: conv.id,
-            user_id: directorProfile.id,
-          });
+        const members = [{ conversation_id: conv.id, user_id: supaUserId }];
+        if (firstApprover) {
+          members.push({ conversation_id: conv.id, user_id: firstApprover.id });
         }
-
-        // Update request with chat_id
+        await supabase.from("conversation_members").insert(members);
         await supabase.from("requests").update({ chat_id: conv.id }).eq("id", reqData.id);
       }
     } catch (e) {
@@ -324,6 +367,15 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
     const status = STATUS_MAP[detail.status] || STATUS_MAP.draft;
     const assignedName = detail.assigned_to ? profileCache[detail.assigned_to] : null;
     const isAssignedToMe = detail.assigned_to === supaUserId;
+    const isCurrentApprover = isAssignedToMe && detail.status === "pending";
+    const creatorRole = detail.dept_role || "staff";
+    const chain = getApprovalChain(creatorRole);
+    const step = getApprovalStep(detail);
+    const totalSteps = chain.length;
+
+    // Compute waiting time for red alert
+    const waitingMinutes = detail.status === "pending" && detail.updated_at
+      ? Math.floor((Date.now() - new Date(detail.updated_at).getTime()) / 60000) : 0;
 
     return (
       <div style={{ padding: 16, animation: "fadeIn .2s" }}>
@@ -341,6 +393,49 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
               </span>
             </div>
           </div>
+
+          {/* Waiting time alert */}
+          {waitingMinutes >= 10 && (
+            <div style={{
+              background: "#e74c3c12", border: "1px solid #e74c3c44", borderRadius: 10,
+              padding: "8px 12px", marginBottom: 12, display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 16 }}>🔴</span>
+              <span style={{ fontSize: 12, color: "#e74c3c", fontWeight: 600 }}>
+                Đã chờ {waitingMinutes >= 60 ? `${Math.floor(waitingMinutes/60)}h${waitingMinutes%60}p` : `${waitingMinutes} phút`} — cần xử lý gấp!
+              </span>
+            </div>
+          )}
+
+          {/* Approval progress */}
+          {detail.status === "pending" && totalSteps > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6 }}>
+                Tiến trình duyệt ({step}/{totalSteps})
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {chain.map((role, i) => {
+                  const done = i < step;
+                  const current = i === step;
+                  return (
+                    <div key={role} style={{
+                      flex: 1, padding: "6px 8px", borderRadius: 8, textAlign: "center",
+                      background: done ? `${C.green}15` : current ? `${C.accent}12` : `${C.border}44`,
+                      border: `1.5px solid ${done ? C.green : current ? C.accent : C.border}`,
+                    }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: done ? C.green : current ? C.accent : C.muted }}>
+                        {done ? "✓" : (i + 1)}
+                      </div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: done ? C.green : current ? C.accent : C.muted }}>
+                        {ROLE_LABELS[role] || role}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {detail.description && (
             <div style={{ fontSize: 14, color: C.sub, lineHeight: 1.6, marginBottom: 12, whiteSpace: "pre-wrap" }}>{detail.description}</div>
           )}
@@ -350,10 +445,11 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
             Ngày tạo: {new Date(detail.created_at).toLocaleDateString("vi-VN")}
           </div>
-          {/* Assigned person */}
+          {/* Current approver / handler */}
           {detail.assigned_to && (
             <div style={{ fontSize: 12, color: C.sub, marginBottom: 4 }}>
-              Người xử lý: <span style={{ fontWeight: 600, color: C.text }}>{assignedName || "..."}</span>
+              {detail.status === "pending" ? "Đang chờ:" : "Người xử lý:"}{" "}
+              <span style={{ fontWeight: 600, color: C.text }}>{assignedName || "..."}</span>
             </div>
           )}
           {detail.priority === "urgent" && (
@@ -368,6 +464,7 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
                   <span style={{ color: a.action === "approved" ? C.green : C.red, fontWeight: 600 }}>
                     {a.action === "approved" ? "✅ Đã duyệt" : "❌ Từ chối"}
                   </span>
+                  {a.role && <span style={{ fontSize: 10, color: C.muted }}> ({ROLE_LABELS[a.role] || a.role})</span>}
                   {" — "}{new Date(a.timestamp).toLocaleString("vi-VN")}
                   {a.reason && (
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2, paddingLeft: 4 }}>
@@ -391,8 +488,8 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
             </button>
           )}
 
-          {/* Action buttons for director */}
-          {isDirector && detail.status === "pending" && (
+          {/* Approve/Reject buttons — shown to CURRENT APPROVER (not just director) */}
+          {isCurrentApprover && (
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button className="tap" onClick={() => handleApprove(detail.id)}
                 style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: C.green, color: "#fff", fontSize: 14, fontWeight: 700 }}>
@@ -405,7 +502,7 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
             </div>
           )}
 
-          {/* Complete button for assigned person */}
+          {/* Complete button for assigned person (processing stage) */}
           {isAssignedToMe && detail.status === "processing" && (
             <div style={{ marginTop: 20 }}>
               <button className="tap" onClick={() => handleComplete(detail.id)}
@@ -480,9 +577,16 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
           const type = REQUEST_TYPES.find(t => t.key === r.type);
           const status = STATUS_MAP[r.status] || STATUS_MAP.draft;
           const assignedName = r.assigned_to ? profileCache[r.assigned_to] : null;
+          const waitMins = r.status === "pending" && r.updated_at
+            ? Math.floor((Date.now() - new Date(r.updated_at).getTime()) / 60000) : 0;
+          const isLongWait = waitMins >= 10;
           return (
             <div key={r.id} className="tap" onClick={() => setDetail(r)}
-              style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: `1px solid ${C.border}22`, cursor: "pointer" }}>
+              style={{
+                display: "flex", alignItems: "center", gap: 12, padding: "14px 16px",
+                borderBottom: `1px solid ${C.border}22`, cursor: "pointer",
+                background: isLongWait ? "#e74c3c08" : "transparent",
+              }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12, flexShrink: 0,
                 background: `${type?.color || C.accent}15`,
@@ -494,17 +598,21 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
                 <div style={{ fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {r.title}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 10, fontWeight: 600, color: status.color, background: `${status.color}15`, borderRadius: 6, padding: "1px 8px" }}>
                     {status.label}
                   </span>
                   {r.amount && <span style={{ fontSize: 11, color: C.muted }}>{fmtMoney(r.amount)}</span>}
                   {r.priority === "urgent" && <span style={{ fontSize: 10, color: "#e74c3c", fontWeight: 600 }}>🔴</span>}
+                  {isLongWait && (
+                    <span style={{ fontSize: 9, color: "#e74c3c", fontWeight: 700 }}>
+                      ⏰ {waitMins >= 60 ? `${Math.floor(waitMins/60)}h` : `${waitMins}p`}
+                    </span>
+                  )}
                 </div>
-                {/* Show assigned person below status */}
                 {assignedName && (
                   <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                    → {assignedName}
+                    {r.status === "pending" ? "Chờ:" : "→"} {assignedName}
                   </div>
                 )}
               </div>
