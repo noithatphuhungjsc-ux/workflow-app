@@ -211,49 +211,100 @@ export default function AttendanceTab({ userId, settings }) {
 
             {/* ── Hướng dẫn sử dụng ── */}
             <div style={{ padding: "0 16px", marginTop: 20 }}>
-              <div style={{ background: "#f8f7f5", borderRadius: 14, padding: "14px 16px", border: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>Huong dan cham cong</div>
 
-                {/* Nhân viên */}
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Nhan vien</div>
+              {/* Mục đích */}
+              <div style={{ background: "#f0f7ff", borderRadius: 14, padding: "14px 16px", border: "1px solid #d0e3f7", marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#1a73e8", marginBottom: 8 }}>🎯 Muc dich cham cong</div>
+                <div style={{ fontSize: 13, color: "#333", lineHeight: 1.6 }}>
+                  He thong cham cong giup <b>quan ly thoi gian lam viec</b> cua toan bo nhan su mot cach chinh xac, minh bach:
+                </div>
+                <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13, color: "#444", lineHeight: 1.7 }}>
+                  <li><b>Ghi nhan</b> gio vao — gio ra hang ngay cua tung nhan vien</li>
+                  <li><b>Xac minh</b> vi tri (GPS) va danh tinh (selfie) — chong gian lan</li>
+                  <li><b>Tinh toan</b> tu dong: ngay cong, gio lam, tang ca, di tre</li>
+                  <li><b>Bao cao</b> tong hop theo thang de tinh luong chinh xac</li>
+                </ul>
+              </div>
+
+              {/* Phương pháp chấm công */}
+              <div style={{ background: "#f5f0ff", borderRadius: 14, padding: "14px 16px", border: "1px solid #ddd0f7", marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#7c3aed", marginBottom: 8 }}>📋 Phuong phap cham cong</div>
+                <div style={{ fontSize: 13, color: "#333", lineHeight: 1.5, marginBottom: 10 }}>He thong ho tro <b>3 phuong phap</b>, co the ket hop:</div>
+
+                {[
+                  ["📍", "GPS + Selfie", "Cham cong bang vi tri thuc te + anh chup. He thong tu dong kiem tra ban co dung tai cong trinh/van phong hay khong (geofence). Day la phuong phap chinh."],
+                  ["📱", "Quet ma QR", "Giam doc tao ma QR tai cong trinh. Nhan vien quet ma de cham cong. Ma tu dong doi moi moi 5 phut — chong chup anh gui cho nguoi khac."],
+                  ["📝", "Yeu cau thu cong", "Quen cham cong? Gui yeu cau dieu chinh. Giam doc se duyet. Cung dung de xin nghi phep, dang ky tang ca."],
+                ].map(([icon, title, desc]) => (
+                  <div key={title} style={{ display: "flex", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#fff", borderRadius: 10 }}>
+                    <span style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>{icon}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed", marginBottom: 3 }}>{title}</div>
+                      <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Hướng dẫn nhân viên */}
+              <div style={{ background: "#f0faf0", borderRadius: 14, padding: "14px 16px", border: "1px solid #c8e6c9", marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#2e7d32", marginBottom: 10 }}>👤 Huong dan cho nhan vien</div>
+                {[
+                  ["1", "Den noi lam viec", "Mo app → nhan nut \"Cham cong VAO\" mau xanh"],
+                  ["2", "Xac minh vi tri", "Cho phep truy cap GPS khi trinh duyet hoi. He thong tu dong ghi nhan toa do va kiem tra geofence"],
+                  ["3", "Chup selfie", "Camera truoc tu dong mo. Chup 1 tam xac nhan danh tinh — anh duoc luu lai lam bang chung"],
+                  ["4", "Xac nhan", "Kiem tra thong tin vi tri + anh → nhan \"Xac nhan\" de hoan tat cham cong vao"],
+                  ["5", "Ket thuc ngay", "Cuoi ngay lam viec, nhan \"Cham cong RA\" mau do. Lam tuong tu buoc 2-4"],
+                  ["6", "Quet QR (neu co)", "Neu giam doc dat ma QR tai cong trinh → nhan \"Quet QR\" → dua camera vao ma — tu dong cham cong"],
+                  ["7", "Gui yeu cau", "Quen cham cong / xin nghi / dang ky tang ca → nhan \"Yeu cau\" → chon loai → nhap ly do → Gui"],
+                ].map(([n, title, desc]) => (
+                  <div key={n} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 11, background: "#2e7d32", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{n}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#2e7d32" }}>{title}</div>
+                      <div style={{ fontSize: 12, color: "#555", lineHeight: 1.4, marginTop: 1 }}>{desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Hướng dẫn giám đốc */}
+              {isDirector && (
+                <div style={{ background: "#fff8f0", borderRadius: 14, padding: "14px 16px", border: "1px solid #ffe0b2", marginBottom: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#e65100", marginBottom: 10 }}>👔 Huong dan cho giam doc</div>
+
                   {[
-                    ["1", "Nhan \"Cham cong VAO\" khi den noi lam viec"],
-                    ["2", "Cho phep truy cap vi tri (GPS) va chup anh selfie xac nhan"],
-                    ["3", "Cuoi ngay, nhan \"Cham cong RA\" de ket thuc"],
-                    ["4", "Dung \"Quet QR\" neu giam doc tao ma QR tai cong trinh"],
-                    ["5", "Gui \"Yeu cau\" neu can dieu chinh, xin nghi phep hoac tang ca"],
-                  ].map(([n, text]) => (
-                    <div key={n} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
-                      <span style={{ width: 20, height: 20, borderRadius: 10, background: C.accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{n}</span>
-                      <span style={{ fontSize: 13, color: C.text, lineHeight: 1.4 }}>{text}</span>
+                    ["🏢", "Thiet lap dia diem", "Vao tab \"Dia diem\" → nhan \"+\" → nhap ten, dia chi, toa do (hoac nhan \"Lay vi tri hien tai\" khi dung tai cong trinh). Dat ban kinh geofence (mac dinh 200m). Nhan vien cham cong ngoai pham vi se bi ghi nhan canh bao."],
+                    ["📱", "Tao ma QR", "O trang chinh, chon dia diem → nhan \"Tao QR\". Ma hien thi tren man hinh — nhan vien quet de cham cong. Ma tu dong het han sau 5 phut, chong chup anh gui cho nguoi khac."],
+                    ["📊", "Theo doi realtime", "Tab \"Quan ly\" hien thi: ai da cham cong / di tre / vang mat NGAY HOM NAY. Thong tin cap nhat tu dong, khong can reload."],
+                    ["✅", "Duyet yeu cau", "Khi nhan vien gui yeu cau dieu chinh / nghi phep / tang ca → hien o tab \"Quan ly\". Nhan Duyet hoac Tu choi."],
+                    ["📈", "Xem bao cao thang", "Tab \"Lich su\" → chon thang → xem tong hop: so ngay cong, tong gio lam, gio tang ca, so lan di tre cua tung nhan vien. Du lieu dung de tinh luong cuoi thang."],
+                  ].map(([icon, title, desc]) => (
+                    <div key={title} style={{ display: "flex", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#fff", borderRadius: 10 }}>
+                      <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#e65100", marginBottom: 3 }}>{title}</div>
+                        <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{desc}</div>
+                      </div>
                     </div>
                   ))}
                 </div>
+              )}
 
-                {/* Giám đốc */}
-                {isDirector && (
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e67e22", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Giam doc</div>
-                    {[
-                      ["Dia diem", "Them dia diem lam viec (tab \"Dia diem\") — he thong tu dong kiem tra nhan vien co dung vi tri khong"],
-                      ["QR Code", "Tao ma QR cho cong trinh — nhan vien quet de cham cong nhanh, ma tu dong het han sau 5 phut"],
-                      ["Quan ly", "Xem ai da cham cong / di tre / vang mat (tab \"Quan ly\") — duyet yeu cau dieu chinh, nghi phep"],
-                      ["Lich su", "Xem bao cao thang — tong ngay cong, gio tang ca, so lan di tre cua tung nhan vien"],
-                    ].map(([title, text]) => (
-                      <div key={title} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "#e67e22", flexShrink: 0, minWidth: 52 }}>{title}</span>
-                        <span style={{ fontSize: 12, color: C.sub, lineHeight: 1.4 }}>{text}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Lưu ý */}
-                <div style={{ marginTop: 10, padding: "8px 10px", background: "#fff9e6", borderRadius: 8, fontSize: 12, color: "#8a6d3b", lineHeight: 1.5 }}>
-                  💡 <b>Luu y:</b> Cham cong offline van hoat dong — du lieu se tu dong dong bo khi co mang. GPS can chinh xac trong pham vi cho phep cua dia diem.
-                </div>
+              {/* Quy định & lưu ý */}
+              <div style={{ background: "#fff9e6", borderRadius: 14, padding: "14px 16px", border: "1px solid #f0e4a8" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#8a6d3b", marginBottom: 8 }}>⚙️ Quy dinh & luu y</div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#6d5a2e", lineHeight: 1.8 }}>
+                  <li><b>Gio lam viec:</b> 8:00 — 17:00 (co the thay doi trong Cai dat)</li>
+                  <li><b>Di tre:</b> Cham cong vao sau 8:15 duoc tinh la di tre</li>
+                  <li><b>Tang ca:</b> Lam tren 8 tieng/ngay — phan du duoc tinh OT</li>
+                  <li><b>Offline:</b> Khong co mang van cham cong duoc. Du lieu tu dong dong bo khi co wifi/4G</li>
+                  <li><b>GPS:</b> Can bat vi tri tren dien thoai. Do chinh xac phu thuoc vao thiet bi (thuong 5-20m)</li>
+                  <li><b>Selfie:</b> Anh duoc luu lam bang chung — khong the su dung anh cu hoac anh nguoi khac</li>
+                  <li><b>QR Code:</b> Chi co hieu luc 5 phut — dam bao nhan vien phai co mat tai cong trinh</li>
+                </ul>
               </div>
+
             </div>
           </div>
         )}
