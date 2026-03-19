@@ -11,7 +11,7 @@ import {
 } from "../services";
 import { useVoice } from "../hooks";
 
-export function useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge, settings, user, addTask, deleteTask, patchTask }) {
+export function useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge, settings, user, addTask, deleteTask, patchTask, currentTab }) {
   const defaultMsg = { role: "assistant", content: "Chào bạn! Tôi là **Wory** — trợ lý AI của bạn.\n\nNhấn nút mic để **nói chuyện bằng giọng nói**, hoặc nhắn tin ở đây.\n\nTôi có thể giúp **lập kế hoạch**, **tư vấn**, hoặc **nói chuyện phiếm** cho vui!" };
   const [msgs, setMsgs] = useState(() => loadJSON("chat_history", [defaultMsg]));
   const [chatStartedAt] = useState(() => {
@@ -125,6 +125,21 @@ export function useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge,
     const shortName = (settings.displayName || user.name || "ban").split(" ").pop();
     const canEdit = settings.woryCanEdit;
 
+    const TAB_CONTEXT = {
+      tasks: { label: "Việc", rules: "Chi ho tro: them/sua/xoa task, lap ke hoach, quan ly cong viec" },
+      dept: { label: "Phòng ban", rules: "Chi ho tro: chat phong ban, trao doi noi bo" },
+      requests: { label: "Yêu cầu", rules: "Chi ho tro: tao/theo doi yeu cau, duyet yeu cau" },
+      inbox: { label: "Chat", rules: "Chi ho tro: soan tin nhan, trao doi, goi y noi dung chat" },
+      calendar: { label: "Lịch", rules: "Chi ho tro: xem lich, goi y sap xep thoi gian" },
+      expense: { label: "Chi tiêu", rules: "Chi ho tro: ghi chi tieu, phan tich tai chinh" },
+      dashboard: { label: "Tổng quan", rules: "Chi ho tro: phan tich tong quan, goi y cai thien" },
+      report: { label: "Báo cáo", rules: "Chi ho tro: tao bao cao, phan tich du lieu" },
+      ai: { label: "AI Chat", rules: "Ho tro toan dien — day la trang chat chinh cua Wory" },
+    };
+    const tabCtx = TAB_CONTEXT[currentTab] || TAB_CONTEXT.tasks;
+    const tabLabel = tabCtx.label;
+    const tabRules = tabCtx.rules;
+
     const recentMsgs = (chatMsgs || msgs).slice(-20);
     let chatSummary = "";
     if (recentMsgs.length > 2) {
@@ -204,6 +219,13 @@ ${tone}
 - KHONG lap lai cau da noi. Neu ${shortName} noi "u", "ok" → hieu la dong y, tien hanh luon
 - KHONG hoi di hoi lai cung mot cau. Linh hoat, tu nhien nhu nguoi that
 - Khi ${shortName} xac nhan → HANH DONG NGAY, khong hoi them
+
+PHAM VI HO TRO — CONTEXT-AWARE:
+- Hien tai ${shortName} dang o tab: ${tabLabel}
+- Chi ho tro thao tac du lieu TRONG PHAM VI trang hien tai:
+${tabRules}
+- Neu ${shortName} yeu cau thao tac NGOAI trang hien tai → Goi y: "${shortName} chuyen sang tab [ten tab] de toi ho tro nhe!"
+- NGOAI TRU: noi chuyen phiem, hoi dap chung, tu van → duoc phep o MOI trang
 
 QUAN TRONG — CACH NOI VE CONG VIEC:
 - KHONG doc emoji, gach dau dong, dau *, hay ky hieu markdown khi VOICE/TTS
@@ -298,7 +320,7 @@ ${memText}
 
 CONG VIEC (${tasks.length}):
 ${sum}`;
-  }, [tasks, memory, knowledge, settings.displayName, settings.woryCanEdit, settings.woryTone, user.name, msgs]);
+  }, [tasks, memory, knowledge, settings.displayName, settings.woryCanEdit, settings.woryTone, user.name, msgs, currentTab]);
 
   /* ── Send chat message ── */
   const sendChat = useCallback(async (override) => {

@@ -259,7 +259,7 @@ function MainApp({ user, onLogout }) {
     msgs, setMsgs, aiIn, setAiIn, aiLoad, voiceMode, voice, endRef, knowledgeToast,
     sendChat, toggleVoiceMode, buildSystemPrompt, canNewChat, startNewChat,
     archiveChat, chatStartedAt,
-  } = useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge, settings, user, addTask, deleteTask, patchTask });
+  } = useWoryChat({ tasks, memory, setMemory, knowledge, setKnowledge, settings, user, addTask, deleteTask, patchTask, currentTab: tab });
 
   /* ── Offline detection + mutation queue ── */
   const { isOnline, queueSize, syncing } = useOffline();
@@ -1052,7 +1052,7 @@ function MainApp({ user, onLogout }) {
         {tab === "dev" && <TabErrorBoundary><DevTab user={user} /></TabErrorBoundary>}
         {tab === "attendance" && <TabErrorBoundary><AttendanceTab userId={userId} settings={settings} /></TabErrorBoundary>}
         {tab === "dept" && <TabErrorBoundary><DeptTab /></TabErrorBoundary>}
-        {tab === "requests" && <TabErrorBoundary><RequestTab userId={userId} settings={settings} /></TabErrorBoundary>}
+        {tab === "requests" && <TabErrorBoundary><RequestTab userId={userId} settings={settings} onOpenChat={(chatId) => { setOpenConvId(chatId); setTab("inbox"); }} /></TabErrorBoundary>}
 
         {tab === "ai" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeIn .2s" }}>
