@@ -90,7 +90,7 @@ export function StatCard({ icon, label, value, color }) {
 
 /* -- Filter chips (simplified: 3 status + all) -- */
 export function Filters({ filter, setFilter, pendingDeleteCount }) {
-  const pills = [["all","Tat ca"],["todo","Can lam"],["inprogress","Dang lam"],["done","Xong"]];
+  const pills = [["all","Tat ca"],["todo","Can lam"],["inprogress","Dang lam"],["done","Đã xong"]];
   if (pendingDeleteCount > 0) pills.push(["pending_delete", `Cho xoa`]);
   return (
     <div className="no-scrollbar" style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:2 }}>
