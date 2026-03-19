@@ -308,10 +308,12 @@ function MainApp({ user, onLogout }) {
   const prevUnreadRef = useRef(0);
   useEffect(() => {
     if (chatUnread > prevUnreadRef.current && tab !== "inbox") {
-      // Browser notification
+      // Browser notification — use SW on mobile (new Notification() throws on Android)
       if ("Notification" in window && Notification.permission === "granted") {
         const n = chatUnread - prevUnreadRef.current;
-        new Notification("WorkFlow", { body: `${n} tin nhắn mới`, icon: "/icon-192.png", tag: "chat-unread" });
+        navigator.serviceWorker?.ready.then(reg => {
+          if (reg) reg.showNotification("WorkFlow", { body: `${n} tin nhắn mới`, icon: "/icon-192.png", tag: "chat-unread" });
+        }).catch(() => {});
       }
     }
     prevUnreadRef.current = chatUnread;
