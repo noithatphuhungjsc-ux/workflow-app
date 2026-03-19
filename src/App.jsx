@@ -781,14 +781,14 @@ function MainApp({ user, onLogout }) {
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
             {/* Search bar + edit/delete buttons */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "stretch", height: 40 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
               <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
                 <input
                   className="input-base"
                   value={searchQ}
                   onChange={e => setSearchQ(e.target.value)}
                   placeholder={`Tìm ${t("task", settings).toLowerCase()}...`}
-                  style={{ paddingLeft: 34, fontSize: 14, height: "100%", boxSizing: "border-box", margin: 0 }}
+                  style={{ paddingLeft: 34, paddingTop: 0, paddingBottom: 0, fontSize: 14, height: 40, boxSizing: "border-box", margin: 0 }}
                 />
                 <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: C.muted, pointerEvents: "none" }}>🔍</span>
                 {searchQ && (
@@ -799,10 +799,10 @@ function MainApp({ user, onLogout }) {
               {!selectMode && (
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                   <button className="tap" onClick={() => { setSelectMode("edit"); setSelectedIds(new Set()); }}
-                    style={{ width: 40, borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.accent, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                    style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.accent, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
                     title="Sửa hàng loạt">✏️</button>
                   <button className="tap" onClick={() => { setSelectMode("delete"); setSelectedIds(new Set()); }}
-                    style={{ width: 40, borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.red, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                    style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.red, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
                     title="Xóa hàng loạt">🗑️</button>
                 </div>
               )}
