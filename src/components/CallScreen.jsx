@@ -10,9 +10,27 @@ import { supabase } from "../lib/supabase";
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "stun:stun2.l.google.com:19302" },
-  { urls: "stun:stun3.l.google.com:19302" },
-  { urls: "stun:stun4.l.google.com:19302" },
+  { urls: "stun:stun.relay.metered.ca:80" },
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turns:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
 ];
 
 export default function CallScreen({ conversationId, userId, peerName, isIncoming, mode = "audio", onEnd }) {
@@ -23,6 +41,12 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
   const [speaker, setSpeaker] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState("");
+  const [debugLog, setDebugLog] = useState([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const log = useCallback((msg) => {
+    console.log("[Call]", msg);
+    setDebugLog(prev => [...prev.slice(-15), `${new Date().toLocaleTimeString("vi-VN")} ${msg}`]);
+  }, []);
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -87,23 +111,29 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     let mounted = true;
 
     const init = async () => {
+      log(`Bắt đầu (${isIncoming ? "nhận" : "gọi"}, ${isVideo ? "video" : "audio"})`);
+
       /* 1. Get media */
       try {
+        log("Xin quyền micro" + (isVideo ? "/camera" : "") + "...");
         const constraints = { audio: true, video: isVideo };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
         localStreamRef.current = stream;
+        log("✅ Đã có micro" + (isVideo ? "/camera" : ""));
       } catch (e) {
-        console.error("[Call] getUserMedia failed:", e);
-        setError(e.name === "NotAllowedError"
-          ? "Bạn chưa cấp quyền micro" + (isVideo ? "/camera" : "")
-          : "Không thể truy cập thiết bị");
+        const msg = e.name === "NotAllowedError"
+          ? "❌ Chưa cấp quyền micro" + (isVideo ? "/camera" : "")
+          : `❌ Lỗi thiết bị: ${e.name}`;
+        log(msg);
+        setError(msg);
         setStatus("ended");
-        setTimeout(() => onEndRef.current(), 2000);
+        setTimeout(() => onEndRef.current(), 3000);
         return;
       }
 
       /* 2. Create peer connection */
+      log("Tạo kết nối P2P (STUN+TURN)...");
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       pcRef.current = pc;
 
@@ -117,6 +147,7 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
       /* 3. Handle remote stream */
       pc.ontrack = (e) => {
+        log("✅ Nhận stream từ đối phương");
         if (!e.streams[0]) return;
         if (isVideo && remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = e.streams[0];
@@ -127,22 +158,27 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
       };
 
       /* 4. ICE candidates — send to peer */
+      let iceCount = 0;
       pc.onicecandidate = (e) => {
         if (e.candidate && channelRef.current) {
+          iceCount++;
+          if (iceCount <= 3) log(`ICE candidate #${iceCount} (${e.candidate.type || "?"})`);
           channelRef.current.send({
             type: "broadcast", event: "call-signal",
             payload: { type: "ice", candidate: e.candidate, from: userId },
           });
         }
+        if (!e.candidate && iceCount > 0) log(`ICE xong: ${iceCount} candidates`);
       };
 
       /* 5. Connection state monitoring */
       pc.oniceconnectionstatechange = () => {
         const state = pc.iceConnectionState;
-        console.log("[Call] ICE state:", state);
+        log(`ICE: ${state}`);
         if (state === "connected" || state === "completed") {
           if (mounted) {
             setStatus("connected");
+            log("✅ ĐÃ KẾT NỐI THÀNH CÔNG");
             if (!startTimeRef.current) {
               startTimeRef.current = Date.now();
               timerRef.current = setInterval(() => {
@@ -152,19 +188,24 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           }
         }
         if (state === "failed") {
-          console.error("[Call] ICE connection failed");
+          log("❌ ICE thất bại — có thể bị firewall chặn");
           if (mounted) { setError("Kết nối thất bại"); endCall(); }
         }
         if (state === "disconnected") {
-          // Give 5s to recover before ending
+          log("⚠️ Mất kết nối, đợi 5s...");
           setTimeout(() => {
             if (pc.iceConnectionState === "disconnected" && mounted) endCall();
           }, 5000);
         }
       };
 
+      pc.onicegatheringstatechange = () => {
+        log(`ICE gathering: ${pc.iceGatheringState}`);
+      };
+
       /* 6. Signaling channel */
       const channelName = `call:${conversationId}`;
+      log(`Kết nối channel: ${channelName}`);
       const channel = supabase.channel(channelName, {
         config: { broadcast: { self: false } },
       });
@@ -176,7 +217,7 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
         try {
           if (payload.type === "offer") {
-            console.log("[Call] Received offer");
+            log("📥 Nhận offer, tạo answer...");
             await currentPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             remoteDescSet.current = true;
             await processIceQueue();
@@ -186,13 +227,15 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
               type: "broadcast", event: "call-signal",
               payload: { type: "answer", sdp: answer, from: userId },
             });
+            log("📤 Đã gửi answer");
           }
 
           if (payload.type === "answer") {
-            console.log("[Call] Received answer");
+            log("📥 Nhận answer");
             await currentPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             remoteDescSet.current = true;
             await processIceQueue();
+            log("Đang chờ kết nối P2P...");
           }
 
           if (payload.type === "ice") {
@@ -204,8 +247,7 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           }
 
           if (payload.type === "accept") {
-            // Receiver accepted — caller creates and sends offer
-            console.log("[Call] Peer accepted, creating offer...");
+            log("📥 Đối phương chấp nhận, tạo offer...");
             if (!isIncoming && !offerSentRef.current) {
               offerSentRef.current = true;
               setStatus("connecting");
@@ -215,13 +257,13 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
                 type: "broadcast", event: "call-signal",
                 payload: { type: "offer", sdp: offer, from: userId },
               });
+              log("📤 Đã gửi offer");
             }
           }
 
           if (payload.type === "ready") {
-            // Peer is ready on channel — if caller, send offer now
+            log("📥 Đối phương sẵn sàng");
             if (!isIncoming && !offerSentRef.current) {
-              // Wait a moment to ensure peer's handlers are ready
               setTimeout(async () => {
                 if (offerSentRef.current || !pcRef.current) return;
                 offerSentRef.current = true;
@@ -233,12 +275,14 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
                     type: "broadcast", event: "call-signal",
                     payload: { type: "offer", sdp: offer, from: userId },
                   });
-                } catch (e) { console.error("[Call] Offer failed:", e); }
+                  log("📤 Đã gửi offer (retry)");
+                } catch (e) { log(`❌ Offer failed: ${e.message}`); }
               }, 500);
             }
           }
 
           if (payload.type === "end") {
+            log("📥 Đối phương kết thúc cuộc gọi");
             cleanup();
             if (mounted) {
               setStatus("ended");
@@ -246,26 +290,29 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
             }
           }
         } catch (e) {
-          console.error("[Call] Signal handling error:", e);
+          log(`❌ Signal error: ${e.message}`);
         }
       });
 
-      await channel.subscribe((status) => {
-        console.log("[Call] Channel status:", status);
+      await channel.subscribe((st) => {
+        log(`Channel: ${st}`);
       });
       channelRef.current = channel;
 
       /* 7. Role-based actions after channel is ready */
       if (!isIncoming) {
-        // CALLER: insert call message + push notification + announce ready
+        // CALLER
         setStatus("calling");
+        log("Gửi tin nhắn cuộc gọi...");
 
-        await supabase.from("messages").insert({
+        const { error: msgErr } = await supabase.from("messages").insert({
           conversation_id: conversationId,
           sender_id: userId,
           content: isVideo ? "📹 Cuộc gọi video" : "📞 Cuộc gọi thoại",
           type: "call",
-        }).catch(e => console.warn("[Call] Insert msg:", e.message));
+        });
+        if (msgErr) log(`⚠️ Insert msg: ${msgErr.message}`);
+        else log("✅ Đã gửi tin nhắn, chờ đối phương...");
 
         // Push notification to other members
         try {
@@ -275,7 +322,8 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           const { data: members } = await supabase
             .from("conversation_members").select("user_id")
             .eq("conversation_id", conversationId).neq("user_id", userId);
-          if (members) {
+          if (members && members.length > 0) {
+            log(`Push notification → ${members.length} người`);
             for (const m of members) {
               fetch("/api/push-call", {
                 method: "POST",
@@ -283,20 +331,24 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
                 body: JSON.stringify({ targetUserId: m.user_id, callerName, mode }),
               }).catch(() => {});
             }
+          } else {
+            log("⚠️ Không tìm thấy thành viên khác");
           }
         } catch {}
 
-        // Auto-timeout: if not connected in 45s, end call
+        // Auto-timeout
         setTimeout(() => {
           if (mounted && !startTimeRef.current) {
+            log("⏰ 45s timeout — không có phản hồi");
             setError("Không có phản hồi");
             endCall();
           }
         }, 45000);
 
       } else {
-        // RECEIVER: send accept + ready signals
+        // RECEIVER
         setStatus("connecting");
+        log("📤 Gửi accept...");
         channel.send({
           type: "broadcast", event: "call-signal",
           payload: { type: "accept", from: userId },
@@ -324,7 +376,8 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
     init();
     return () => { mounted = false; cleanup(); };
-  }, [conversationId, userId, isIncoming, isVideo, cleanup, endCall, processIceQueue]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, userId, isIncoming, isVideo]);
 
   /* ── Accept incoming call (ringing state only) ── */
   const acceptCall = () => {
@@ -467,6 +520,29 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           <CallBtn onClick={toggleSpeaker} active={speaker} icon={speaker ? "🔊" : "🔈"} />
         )}
       </div>
+
+      {/* Debug log toggle */}
+      <button onClick={() => setShowDebug(!showDebug)}
+        style={{
+          position: "absolute", top: 8, left: 8, zIndex: 5,
+          background: "rgba(0,0,0,.4)", border: "none", color: "#fff",
+          borderRadius: 8, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+        }}>
+        {showDebug ? "Ẩn log" : "Log"}
+      </button>
+
+      {/* Debug panel */}
+      {showDebug && (
+        <div style={{
+          position: "absolute", top: 36, left: 8, right: 8, zIndex: 5,
+          background: "rgba(0,0,0,.85)", borderRadius: 10, padding: "8px 10px",
+          maxHeight: 200, overflowY: "auto", fontSize: 10, color: "#68d391",
+          fontFamily: "monospace", lineHeight: 1.6,
+        }}>
+          {debugLog.length === 0 && <div style={{ color: "#999" }}>Đang khởi tạo...</div>}
+          {debugLog.map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+      )}
 
       <style>{`
         @keyframes callPulse {
