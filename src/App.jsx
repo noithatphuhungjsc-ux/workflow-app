@@ -1340,7 +1340,7 @@ function MainApp({ user, onLogout }) {
       {moreMenuOpen && (
         <>
           <div style={{ position:"fixed", inset:0, zIndex:998, background:"rgba(0,0,0,.3)" }} onClick={() => setMoreMenuOpen(false)} />
-          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"#fff", borderRadius:"20px 20px 0 0", zIndex:999, padding:"14px 16px calc(28px + env(safe-area-inset-bottom, 0px))", animation:"slideUp .2s" }}>
+          <div className="bottom-sheet">
             <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 14px" }} />
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
               {[
@@ -1380,7 +1380,7 @@ function MainApp({ user, onLogout }) {
       {statusPickerTask && (
         <>
           <div style={{ position:"fixed", inset:0, zIndex:998, background:"rgba(0,0,0,.4)" }} onClick={() => setStatusPickerTask(null)} />
-          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:"#fff", borderRadius:"20px 20px 0 0", zIndex:999, padding:"16px 20px calc(28px + env(safe-area-inset-bottom, 0px))", animation:"slideUp .2s" }}>
+          <div className="bottom-sheet" style={{ padding:"16px 20px" }}>
             <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 14px" }} />
             <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:12 }}>Doi trang thai</div>
             {STATUS_ORDER.map(s => (
