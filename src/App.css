@@ -224,6 +224,19 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   animation: slideUp .2s;
 }
 
+/* -- Chat room full-screen overlay -- */
+.chatroom-container {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
 /* -- Modal overlay -- */
 .modal-overlay {
   position: fixed;

@@ -427,11 +427,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   const pinnedMessages = messages.filter(m => pinnedMsgs.includes(m.id));
 
   return (
-    <div ref={containerRef} style={{
-      position: "fixed", top: 0, left: 0, right: 0, height: "100dvh", zIndex: 100,
-      display: "flex", flexDirection: "column", background: C.bg, maxWidth: 480, margin: "0 auto",
-      overflow: "hidden", paddingTop: "env(safe-area-inset-top, 0px)",
-    }}>
+    <div ref={containerRef} className="chatroom-container" style={{ background: C.bg }}>
 
       {/* Header */}
       <div style={{
