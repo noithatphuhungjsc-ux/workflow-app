@@ -204,6 +204,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   display: flex;
   align-items: center;
   z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* -- Modal overlay -- */
@@ -437,7 +438,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
 /* -- AI input bar -- */
 .ai-input-bar {
   position: fixed;
-  bottom: 76px; /* above navbar (~70px + safe gap) */
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -445,5 +446,4 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   background: #ffffff;
   border-top: 1px solid #e8e5de;
   z-index: 51;
-  padding-bottom: env(safe-area-inset-bottom);
 }
