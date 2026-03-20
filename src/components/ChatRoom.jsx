@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { C } from "../constants";
 import { useChat } from "../hooks/useChat";
 import ChatBubble from "./ChatBubble";
@@ -426,7 +427,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   const pinnedMessages = messages.filter(m => pinnedMsgs.includes(m.id));
 
-  return (
+  return createPortal(
     <div ref={containerRef} className="chatroom-container" style={{ background: C.bg }}>
 
       {/* Header */}
@@ -991,6 +992,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
         @keyframes typeDot { 0%,60%,100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
         @keyframes slideLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }
