@@ -177,33 +177,8 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }, [messages.length, otherTyping]);
 
-  // Keep chat fitted to visual viewport (no jumps when keyboard opens on iOS)
+  // Container ref — use CSS for layout, no JS height manipulation
   const containerRef = useRef(null);
-  useEffect(() => {
-    const vp = window.visualViewport;
-    if (!vp) return;
-    const update = () => {
-      const el = containerRef.current;
-      if (!el) return;
-      // Only adjust when keyboard is open (viewport shrinks)
-      const fullHeight = window.innerHeight;
-      if (vp.height < fullHeight - 50) {
-        // Keyboard is open — fit to visual viewport
-        el.style.height = vp.height + "px";
-        el.style.top = vp.offsetTop + "px";
-        el.style.bottom = "auto";
-      } else {
-        // Keyboard closed — use full screen with safe areas
-        el.style.height = "";
-        el.style.top = "0";
-        el.style.bottom = "0";
-      }
-    };
-    update();
-    vp.addEventListener("resize", update);
-    vp.addEventListener("scroll", update);
-    return () => { vp.removeEventListener("resize", update); vp.removeEventListener("scroll", update); };
-  }, []);
 
   // Cleanup camera on unmount
   useEffect(() => {
@@ -453,7 +428,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   return (
     <div ref={containerRef} style={{
-      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100,
+      position: "fixed", top: 0, left: 0, right: 0, height: "100dvh", zIndex: 100,
       display: "flex", flexDirection: "column", background: C.bg, maxWidth: 480, margin: "0 auto",
       overflow: "hidden", paddingTop: "env(safe-area-inset-top, 0px)",
     }}>
@@ -647,7 +622,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
       )}
 
       {/* Input bar */}
-      <div style={{ flexShrink: 0, background: C.surface, borderTop: `1px solid ${C.border}`, paddingBottom: "env(safe-area-inset-bottom, 0)" }}>
+      <div style={{ flexShrink: 0, background: C.surface, borderTop: `1px solid ${C.border}`, paddingBottom: 4 }}>
         {isListening && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px 0", background: `${C.red}10` }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, animation: "blink 1s infinite" }} />
