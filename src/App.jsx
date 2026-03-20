@@ -720,10 +720,6 @@ function MainApp({ user, onLogout }) {
       <div style={{ padding: "8px 12px 6px", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, background: "#fff", borderBottom: "1px solid #eae7e1" }}>
         <UserMenu user={{ ...user, name: settings.displayName || user.name }} onLogout={onLogout} onSettings={() => setSettingsOpen(true)} />
         <span style={{ fontSize:17, fontWeight:800, color:C.accent, letterSpacing:-.5 }}>WorkFlow</span>
-        <span className="tap" onClick={() => { setChangelogOpen(true); setChangelogBack(false); }}
-          style={{ fontSize:9, fontWeight:700, color:C.muted, background:"#f0eeea", borderRadius:6, padding:"2px 5px", cursor:"pointer" }}>
-          v{CHANGELOG[0]?.version || "2.2"}
-        </span>
         {!isOnline && (
           <span style={{ fontSize:10, fontWeight:700, color:"#e74c3c", background:"#fde8e8", padding:"2px 6px", borderRadius:6, marginLeft:4 }}>
             Offline{queueSize > 0 ? ` (${queueSize})` : ""}

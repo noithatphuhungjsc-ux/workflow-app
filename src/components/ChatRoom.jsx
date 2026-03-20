@@ -177,7 +177,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }, [messages.length, otherTyping]);
 
-  // Keep chat fitted to visual viewport (no jumps when keyboard opens)
+  // Keep chat fitted to visual viewport (no jumps when keyboard opens on iOS)
   const containerRef = useRef(null);
   useEffect(() => {
     const vp = window.visualViewport;
@@ -185,8 +185,19 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     const update = () => {
       const el = containerRef.current;
       if (!el) return;
-      el.style.height = vp.height + "px";
-      el.style.top = vp.offsetTop + "px";
+      // Only adjust when keyboard is open (viewport shrinks)
+      const fullHeight = window.innerHeight;
+      if (vp.height < fullHeight - 50) {
+        // Keyboard is open — fit to visual viewport
+        el.style.height = vp.height + "px";
+        el.style.top = vp.offsetTop + "px";
+        el.style.bottom = "auto";
+      } else {
+        // Keyboard closed — use full screen with safe areas
+        el.style.height = "";
+        el.style.top = "0";
+        el.style.bottom = "0";
+      }
     };
     update();
     vp.addEventListener("resize", update);
@@ -442,11 +453,10 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   return (
     <div ref={containerRef} style={{
-      position: "fixed", top: 0, left: 0, right: 0, height: "100dvh", zIndex: 100,
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100,
       display: "flex", flexDirection: "column", background: C.bg, maxWidth: 480, margin: "0 auto",
-      overflow: "hidden",
+      overflow: "hidden", paddingTop: "env(safe-area-inset-top, 0px)",
     }}>
-      <div style={{ background: C.surface, flexShrink: 0, height: "env(safe-area-inset-top, 0)" }} />
 
       {/* Header */}
       <div style={{

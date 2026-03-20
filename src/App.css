@@ -125,6 +125,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* -- Responsive cho desktop/tablet -- */
