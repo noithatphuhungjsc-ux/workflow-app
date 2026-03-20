@@ -242,9 +242,9 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     return all;
   })();
   const localDevId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id; } catch { return null; } })();
-  const mentionList = mergedProfiles
-    .filter(p => p.id !== userId && p.id !== localDevId && (!mentionQuery || (p.display_name || "").toLowerCase().includes(mentionQuery)))
-    .map(p => ({ id: p.id, name: p.display_name || p.name || "?" }));
+  const mentionList = chatMembers
+    .filter(m => !mentionQuery || (m.name || "").toLowerCase().includes(mentionQuery))
+    .map(m => ({ id: m.supaId, name: m.name, color: m.color }));
 
   // Pin/unpin message
   const togglePinMsg = (msgId) => {
@@ -654,8 +654,8 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
             {mentionList.map(p => (
               <div key={p.id} className="tap" onClick={() => insertMention(p.name)}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "pointer", borderBottom: `1px solid ${C.border}11` }}>
-                <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {p.name[0].toUpperCase()}
+                <div style={{ width: 26, height: 26, borderRadius: "50%", background: p.color || C.accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {(p.name || "?")[0].toUpperCase()}
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{p.name}</span>
               </div>
