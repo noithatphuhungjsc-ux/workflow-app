@@ -806,7 +806,7 @@ function MainApp({ user, onLogout }) {
         // restore scroll on mount/tab switch
         if (!el._restored) { const s = sessionStorage.getItem("wf_scroll_" + tab); if (s) el.scrollTop = +s; el._restored = true; }
         el.onscroll = () => sessionStorage.setItem("wf_scroll_" + tab, el.scrollTop);
-      }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: "calc(52px + env(safe-area-inset-bottom, 0px) * 0.35)", animation: `${tabDir.current === "right" ? "slideInRight" : "slideInLeft"} .2s ease` }}>
+      }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: 50, animation: `${tabDir.current === "right" ? "slideInRight" : "slideInLeft"} .2s ease` }}>
 
         {tab === "tasks" && (
           <div style={{ animation: "fadeIn .2s" }}>
@@ -1124,7 +1124,7 @@ function MainApp({ user, onLogout }) {
 
       {/* ── MINI VOICE/TEXT WIDGET (tasks tab only) ── */}
       {tab === "tasks" && (
-        <div style={{ position:"fixed", bottom:"calc(124px + env(safe-area-inset-bottom, 0px) * 0.35)", right:14, zIndex:55, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8 }}>
+        <div style={{ position:"fixed", bottom:"122px", right:14, zIndex:55, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8 }}>
           {miniVoice && (
             <div style={{ background:"#fff", borderRadius:16, boxShadow:"0 4px 24px rgba(0,0,0,.15)", padding:"12px 14px", width:280, animation:"slideUp .2s" }}>
               {/* Task context badge */}
@@ -1187,7 +1187,7 @@ function MainApp({ user, onLogout }) {
       {tab === "tasks" && !addOpen && !selectMode && (
         <button className="tap" onClick={() => setAddOpen(true)}
           style={{
-            position: "fixed", bottom: "calc(114px + env(safe-area-inset-bottom, 0px) * 0.35)", right: 16, zIndex: 60,
+            position: "fixed", bottom: "112px", right: 16, zIndex: 60,
             width: 48, height: 48, borderRadius: 14, border: "none",
             background: C.card, border: `1px solid ${C.border}`,
             color: C.accent, fontSize: 24, fontWeight: 700, cursor: "pointer",
@@ -1199,7 +1199,7 @@ function MainApp({ user, onLogout }) {
       {/* ── WORY FAB — floating assistant button ── */}
       <button className="tap" onClick={() => setWoryOpen(v => !v)}
         style={{
-          position: "fixed", bottom: "calc(54px + env(safe-area-inset-bottom, 0px) * 0.35)", right: 16, zIndex: 70,
+          position: "fixed", bottom: "52px", right: 16, zIndex: 70,
           width: 52, height: 52, borderRadius: "50%", border: "none",
           background: woryOpen ? C.muted : `linear-gradient(135deg, ${C.accent}, ${C.purple})`,
           color: "#fff", fontSize: woryOpen ? 18 : 20, fontWeight: 700, cursor: "pointer",
@@ -1536,7 +1536,7 @@ function MainApp({ user, onLogout }) {
 
       {/* ── KNOWLEDGE TOAST ── */}
       {knowledgeToast && (
-        <div style={{ position:"fixed", bottom:"calc(54px + env(safe-area-inset-bottom, 0px) * 0.35)", left:12, right:12, zIndex:9998, animation:"slideDown .35s ease-out" }}>
+        <div style={{ position:"fixed", bottom:"52px", left:12, right:12, zIndex:9998, animation:"slideDown .35s ease-out" }}>
           <div style={{ background:"#fef9e7", border:`1px solid ${C.gold}33`, borderRadius:14, padding:"12px 16px", boxShadow:"0 4px 20px rgba(0,0,0,.1)", display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:18 }}>&#x1F9E0;</span>
             <div style={{ flex:1, fontSize:13, color:C.text }}>Wory đã ghi nhớ <b>{knowledgeToast}</b> điều mới</div>
