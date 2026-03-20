@@ -220,7 +220,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   border-radius: 20px 20px 0 0;
   z-index: 999;
   padding: 14px 16px;
-  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   animation: slideUp .2s;
 }
 
@@ -455,7 +455,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
 /* -- AI input bar -- */
 .ai-input-bar {
   position: fixed;
-  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
