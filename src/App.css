@@ -191,6 +191,12 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   }
 }
 
+/* -- Hide navbar when ChatRoom is open (iOS fixed positioning issue) -- */
+.app-container:has(.chatroom-container) .bottom-nav,
+.app-container:has(.chatroom-container) .ai-input-bar {
+  display: none !important;
+}
+
 /* -- Bottom nav -- */
 .bottom-nav {
   position: fixed;
