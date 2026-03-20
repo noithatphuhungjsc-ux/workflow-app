@@ -21,19 +21,25 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const setActiveConv = useCallback((id) => {
     if (id) {
       sessionStorage.setItem("wf_activeConv", id);
-      // Auto-join membership in background — don't block navigation
+      // Verify membership — do NOT auto-join (removed members must not rejoin)
       if (supabase && userId) {
         supabase.from("conversation_members")
           .select("user_id").eq("conversation_id", id).eq("user_id", userId).maybeSingle()
           .then(({ data: existing }) => {
-            if (!existing) supabase.from("conversation_members").insert({ conversation_id: id, user_id: userId });
+            if (!existing) {
+              // Not a member — check if this is a conversation they were invited to (e.g. from openConvId)
+              // Only auto-join for DMs or project chats that are explicitly opened via props
+              if (id === openConvId) {
+                supabase.from("conversation_members").insert({ conversation_id: id, user_id: userId }).catch(() => {});
+              }
+            }
           }).catch(() => {});
       }
     } else {
       sessionStorage.removeItem("wf_activeConv");
     }
     _setActiveConv(id);
-  }, [userId]);
+  }, [userId, openConvId]);
 
   const [showNew, setShowNew] = useState(null);
   const [profiles, setProfiles] = useState([]);
@@ -72,20 +78,23 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const deleteConversation = async (convId) => {
     if (!supabase || !userId) return;
     const conv = conversations.find(c => c.id === convId);
-    if (conv?.type === "group" && conv.created_by !== userId) {
-      alert("Chỉ người tạo nhóm mới có quyền xóa cuộc trò chuyện này.");
-      setConfirmDelete(null);
-      setContextMenu(null);
-      return;
-    }
+    // For groups: leave the group (remove own membership)
+    // For DMs: remove own membership (hides conversation)
     const { error } = await supabase.from("conversation_members").delete()
       .eq("conversation_id", convId).eq("user_id", userId);
     if (error) {
-      alert("Không xóa được. Kiểm tra quyền trên Supabase.");
-      console.error("Delete conversation error:", error);
+      alert("Không thể rời cuộc trò chuyện. Vui lòng thử lại.");
+      console.error("Leave conversation error:", error);
+    } else if (conv?.type === "group") {
+      // Send system message to notify others
+      await supabase.from("messages").insert({
+        conversation_id: convId, sender_id: userId,
+        content: `👤 đã rời khỏi nhóm`, type: "system",
+      }).catch(() => {});
     }
     setConfirmDelete(null);
     setContextMenu(null);
+    if (activeConv === convId) _setActiveConv(null);
     refresh();
   };
 
@@ -301,16 +310,12 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
             </div>
             {(() => {
               const conv = conversations.find(c => c.id === contextMenu.id);
-              const canDelete = !conv || conv.type !== "group" || conv.created_by === userId;
-              return canDelete ? (
+              const isGroup = conv?.type === "group";
+              return (
                 <button className="tap" onClick={() => { setConfirmDelete(contextMenu.id); setContextMenu(null); }}
                   style={{ width: "100%", padding: "12px 16px", border: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: C.red, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-                  🗑️ Xóa cuộc trò chuyện
+                  {isGroup ? "🚪 Rời nhóm" : "🗑️ Xóa cuộc trò chuyện"}
                 </button>
-              ) : (
-                <div style={{ padding: "12px 16px", fontSize: 13, color: C.muted, textAlign: "center" }}>
-                  Chỉ admin mới xóa được nhóm
-                </div>
               );
             })()}
             <button className="tap" onClick={() => setContextMenu(null)}
@@ -325,9 +330,15 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
       {confirmDelete && (
         <div style={{ position: "fixed", inset: 0, zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)" }}>
           <div style={{ background: C.surface, borderRadius: 16, padding: "24px 20px", width: 280, textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,.2)" }}>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>🗑️</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>Xóa cuộc trò chuyện?</div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Bạn sẽ rời khỏi cuộc trò chuyện này. Hành động không thể hoàn tác.</div>
+            {(() => {
+              const conv = conversations.find(c => c.id === confirmDelete);
+              const isGroup = conv?.type === "group";
+              return (<>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{isGroup ? "🚪" : "🗑️"}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>{isGroup ? "Rời nhóm?" : "Xóa cuộc trò chuyện?"}</div>
+                <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{isGroup ? "Bạn sẽ rời khỏi nhóm này và không nhận tin nhắn nữa." : "Cuộc trò chuyện sẽ bị xóa khỏi danh sách của bạn."}</div>
+              </>);
+            })()}
             <div style={{ display: "flex", gap: 10 }}>
               <button className="tap" onClick={() => setConfirmDelete(null)}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", fontSize: 14, fontWeight: 600, color: C.text, cursor: "pointer" }}>
@@ -335,7 +346,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
               </button>
               <button className="tap" onClick={() => deleteConversation(confirmDelete)}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: C.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                Xóa
+                {(() => { const c = conversations.find(x => x.id === confirmDelete); return c?.type === "group" ? "Rời" : "Xóa"; })()}
               </button>
             </div>
           </div>

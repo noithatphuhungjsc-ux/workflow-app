@@ -195,19 +195,12 @@ export function useChat(conversationId, userId) {
         .eq("id", conversationId);
     } else if (error) {
       console.warn("Send message failed:", error);
-      // If membership issue, try auto-join then retry
-      if (error.code === "42501" || error.message?.includes("policy")) {
-        try {
-          await supabase.from("conversation_members").upsert({ conversation_id: conversationId, user_id: userId }, { onConflict: "conversation_id,user_id" });
-          const { data: retry } = await supabase.from("messages").insert(msg).select().single();
-          if (retry) {
-            setMessages(prev => prev.map(m => m.id === optimistic.id ? retry : m));
-            await supabase.from("conversations").update({ last_message_at: retry.created_at }).eq("id", conversationId);
-            return retry;
-          }
-        } catch {}
-      }
+      // Remove optimistic message — do NOT auto-rejoin if removed from group
       setMessages(prev => prev.filter(m => m.id !== optimistic.id));
+      // Notify user if it's a membership/policy error
+      if (error.code === "42501" || error.message?.includes("policy")) {
+        alert("Bạn không còn là thành viên của cuộc trò chuyện này.");
+      }
     }
 
     return data;

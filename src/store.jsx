@@ -284,7 +284,7 @@ export function AppProvider({ children, userId }) {
       // Poll: only fetch tasks+projects (fast). Initial: fetch everything.
       let data = isInitial
         ? await cloudLoadAll(null, userId)
-        : await cloudLoadKeys(null, userId, ["tasks", "projects"]);
+        : await cloudLoadKeys(null, userId, ["tasks", "projects", "expenses"]);
       if (data?.length) {
         for (const row of data) {
           if (!row.data) continue;
@@ -392,7 +392,7 @@ export function AppProvider({ children, userId }) {
             projDispatch({ type: "PROJ_LOAD", items: localProjects });
             saveJSON("projects", localProjects);
           }
-          if (row.key === "expenses" && isInitial) {
+          if (row.key === "expenses") {
             if (localExpenses.length === 0) {
               localExpenses = row.data;
             } else {
@@ -638,6 +638,10 @@ export function AppProvider({ children, userId }) {
   const patchProject = useCallback((id, data) => { projDispatch({ type: "PROJ_PATCH", id, data }); }, []);
   const deleteProject = useCallback((id) => {
     projDispatch({ type: "PROJ_DELETE", id });
+    // Cascade: unlink tasks from deleted project (clear projectId so they become standalone)
+    allTasks.filter(t => t.projectId === id && !t.deleted).forEach(t => {
+      dispatch({ type: "PATCH", id: t.id, data: { projectId: null, updatedAt: new Date().toISOString() } });
+    });
     // Track deleted project ID to prevent cloud restore
     deletedProjectIdsRef.current.add(id);
     const deletedList = [...deletedProjectIdsRef.current];
@@ -647,10 +651,9 @@ export function AppProvider({ children, userId }) {
       const updated = loadJSON("projects", []).filter(p => p.id !== id);
       saveJSON("projects", updated);
       cloudSave(null, userId, "projects", updated);
-      // Also sync deleted_projects list to cloud so other devices know
       cloudSave(null, userId, "deleted_projects", deletedList);
     }
-  }, [cloudId, userId]);
+  }, [cloudId, userId, allTasks]);
 
   const patchExpense = useCallback((id, data) => { expenseDispatch({ type: "EXP_PATCH", id, data }); }, []);
   const deleteExpense = useCallback((id) => { expenseDispatch({ type: "EXP_DELETE", id }); }, []);
@@ -777,16 +780,21 @@ export function AppProvider({ children, userId }) {
 
     // If director approves a deleteRequest from another user, sync deletion back to source
     if (t?._sourceUserId && t._sourceUserId !== userId) {
-      try {
-        const srcKey = `wf_${t._sourceUserId}_tasks`;
-        const srcTasks = JSON.parse(localStorage.getItem(srcKey) || "[]");
-        const updated = srcTasks.map(st =>
-          st.id === id ? { ...st, deleted: true, deletedAt: Date.now(), updatedAt: new Date().toISOString() } : st
-        );
-        localStorage.setItem(srcKey, JSON.stringify(updated));
-        // Also sync to cloud
-        cloudSave(null, t._sourceUserId, "tasks", updated).catch(() => {});
-      } catch (e) { console.warn("[WF] Reverse delete sync:", e.message); }
+      const syncReverseDeletion = async (retries = 2) => {
+        try {
+          const srcKey = `wf_${t._sourceUserId}_tasks`;
+          const srcTasks = JSON.parse(localStorage.getItem(srcKey) || "[]");
+          const updated = srcTasks.map(st =>
+            st.id === id ? { ...st, deleted: true, deletedAt: Date.now(), updatedAt: new Date().toISOString() } : st
+          );
+          localStorage.setItem(srcKey, JSON.stringify(updated));
+          await cloudSave(null, t._sourceUserId, "tasks", updated);
+        } catch (e) {
+          console.warn("[WF] Reverse delete sync failed:", e.message);
+          if (retries > 0) setTimeout(() => syncReverseDeletion(retries - 1), 3000);
+        }
+      };
+      syncReverseDeletion();
     }
 
     // Show undo toast

@@ -80,12 +80,16 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   }, [isSubThread, conversationId]);
 
   // parentProjectMemberList comes from parent ChatRoom's chatMembers
+  // Only show members who are actually in the parent group — not all profiles
   const availableForThread = (() => {
     if (!isSubThread) return [];
-    const src = parentProjectMemberList?.length > 0
-      ? parentProjectMemberList
-      : (profiles || []).filter(p => p.id !== userId).map(p => ({ supaId: p.id, name: p.display_name || "?", color: p.avatar_color }));
-    return src.filter(m => !threadCurrentMembers.includes(m.supaId));
+    if (parentProjectMemberList?.length > 0) {
+      return parentProjectMemberList.filter(m => !threadCurrentMembers.includes(m.supaId));
+    }
+    // Fallback: only use profiles that are TEAM_ACCOUNTS (not random profiles)
+    return (profiles || [])
+      .filter(p => p.id !== userId && !threadCurrentMembers.includes(p.id))
+      .map(p => ({ supaId: p.id, name: p.display_name || "?", color: p.avatar_color }));
   })();
 
   // 4) Toggle member selection when creating new thread
@@ -136,9 +140,21 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     setCreatingThread(false);
   };
 
-  // 6) Add/remove member from current sub-thread
+  // 6) Check if current user can manage members (creator or director)
+  const [convCreatedBy, setConvCreatedBy] = useState(null);
+  useEffect(() => {
+    if (!supabase || !conversationId) return;
+    supabase.from("conversations").select("created_by").eq("id", conversationId).maybeSingle()
+      .then(({ data }) => { if (data) setConvCreatedBy(data.created_by); });
+  }, [conversationId]);
+
+  const isDirectorUser = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").role === "director"; } catch { return false; } })();
+  const canManageMembers = convCreatedBy === userId || isDirectorUser;
+
+  // Add/remove member from current sub-thread (only creator or director)
   const addThreadMember = async (supaId) => {
     if (!supabase || !conversationId || !supaId) return;
+    if (!canManageMembers) { alert("Chỉ người tạo nhóm hoặc giám đốc mới có quyền thêm thành viên."); return; }
     const { error } = await supabase.from("conversation_members").insert({ conversation_id: conversationId, user_id: supaId });
     if (error) { console.warn("[WF] addThreadMember:", error); return; }
     const p = (profiles || []).find(pr => pr.id === supaId);
@@ -148,6 +164,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   const removeThreadMember = async (supaId) => {
     if (!supabase || !conversationId || !supaId || supaId === userId) return;
+    if (!canManageMembers) { alert("Chỉ người tạo nhóm hoặc giám đốc mới có quyền xóa thành viên."); return; }
     const { error } = await supabase.from("conversation_members").delete()
       .eq("conversation_id", conversationId).eq("user_id", supaId);
     if (error) { console.warn("[WF] removeThreadMember:", error); return; }
@@ -927,7 +944,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, fontWeight:600, color:C.text }}>{name}{isMe ? " (bạn)" : ""}</div>
                     </div>
-                    {!isMe && (
+                    {!isMe && canManageMembers && (
                       <button className="tap" onClick={() => removeThreadMember(uid)}
                         style={{ background:`${C.red}15`, border:"none", borderRadius:8, padding:"5px 10px", fontSize:11, fontWeight:600, color:C.red, cursor:"pointer" }}>
                         Xóa
@@ -937,8 +954,8 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                 );
               })}
 
-              {/* Available to add */}
-              {availableForThread.length > 0 && (
+              {/* Available to add (only for creator or director) */}
+              {canManageMembers && availableForThread.length > 0 && (
                 <>
                   <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginTop:16, marginBottom:8, textTransform:"uppercase", letterSpacing:.5 }}>Thêm thành viên</div>
                   {availableForThread.map(m => (

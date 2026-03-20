@@ -88,9 +88,10 @@ export default function DeptTab() {
           : TEAM_ACCOUNTS.filter(a => memberRoles.includes(a.role));
 
         const inserts = [];
+        const normalize = s => (s || "").toLowerCase().replace(/\s+/g, "");
         for (const acc of memberAccounts) {
-          // Look up Supabase UUID from profiles
-          const profile = profiles.find(p => p.display_name?.toLowerCase().includes(acc.name.split(" ")[0].toLowerCase()));
+          // Match by exact normalized display_name (not substring)
+          const profile = profiles.find(p => normalize(p.display_name) === normalize(acc.name));
           if (profile) inserts.push({ conversation_id: conv.id, user_id: profile.id });
         }
         // Also ensure current user is member
