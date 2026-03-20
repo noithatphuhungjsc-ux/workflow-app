@@ -2,54 +2,46 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { C } from "../constants";
 import { supabase } from "../lib/supabase";
 
+/* ================================================================
+   CALL SCREEN — WebRTC P2P audio/video call
+   Signaling via Supabase Realtime Broadcast
+   ================================================================ */
+
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "stun:stun.relay.metered.ca:80" },
-  {
-    urls: "turn:global.relay.metered.ca:80",
-    username: "open",
-    credential: "open",
-  },
-  {
-    urls: "turn:global.relay.metered.ca:443",
-    username: "open",
-    credential: "open",
-  },
-  {
-    urls: "turn:global.relay.metered.ca:443?transport=tcp",
-    username: "open",
-    credential: "open",
-  },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
 ];
 
 export default function CallScreen({ conversationId, userId, peerName, isIncoming, mode = "audio", onEnd }) {
   const isVideo = mode === "video";
-  const [status, setStatus] = useState(isIncoming ? "ringing" : "calling"); // calling | ringing | connected | ended
+  const [status, setStatus] = useState(isIncoming ? "ringing" : "calling");
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
+  const [error, setError] = useState("");
+
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const channelRef = useRef(null);
-  const ringChRef = useRef(null);
-  const ringIntervalRef = useRef(null);
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const onEndRef = useRef(onEnd);
+  const endedRef = useRef(false);
+  const iceCandidateQueue = useRef([]);
+  const remoteDescSet = useRef(false);
+  const offerSentRef = useRef(false);
   onEndRef.current = onEnd;
 
+  /* ── Cleanup ── */
   const cleanup = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
-    if (ringChRef.current) {
-      supabase.removeChannel(ringChRef.current);
-      ringChRef.current = null;
-    }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
@@ -65,154 +57,224 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
   }, []);
 
   const endCall = useCallback(() => {
-    // Notify peer
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "call-signal",
-      payload: { type: "end", from: userId },
-    });
+    if (endedRef.current) return;
+    endedRef.current = true;
+    try {
+      channelRef.current?.send({
+        type: "broadcast", event: "call-signal",
+        payload: { type: "end", from: userId },
+      });
+    } catch {}
     cleanup();
     setStatus("ended");
-    setTimeout(() => onEndRef.current(), 500);
+    setTimeout(() => onEndRef.current(), 800);
   }, [userId, cleanup]);
 
-  // Start call
+  /* ── Process queued ICE candidates after remote description is set ── */
+  const processIceQueue = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc || !remoteDescSet.current) return;
+    while (iceCandidateQueue.current.length > 0) {
+      const candidate = iceCandidateQueue.current.shift();
+      try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+      catch (e) { console.warn("[Call] ICE add failed:", e.message); }
+    }
+  }, []);
+
+  /* ── Main init ── */
   useEffect(() => {
     if (!supabase || !conversationId || !userId) return;
+    let mounted = true;
 
     const init = async () => {
-      // Get microphone
+      /* 1. Get media */
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
+        const constraints = { audio: true, video: isVideo };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
         localStreamRef.current = stream;
-      } catch {
+      } catch (e) {
+        console.error("[Call] getUserMedia failed:", e);
+        setError(e.name === "NotAllowedError"
+          ? "Bạn chưa cấp quyền micro" + (isVideo ? "/camera" : "")
+          : "Không thể truy cập thiết bị");
         setStatus("ended");
-        setTimeout(() => onEndRef.current(), 1000);
+        setTimeout(() => onEndRef.current(), 2000);
         return;
       }
 
-      // Create peer connection
+      /* 2. Create peer connection */
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       pcRef.current = pc;
 
-      // Add local audio tracks
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current);
       });
 
-      // Show local video preview
       if (isVideo && localVideoRef.current) {
         localVideoRef.current.srcObject = localStreamRef.current;
       }
 
-      // Handle remote stream
+      /* 3. Handle remote stream */
       pc.ontrack = (e) => {
-        if (e.streams[0]) {
-          if (isVideo && remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = e.streams[0];
-          }
-          if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = e.streams[0];
-          }
+        if (!e.streams[0]) return;
+        if (isVideo && remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = e.streams[0];
+        }
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = e.streams[0];
         }
       };
 
-      // Signaling channel
-      const channel = supabase.channel(`call:${conversationId}`, {
-        config: { broadcast: { self: false } },
-      });
-
-      channel.on("broadcast", { event: "call-signal" }, async ({ payload }) => {
-        if (payload.from === userId) return;
-
-        if (payload.type === "offer" && isIncoming) {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          channel.send({
-            type: "broadcast",
-            event: "call-signal",
-            payload: { type: "answer", sdp: answer, from: userId },
-          });
-        }
-
-        if (payload.type === "answer" && !isIncoming) {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-        }
-
-        if (payload.type === "ice") {
-          try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch {}
-        }
-
-        if (payload.type === "accept") {
-          // Peer accepted, send offer
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          channel.send({
-            type: "broadcast",
-            event: "call-signal",
-            payload: { type: "offer", sdp: offer, from: userId },
-          });
-        }
-
-        if (payload.type === "end") {
-          cleanup();
-          setStatus("ended");
-          setTimeout(() => onEndRef.current(), 500);
-        }
-      });
-
-      // ICE candidates
+      /* 4. ICE candidates — send to peer */
       pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          channel.send({
-            type: "broadcast",
-            event: "call-signal",
+        if (e.candidate && channelRef.current) {
+          channelRef.current.send({
+            type: "broadcast", event: "call-signal",
             payload: { type: "ice", candidate: e.candidate, from: userId },
           });
         }
       };
 
-      // Connection state
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "connected") {
-          setStatus("connected");
-          startTimeRef.current = Date.now();
-          timerRef.current = setInterval(() => {
-            setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
-          }, 1000);
+      /* 5. Connection state monitoring */
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        console.log("[Call] ICE state:", state);
+        if (state === "connected" || state === "completed") {
+          if (mounted) {
+            setStatus("connected");
+            if (!startTimeRef.current) {
+              startTimeRef.current = Date.now();
+              timerRef.current = setInterval(() => {
+                setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+              }, 1000);
+            }
+          }
         }
-        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-          endCall();
+        if (state === "failed") {
+          console.error("[Call] ICE connection failed");
+          if (mounted) { setError("Kết nối thất bại"); endCall(); }
+        }
+        if (state === "disconnected") {
+          // Give 5s to recover before ending
+          setTimeout(() => {
+            if (pc.iceConnectionState === "disconnected" && mounted) endCall();
+          }, 5000);
         }
       };
 
-      await channel.subscribe();
+      /* 6. Signaling channel */
+      const channelName = `call:${conversationId}`;
+      const channel = supabase.channel(channelName, {
+        config: { broadcast: { self: false } },
+      });
+
+      channel.on("broadcast", { event: "call-signal" }, async ({ payload }) => {
+        if (!mounted || payload.from === userId) return;
+        const currentPc = pcRef.current;
+        if (!currentPc) return;
+
+        try {
+          if (payload.type === "offer") {
+            console.log("[Call] Received offer");
+            await currentPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            remoteDescSet.current = true;
+            await processIceQueue();
+            const answer = await currentPc.createAnswer();
+            await currentPc.setLocalDescription(answer);
+            channel.send({
+              type: "broadcast", event: "call-signal",
+              payload: { type: "answer", sdp: answer, from: userId },
+            });
+          }
+
+          if (payload.type === "answer") {
+            console.log("[Call] Received answer");
+            await currentPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            remoteDescSet.current = true;
+            await processIceQueue();
+          }
+
+          if (payload.type === "ice") {
+            if (remoteDescSet.current) {
+              await currentPc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+            } else {
+              iceCandidateQueue.current.push(payload.candidate);
+            }
+          }
+
+          if (payload.type === "accept") {
+            // Receiver accepted — caller creates and sends offer
+            console.log("[Call] Peer accepted, creating offer...");
+            if (!isIncoming && !offerSentRef.current) {
+              offerSentRef.current = true;
+              setStatus("connecting");
+              const offer = await currentPc.createOffer();
+              await currentPc.setLocalDescription(offer);
+              channel.send({
+                type: "broadcast", event: "call-signal",
+                payload: { type: "offer", sdp: offer, from: userId },
+              });
+            }
+          }
+
+          if (payload.type === "ready") {
+            // Peer is ready on channel — if caller, send offer now
+            if (!isIncoming && !offerSentRef.current) {
+              // Wait a moment to ensure peer's handlers are ready
+              setTimeout(async () => {
+                if (offerSentRef.current || !pcRef.current) return;
+                offerSentRef.current = true;
+                setStatus("connecting");
+                try {
+                  const offer = await pcRef.current.createOffer();
+                  await pcRef.current.setLocalDescription(offer);
+                  channel.send({
+                    type: "broadcast", event: "call-signal",
+                    payload: { type: "offer", sdp: offer, from: userId },
+                  });
+                } catch (e) { console.error("[Call] Offer failed:", e); }
+              }, 500);
+            }
+          }
+
+          if (payload.type === "end") {
+            cleanup();
+            if (mounted) {
+              setStatus("ended");
+              setTimeout(() => onEndRef.current(), 800);
+            }
+          }
+        } catch (e) {
+          console.error("[Call] Signal handling error:", e);
+        }
+      });
+
+      await channel.subscribe((status) => {
+        console.log("[Call] Channel status:", status);
+      });
       channelRef.current = channel;
 
-      // If caller, insert call message + send push notification
+      /* 7. Role-based actions after channel is ready */
       if (!isIncoming) {
-        const { error } = await supabase.from("messages").insert({
+        // CALLER: insert call message + push notification + announce ready
+        setStatus("calling");
+
+        await supabase.from("messages").insert({
           conversation_id: conversationId,
           sender_id: userId,
-          content: mode === "video" ? "📹 Cuộc gọi video" : "📞 Cuộc gọi thoại",
+          content: isVideo ? "📹 Cuộc gọi video" : "📞 Cuộc gọi thoại",
           type: "call",
-        });
-        if (error) console.warn("[Call] insert failed:", error.message);
+        }).catch(e => console.warn("[Call] Insert msg:", e.message));
 
-        // Send push notification to other members so phone rings in background
+        // Push notification to other members
         try {
           const { data: myProfile } = await supabase
-            .from("profiles")
-            .select("display_name")
-            .eq("id", userId)
-            .single();
+            .from("profiles").select("display_name").eq("id", userId).single();
           const callerName = myProfile?.display_name || "Ai đó";
           const { data: members } = await supabase
-            .from("conversation_members")
-            .select("user_id")
-            .eq("conversation_id", conversationId)
-            .neq("user_id", userId);
+            .from("conversation_members").select("user_id")
+            .eq("conversation_id", conversationId).neq("user_id", userId);
           if (members) {
             for (const m of members) {
               fetch("/api/push-call", {
@@ -223,24 +285,57 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
             }
           }
         } catch {}
+
+        // Auto-timeout: if not connected in 45s, end call
+        setTimeout(() => {
+          if (mounted && !startTimeRef.current) {
+            setError("Không có phản hồi");
+            endCall();
+          }
+        }, 45000);
+
+      } else {
+        // RECEIVER: send accept + ready signals
+        setStatus("connecting");
+        channel.send({
+          type: "broadcast", event: "call-signal",
+          payload: { type: "accept", from: userId },
+        });
+        // Also send "ready" in case caller missed "accept"
+        setTimeout(() => {
+          if (channelRef.current && !remoteDescSet.current) {
+            channelRef.current.send({
+              type: "broadcast", event: "call-signal",
+              payload: { type: "ready", from: userId },
+            });
+          }
+        }, 1500);
+        // Retry "ready" in case of timing issues
+        setTimeout(() => {
+          if (channelRef.current && !remoteDescSet.current) {
+            channelRef.current.send({
+              type: "broadcast", event: "call-signal",
+              payload: { type: "ready", from: userId },
+            });
+          }
+        }, 4000);
       }
     };
 
     init();
-    return () => cleanup();
-  }, [conversationId, userId, isIncoming, cleanup, endCall]);
+    return () => { mounted = false; cleanup(); };
+  }, [conversationId, userId, isIncoming, isVideo, cleanup, endCall, processIceQueue]);
 
-  // Accept incoming call
+  /* ── Accept incoming call (ringing state only) ── */
   const acceptCall = () => {
     setStatus("connecting");
     channelRef.current?.send({
-      type: "broadcast",
-      event: "call-signal",
+      type: "broadcast", event: "call-signal",
       payload: { type: "accept", from: userId },
     });
   };
 
-  // Toggle mute
+  /* ── Controls ── */
   const toggleMute = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
@@ -248,29 +343,14 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     }
   };
 
-  // Toggle speaker — limited on mobile browsers (no earpiece/speaker API)
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const toggleSpeaker = () => {
-    if (isMobile) {
-      // Mobile browsers don't support switching between earpiece and speaker
-      // Audio always plays through the default output
-      setSpeaker(!speaker);
-      return;
-    }
-    // Desktop: try to switch audio output device
-    if (remoteAudioRef.current?.setSinkId) {
-      remoteAudioRef.current.setSinkId(speaker ? "default" : "communications");
-    }
-    setSpeaker(!speaker);
-  };
-
-  // Toggle camera (video mode only)
   const toggleCamera = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
       setCameraOff(!cameraOff);
     }
   };
+
+  const toggleSpeaker = () => setSpeaker(!speaker);
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);
@@ -283,29 +363,27 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     ringing: "Cuộc gọi đến...",
     connecting: "Đang kết nối...",
     connected: formatDuration(duration),
-    ended: "Kết thúc",
+    ended: error || "Kết thúc",
   };
 
+  /* ── UI ── */
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-      zIndex: 200,
+      zIndex: 10001,
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background: isVideo ? "#000" : "linear-gradient(180deg, #4a5568 0%, #2d3748 100%)",
       maxWidth: 480, margin: "0 auto",
     }}>
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
-      {/* Remote video (full screen background) */}
+      {/* Remote video */}
       {isVideo && (
         <video ref={remoteVideoRef} autoPlay playsInline
-          style={{
-            position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
-            objectFit: "cover", zIndex: 0,
-          }} />
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0 }} />
       )}
 
-      {/* Local video (small PiP) */}
+      {/* Local video PiP */}
       {isVideo && (
         <video ref={localVideoRef} autoPlay playsInline muted
           style={{
@@ -320,7 +398,6 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
       {/* Content overlay */}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-        {/* Avatar — only show when no remote video or not connected */}
         {(!isVideo || status !== "connected") && (
           <div style={{
             width: 90, height: 90, borderRadius: "50%",
@@ -329,24 +406,22 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
             color: "#fff", fontSize: 36, fontWeight: 700,
             marginBottom: 16,
             boxShadow: status === "connected" ? "0 0 0 4px rgba(106,127,212,.4)" : "none",
+            animation: status === "calling" || status === "ringing" ? "callPulse 2s infinite" : "none",
           }}>
             {(peerName || "?")[0].toUpperCase()}
           </div>
         )}
 
-        {/* Name */}
         <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 6, textShadow: isVideo ? "0 1px 4px rgba(0,0,0,.5)" : "none" }}>
           {peerName}
         </div>
 
-        {/* Status */}
         <div style={{
-          fontSize: 14, color: "rgba(255,255,255,.7)",
+          fontSize: 14, color: error ? "#fc8181" : "rgba(255,255,255,.7)",
           marginBottom: 40,
-          animation: status === "calling" || status === "ringing" ? "pulse2 1.5s infinite" : "none",
           textShadow: isVideo ? "0 1px 4px rgba(0,0,0,.5)" : "none",
         }}>
-          {statusText[status]}
+          {isVideo && status !== "connected" ? "📹 " : ""}{statusText[status]}
         </div>
       </div>
 
@@ -354,30 +429,12 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
       <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap", justifyContent: "center", maxWidth: 300 }}>
         {/* Mute */}
         {status !== "ringing" && status !== "ended" && (
-          <button className="tap" onClick={toggleMute}
-            style={{
-              width: 56, height: 56, borderRadius: "50%",
-              background: muted ? "#fff" : "rgba(255,255,255,.15)",
-              border: "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 22,
-            }}>
-            {muted ? "🔇" : "🎤"}
-          </button>
+          <CallBtn onClick={toggleMute} active={muted} icon={muted ? "🔇" : "🎤"} />
         )}
 
-        {/* Camera toggle (video mode only) */}
+        {/* Camera toggle */}
         {isVideo && status !== "ringing" && status !== "ended" && (
-          <button className="tap" onClick={toggleCamera}
-            style={{
-              width: 56, height: 56, borderRadius: "50%",
-              background: cameraOff ? "#fff" : "rgba(255,255,255,.15)",
-              border: "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 22,
-            }}>
-            {cameraOff ? "📷" : "📹"}
-          </button>
+          <CallBtn onClick={toggleCamera} active={cameraOff} icon={cameraOff ? "📷" : "📹"} />
         )}
 
         {/* Accept (incoming only) */}
@@ -385,11 +442,10 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           <button className="tap" onClick={acceptCall}
             style={{
               width: 64, height: 64, borderRadius: "50%",
-              background: "#48bb78",
-              border: "none", color: "#fff",
+              background: "#48bb78", border: "none", color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 28,
-              boxShadow: "0 4px 20px rgba(72,187,120,.4)",
+              fontSize: 28, boxShadow: "0 4px 20px rgba(72,187,120,.4)",
+              animation: "callPulse 1.5s infinite",
             }}>
             {isVideo ? "📹" : "📞"}
           </button>
@@ -399,36 +455,41 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
         <button className="tap" onClick={endCall}
           style={{
             width: 64, height: 64, borderRadius: "50%",
-            background: "#e53e3e",
-            border: "none", color: "#fff",
+            background: "#e53e3e", border: "none", color: "#fff",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 28,
-            boxShadow: "0 4px 20px rgba(229,62,62,.4)",
+            fontSize: 28, boxShadow: "0 4px 20px rgba(229,62,62,.4)",
           }}>
           📵
         </button>
 
-        {/* Speaker (audio mode only) */}
+        {/* Speaker */}
         {!isVideo && status !== "ringing" && status !== "ended" && (
-          <button className="tap" onClick={toggleSpeaker}
-            style={{
-              width: 56, height: 56, borderRadius: "50%",
-              background: speaker ? "#fff" : "rgba(255,255,255,.15)",
-              border: "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 22,
-            }}>
-            {speaker ? "🔊" : "🔈"}
-          </button>
+          <CallBtn onClick={toggleSpeaker} active={speaker} icon={speaker ? "🔊" : "🔈"} />
         )}
       </div>
 
       <style>{`
-        @keyframes pulse2 {
-          0%, 100% { opacity: 1; }
-          50% { opacity: .5; }
+        @keyframes callPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: .8; transform: scale(1.06); }
         }
       `}</style>
     </div>
+  );
+}
+
+/* Small control button */
+function CallBtn({ onClick, active, icon }) {
+  return (
+    <button className="tap" onClick={onClick}
+      style={{
+        width: 56, height: 56, borderRadius: "50%",
+        background: active ? "#fff" : "rgba(255,255,255,.15)",
+        border: "none",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 22,
+      }}>
+      {icon}
+    </button>
   );
 }

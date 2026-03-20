@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workflow-v215';
+const CACHE_NAME = 'workflow-v216';
 const ASSETS = [
   '/',
   '/index.html',
