@@ -205,7 +205,8 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   display: flex;
   align-items: center;
   z-index: 50;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* iPhone home indicator: chỉ cần 1 nửa safe-area, phần còn lại là background */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) * 0.35);
 }
 
 /* -- Bottom sheet (More menu, Status picker, etc.) -- */
@@ -220,7 +221,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   border-radius: 20px 20px 0 0;
   z-index: 999;
   padding: 14px 16px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px) * 0.35);
   animation: slideUp .2s;
 }
 
@@ -455,7 +456,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
 /* -- AI input bar -- */
 .ai-input-bar {
   position: fixed;
-  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px) * 0.35);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
