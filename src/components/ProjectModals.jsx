@@ -303,7 +303,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
       patchProject(project.id, { name: newName });
       // Sync conversation name on Supabase
       if (supabase && project.chatId) {
-        supabase.from("conversations").update({ name: `[project]${newName}` }).eq("id", project.chatId).then(() => {}).catch(() => {});
+        supabase.from("conversations").update({ name: newName }).eq("id", project.chatId).then(() => {}).catch(() => {});
       }
     }
     setEditName(false);
@@ -400,7 +400,8 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
   };
 
   const assignTask = (taskId, memberName) => {
-    patchTask(taskId, { assignee: memberName });
+    const member = members.find(m => m.name === memberName);
+    patchTask(taskId, { assignee: memberName, assigneeId: member?.supaId || null });
     setAssigningId(null);
   };
 
@@ -578,7 +579,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                               {t.assignee || (isStaff ? "—" : "Giao")}
                             </span>
                           )}
-                          {!isStaff && <span className="tap" onClick={() => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })}
+                          {!isStaff && <span className="tap" onClick={() => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null, assigneeId: null })}
                             style={{ fontSize:9, color:C.red, cursor:"pointer", opacity:0.5 }}>×</span>}
                         </div>
                       ))}
@@ -610,7 +611,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                         {t.assignee || (isStaff ? "—" : "Giao")}
                       </span>
                     )}
-                    {!isStaff && <span className="tap" onClick={() => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })}
+                    {!isStaff && <span className="tap" onClick={() => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null, assigneeId: null })}
                       style={{ fontSize:9, color:C.red, cursor:"pointer", opacity:0.5 }}>×</span>}
                   </div>
                 ))}
@@ -637,7 +638,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                 <span style={{ width:8, height:8, borderRadius:"50%", background:statusDot(t.status), flexShrink:0 }} />
                 <span style={{ flex:1, fontSize:12, color: t.status === "done" ? C.muted : C.text, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.title}</span>
                 {t.assignee && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:6, background:project.color+"18", color:project.color, fontWeight: t.assignee === myName ? 700 : 400 }}>{t.assignee}</span>}
-                {!isStaff && <span className="tap" onClick={() => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })}
+                {!isStaff && <span className="tap" onClick={() => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null, assigneeId: null })}
                   style={{ fontSize:10, color:C.red, cursor:"pointer", padding:"2px 6px" }}>gỡ</span>}
               </div>
             ))}
@@ -752,7 +753,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                     // Keep tasks but remove project association
                     const et = await cloudLoad(null, lid, "tasks");
                     const ct = Array.isArray(et?.data) ? et.data : [];
-                    const updated = ct.map(t => t.projectId === project.id ? { ...t, projectId: null, stepIndex: null, assignee: null } : t);
+                    const updated = ct.map(t => t.projectId === project.id ? { ...t, projectId: null, stepIndex: null, assignee: null, assigneeId: null } : t);
                     if (JSON.stringify(updated) !== JSON.stringify(ct)) await cloudSave(null, lid, "tasks", updated);
                   } catch {}
                 });
@@ -765,7 +766,7 @@ export function ProjectDetailSheet({ project, tasks, patchTask, addTask, patchPr
                 })() : Promise.resolve();
                 await Promise.all([...cleanupPromises, chatCleanup]);
                 // 2. THEN delete locally + close
-                projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null }));
+                projTasks.forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null, assigneeId: null }));
                 deleteProject(project.id);
                 onClose();
               }}

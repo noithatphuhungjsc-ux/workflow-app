@@ -2,6 +2,20 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { C } from "../constants";
 import { supabase } from "../lib/supabase";
 
+let _proximity = null;
+function getProximity() {
+  if (_proximity !== undefined && _proximity !== null) return _proximity;
+  try {
+    const cap = require("@capacitor/core");
+    if (cap.Capacitor.isNativePlatform()) {
+      _proximity = cap.registerPlugin("Proximity");
+    } else {
+      _proximity = null;
+    }
+  } catch { _proximity = null; }
+  return _proximity;
+}
+
 /* ================================================================
    CALL SCREEN — WebRTC P2P audio/video call
    Signaling via Supabase Realtime Broadcast
@@ -38,7 +52,6 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
   const [status, setStatus] = useState(isIncoming ? "ringing" : "calling");
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
-  const [speaker, setSpeaker] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState("");
   const [debugLog, setDebugLog] = useState([]);
@@ -61,11 +74,19 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
   const iceCandidateQueue = useRef([]);
   const remoteDescSet = useRef(false);
   const offerSentRef = useRef(false);
+  const acceptedPeerRef = useRef(null); // Lock to first accepted peer (group call safety)
+  const callMsgIdRef = useRef(null); // Track call message ID for status update
+  const ringbackRef = useRef(null);
   onEndRef.current = onEnd;
 
   /* ── Cleanup ── */
   const cleanup = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
+    if (ringbackRef.current) {
+      clearInterval(ringbackRef.current.interval);
+      ringbackRef.current.ctx.close().catch(() => {});
+      ringbackRef.current = null;
+    }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
@@ -78,9 +99,12 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
+    // Release proximity sensor
+    const p = getProximity();
+    if (p) p.release().catch(() => {});
   }, []);
 
-  const endCall = useCallback(() => {
+  const endCall = useCallback(async () => {
     if (endedRef.current) return;
     endedRef.current = true;
     try {
@@ -89,10 +113,46 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
         payload: { type: "end", from: userId },
       });
     } catch {}
+
+    // Update call message with status & duration
+    const wasAnswered = !!startTimeRef.current;
+    if (callMsgIdRef.current) {
+      const dur = wasAnswered ? Math.floor((Date.now() - startTimeRef.current) / 1000) : 0;
+      const emoji = mode === "video" ? "📹" : "📞";
+      const statusLabel = wasAnswered
+        ? `${emoji} Cuộc gọi ${mode === "video" ? "video" : "thoại"} — ${Math.floor(dur / 60)}:${(dur % 60).toString().padStart(2, "0")}`
+        : `${emoji} Cuộc gọi nhỡ`;
+      try {
+        await supabase.from("messages")
+          .update({ content: statusLabel })
+          .eq("id", callMsgIdRef.current);
+      } catch {}
+    }
+
+    // Notify callee's native layer (dismiss IncomingCallActivity / notification)
+    if (!isIncoming) {
+      try {
+        const { data: members } = await supabase
+          .from("conversation_members").select("user_id")
+          .eq("conversation_id", conversationId).neq("user_id", userId);
+        for (const m of (members || [])) {
+          fetch("/api/push-call-end", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetUserId: m.user_id,
+              conversationId,
+              reason: wasAnswered ? "ended" : "missed",
+            }),
+          }).catch(() => {});
+        }
+      } catch {}
+    }
+
     cleanup();
     setStatus("ended");
     setTimeout(() => onEndRef.current(), 800);
-  }, [userId, cleanup]);
+  }, [userId, mode, cleanup, isIncoming, conversationId]);
 
   /* ── Process queued ICE candidates after remote description is set ── */
   const processIceQueue = useCallback(async () => {
@@ -217,7 +277,10 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
         try {
           if (payload.type === "offer") {
+            // Only process offer meant for this user (group call safety)
+            if (payload.to && payload.to !== userId) return;
             log("📥 Nhận offer, tạo answer...");
+            acceptedPeerRef.current = payload.from;
             await currentPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             remoteDescSet.current = true;
             await processIceQueue();
@@ -225,12 +288,14 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
             await currentPc.setLocalDescription(answer);
             channel.send({
               type: "broadcast", event: "call-signal",
-              payload: { type: "answer", sdp: answer, from: userId },
+              payload: { type: "answer", sdp: answer, from: userId, to: payload.from },
             });
             log("📤 Đã gửi answer");
           }
 
           if (payload.type === "answer") {
+            // Only process answer from accepted peer
+            if (acceptedPeerRef.current && payload.from !== acceptedPeerRef.current) return;
             log("📥 Nhận answer");
             await currentPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             remoteDescSet.current = true;
@@ -239,6 +304,8 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           }
 
           if (payload.type === "ice") {
+            // Only process ICE from accepted peer
+            if (acceptedPeerRef.current && payload.from !== acceptedPeerRef.current) return;
             if (remoteDescSet.current) {
               await currentPc.addIceCandidate(new RTCIceCandidate(payload.candidate));
             } else {
@@ -247,25 +314,30 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           }
 
           if (payload.type === "accept") {
-            log("📥 Đối phương chấp nhận, tạo offer...");
+            // Lock to first peer who accepts (group call safety)
             if (!isIncoming && !offerSentRef.current) {
+              acceptedPeerRef.current = payload.from;
               offerSentRef.current = true;
+              log(`📥 ${payload.from} chấp nhận, tạo offer...`);
               setStatus("connecting");
               const offer = await currentPc.createOffer();
               await currentPc.setLocalDescription(offer);
               channel.send({
                 type: "broadcast", event: "call-signal",
-                payload: { type: "offer", sdp: offer, from: userId },
+                payload: { type: "offer", sdp: offer, from: userId, to: acceptedPeerRef.current },
               });
               log("📤 Đã gửi offer");
+            } else if (!isIncoming && acceptedPeerRef.current && payload.from !== acceptedPeerRef.current) {
+              log(`⚠️ ${payload.from} cũng accept — bỏ qua (đã kết nối người khác)`);
             }
           }
 
           if (payload.type === "ready") {
-            log("📥 Đối phương sẵn sàng");
             if (!isIncoming && !offerSentRef.current) {
+              log("📥 Đối phương sẵn sàng");
               setTimeout(async () => {
                 if (offerSentRef.current || !pcRef.current) return;
+                acceptedPeerRef.current = payload.from;
                 offerSentRef.current = true;
                 setStatus("connecting");
                 try {
@@ -273,7 +345,7 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
                   await pcRef.current.setLocalDescription(offer);
                   channel.send({
                     type: "broadcast", event: "call-signal",
-                    payload: { type: "offer", sdp: offer, from: userId },
+                    payload: { type: "offer", sdp: offer, from: userId, to: acceptedPeerRef.current },
                   });
                   log("📤 Đã gửi offer (retry)");
                 } catch (e) { log(`❌ Offer failed: ${e.message}`); }
@@ -283,6 +355,10 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
           if (payload.type === "end") {
             log("📥 Đối phương kết thúc cuộc gọi");
+            // If caller ends, update call message status (caller handles their own endCall)
+            if (isIncoming && !startTimeRef.current) {
+              // Receiver side — call was never answered by this peer, no need to update
+            }
             cleanup();
             if (mounted) {
               setStatus("ended");
@@ -305,14 +381,17 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
         setStatus("calling");
         log("Gửi tin nhắn cuộc gọi...");
 
-        const { error: msgErr } = await supabase.from("messages").insert({
+        const { data: msgData, error: msgErr } = await supabase.from("messages").insert({
           conversation_id: conversationId,
           sender_id: userId,
           content: isVideo ? "📹 Cuộc gọi video" : "📞 Cuộc gọi thoại",
           type: "call",
-        });
+        }).select("id").single();
         if (msgErr) log(`⚠️ Insert msg: ${msgErr.message}`);
-        else log("✅ Đã gửi tin nhắn, chờ đối phương...");
+        else {
+          callMsgIdRef.current = msgData?.id;
+          log("✅ Đã gửi tin nhắn, chờ đối phương...");
+        }
 
         // Push notification to other members
         try {
@@ -328,7 +407,7 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
               fetch("/api/push-call", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ targetUserId: m.user_id, callerName, mode }),
+                body: JSON.stringify({ targetUserId: m.user_id, callerName, callerId: userId, mode, conversationId }),
               }).catch(() => {});
             }
           } else {
@@ -336,41 +415,34 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           }
         } catch {}
 
-        // Auto-timeout
+        // Auto-timeout (30s — khớp với receiver auto-dismiss)
         setTimeout(() => {
           if (mounted && !startTimeRef.current) {
-            log("⏰ 45s timeout — không có phản hồi");
+            log("⏰ 30s timeout — không có phản hồi");
             setError("Không có phản hồi");
             endCall();
           }
-        }, 45000);
+        }, 30000);
 
       } else {
-        // RECEIVER
+        // RECEIVER — send accept repeatedly until caller responds with offer
         setStatus("connecting");
         log("📤 Gửi accept...");
-        channel.send({
-          type: "broadcast", event: "call-signal",
-          payload: { type: "accept", from: userId },
-        });
-        // Also send "ready" in case caller missed "accept"
-        setTimeout(() => {
-          if (channelRef.current && !remoteDescSet.current) {
-            channelRef.current.send({
-              type: "broadcast", event: "call-signal",
-              payload: { type: "ready", from: userId },
-            });
-          }
-        }, 1500);
-        // Retry "ready" in case of timing issues
-        setTimeout(() => {
-          if (channelRef.current && !remoteDescSet.current) {
-            channelRef.current.send({
-              type: "broadcast", event: "call-signal",
-              payload: { type: "ready", from: userId },
-            });
-          }
-        }, 4000);
+        const sendAccept = () => {
+          if (!channelRef.current || remoteDescSet.current) return;
+          channelRef.current.send({
+            type: "broadcast", event: "call-signal",
+            payload: { type: "accept", from: userId },
+          });
+        };
+        sendAccept();
+        // Retry accept every 2s for up to 20s (in case caller channel wasn't ready)
+        const retryAccept = setInterval(() => {
+          if (remoteDescSet.current || !mounted) { clearInterval(retryAccept); return; }
+          log("📤 Retry accept...");
+          sendAccept();
+        }, 2000);
+        setTimeout(() => clearInterval(retryAccept), 20000);
       }
     };
 
@@ -378,6 +450,84 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     return () => { mounted = false; cleanup(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, userId, isIncoming, isVideo]);
+
+  /* ── Listen for native call-ended event (callee declined from native UI) ── */
+  useEffect(() => {
+    const handler = (e) => {
+      const { reason } = e.detail || {};
+      console.log("[Call] Native call-ended:", reason);
+      if (!endedRef.current) {
+        if (reason === "declined") {
+          setError("Đã từ chối cuộc gọi");
+        }
+        endCall();
+      }
+    };
+    window.addEventListener("native-call-ended", handler);
+    return () => window.removeEventListener("native-call-ended", handler);
+  }, [endCall]);
+
+  /* ── Proximity sensor: turn off screen when near ear ── */
+  useEffect(() => {
+    const p = getProximity();
+    if (!p) return;
+    if (status === "connected" || status === "connecting" || status === "calling") {
+      p.acquire().catch(() => {});
+      return () => { p.release().catch(() => {}); };
+    }
+  }, [status]);
+
+  /* ── Ringback tone for caller (standard phone: 2x 440Hz beeps, 4s cycle) ── */
+  useEffect(() => {
+    const stopRingback = () => {
+      if (ringbackRef.current) {
+        clearInterval(ringbackRef.current.interval);
+        ringbackRef.current.ctx.close().catch(() => {});
+        ringbackRef.current = null;
+      }
+    };
+
+    if (status !== "calling") { stopRingback(); return; }
+
+    const startRingback = async () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === "suspended") await ctx.resume();
+
+        // Standard ringback: two 440Hz tones (1s on, 1s off, 1s on, 3s off = 6s cycle)
+        const playRingCycle = () => {
+          if (ctx.state === "closed") return;
+          // First beep: 0s → 1s
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = "sine"; osc1.frequency.value = 440;
+          gain1.gain.setValueAtTime(0.12, ctx.currentTime);
+          gain1.gain.setValueAtTime(0.12, ctx.currentTime + 0.9);
+          gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
+          osc1.connect(gain1); gain1.connect(ctx.destination);
+          osc1.start(ctx.currentTime); osc1.stop(ctx.currentTime + 1);
+
+          // Second beep: 2s → 3s
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = "sine"; osc2.frequency.value = 440;
+          gain2.gain.setValueAtTime(0, ctx.currentTime);
+          gain2.gain.setValueAtTime(0.12, ctx.currentTime + 2);
+          gain2.gain.setValueAtTime(0.12, ctx.currentTime + 2.9);
+          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 3);
+          osc2.connect(gain2); gain2.connect(ctx.destination);
+          osc2.start(ctx.currentTime + 2); osc2.stop(ctx.currentTime + 3);
+        };
+
+        playRingCycle();
+        const interval = setInterval(playRingCycle, 6000);
+        ringbackRef.current = { ctx, interval };
+      } catch {}
+    };
+    startRingback();
+
+    return stopRingback;
+  }, [status]);
 
   /* ── Accept incoming call (ringing state only) ── */
   const acceptCall = () => {
@@ -403,8 +553,6 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     }
   };
 
-  const toggleSpeaker = () => setSpeaker(!speaker);
-
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -419,13 +567,47 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     ended: error || "Kết thúc",
   };
 
+  /* ── SVG Icons ── */
+  const PhoneIcon = ({ size = 24, color = "#fff" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+    </svg>
+  );
+  const PhoneOffIcon = ({ size = 24, color = "#fff" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67"/>
+      <path d="M8.09 9.91l1.27-1.27a2 2 0 01-.45-2.11c.339-.907.573-1.85.7-2.81A2 2 0 0111.61 2h3a2 2 0 012 1.72"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+  );
+  const MicIcon = ({ size = 22, color = "#fff" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+    </svg>
+  );
+  const MicOffIcon = ({ size = 22, color = "#fff" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2c0 .76-.12 1.49-.34 2.18"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+    </svg>
+  );
+  const VideoIcon = ({ size = 22, color = "#fff" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+    </svg>
+  );
+  const VideoOffIcon = ({ size = 22, color = "#fff" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+  );
+
   /* ── UI ── */
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       zIndex: 10001,
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      background: isVideo ? "#000" : "linear-gradient(180deg, #4a5568 0%, #2d3748 100%)",
+      display: "flex", flexDirection: "column", alignItems: "center",
+      background: isVideo ? "#000" : "linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
       maxWidth: 480, margin: "0 auto",
     }}>
       <audio ref={remoteAudioRef} autoPlay playsInline />
@@ -440,106 +622,114 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
       {isVideo && (
         <video ref={localVideoRef} autoPlay playsInline muted
           style={{
-            position: "absolute", top: 16, right: 16,
-            width: 100, height: 140, borderRadius: 12,
+            position: "absolute", top: 50, right: 16,
+            width: 100, height: 140, borderRadius: 14,
             objectFit: "cover", zIndex: 2,
-            border: "2px solid rgba(255,255,255,.3)",
+            border: "2px solid rgba(255,255,255,.2)",
             background: "#000",
             display: cameraOff ? "none" : "block",
           }} />
       )}
 
-      {/* Content overlay */}
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      {/* Top area — avatar + info */}
+      <div style={{
+        position: "relative", zIndex: 1,
+        display: "flex", flexDirection: "column", alignItems: "center",
+        paddingTop: 80, flex: 1, justifyContent: "flex-start",
+      }}>
         {(!isVideo || status !== "connected") && (
-          <div style={{
-            width: 90, height: 90, borderRadius: "50%",
-            background: C.accent,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontSize: 36, fontWeight: 700,
-            marginBottom: 16,
-            boxShadow: status === "connected" ? "0 0 0 4px rgba(106,127,212,.4)" : "none",
-            animation: status === "calling" || status === "ringing" ? "callPulse 2s infinite" : "none",
-          }}>
-            {(peerName || "?")[0].toUpperCase()}
+          <>
+            <div style={{
+              width: 96, height: 96, borderRadius: "50%",
+              background: "rgba(255,255,255,.12)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              marginBottom: 20,
+              animation: status === "calling" || status === "ringing" ? "callPulse 2s infinite" : "none",
+            }}>
+              <span style={{ fontSize: 38, fontWeight: 600, color: "#fff", letterSpacing: 1 }}>
+                {(peerName || "?")[0].toUpperCase()}
+              </span>
+            </div>
+
+            <div style={{ fontSize: 24, fontWeight: 600, color: "#fff", marginBottom: 8, letterSpacing: 0.3 }}>
+              {peerName}
+            </div>
+
+            <div style={{
+              fontSize: 14, color: error ? "#ff6b6b" : "rgba(255,255,255,.55)",
+              fontWeight: 400,
+            }}>
+              {statusText[status]}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Bottom controls */}
+      <div style={{
+        position: "relative", zIndex: 1,
+        paddingBottom: 50, width: "100%",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 20,
+      }}>
+        {/* Middle row: mute, camera */}
+        {status !== "ringing" && status !== "ended" && (
+          <div style={{ display: "flex", gap: 28, marginBottom: 8 }}>
+            <CallBtn onClick={toggleMute} active={muted}
+              icon={muted ? <MicOffIcon /> : <MicIcon />} />
+            {isVideo && (
+              <CallBtn onClick={toggleCamera} active={cameraOff}
+                icon={cameraOff ? <VideoOffIcon /> : <VideoIcon />} />
+            )}
           </div>
         )}
 
-        <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 6, textShadow: isVideo ? "0 1px 4px rgba(0,0,0,.5)" : "none" }}>
-          {peerName}
-        </div>
-
-        <div style={{
-          fontSize: 14, color: error ? "#fc8181" : "rgba(255,255,255,.7)",
-          marginBottom: 40,
-          textShadow: isVideo ? "0 1px 4px rgba(0,0,0,.5)" : "none",
-        }}>
-          {isVideo && status !== "connected" ? "📹 " : ""}{statusText[status]}
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap", justifyContent: "center", maxWidth: 300 }}>
-        {/* Mute */}
-        {status !== "ringing" && status !== "ended" && (
-          <CallBtn onClick={toggleMute} active={muted} icon={muted ? "🔇" : "🎤"} />
-        )}
-
-        {/* Camera toggle */}
-        {isVideo && status !== "ringing" && status !== "ended" && (
-          <CallBtn onClick={toggleCamera} active={cameraOff} icon={cameraOff ? "📷" : "📹"} />
-        )}
-
-        {/* Accept (incoming only) */}
-        {status === "ringing" && (
-          <button className="tap" onClick={acceptCall}
+        {/* Accept / End row */}
+        <div style={{ display: "flex", gap: 40, alignItems: "center" }}>
+          {/* Decline / End */}
+          <button className="tap" onClick={endCall}
             style={{
               width: 64, height: 64, borderRadius: "50%",
-              background: "#48bb78", border: "none", color: "#fff",
+              background: "#e53e3e", border: "none",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 28, boxShadow: "0 4px 20px rgba(72,187,120,.4)",
-              animation: "callPulse 1.5s infinite",
+              boxShadow: "0 2px 12px rgba(229,62,62,.3)",
             }}>
-            {isVideo ? "📹" : "📞"}
+            <PhoneOffIcon size={28} />
           </button>
-        )}
 
-        {/* End call */}
-        <button className="tap" onClick={endCall}
-          style={{
-            width: 64, height: 64, borderRadius: "50%",
-            background: "#e53e3e", border: "none", color: "#fff",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 28, boxShadow: "0 4px 20px rgba(229,62,62,.4)",
-          }}>
-          📵
-        </button>
-
-        {/* Speaker */}
-        {!isVideo && status !== "ringing" && status !== "ended" && (
-          <CallBtn onClick={toggleSpeaker} active={speaker} icon={speaker ? "🔊" : "🔈"} />
-        )}
+          {/* Accept (incoming ringing only) */}
+          {status === "ringing" && (
+            <button className="tap" onClick={acceptCall}
+              style={{
+                width: 64, height: 64, borderRadius: "50%",
+                background: "#2ecc71", border: "none",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 2px 12px rgba(46,204,113,.3)",
+                animation: "callPulse 1.5s infinite",
+              }}>
+              {isVideo ? <VideoIcon size={28} /> : <PhoneIcon size={28} />}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Debug log toggle */}
+      {/* Debug toggle */}
       <button onClick={() => setShowDebug(!showDebug)}
         style={{
-          position: "absolute", top: 8, left: 8, zIndex: 5,
-          background: "rgba(0,0,0,.4)", border: "none", color: "#fff",
-          borderRadius: 8, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+          position: "absolute", top: 10, left: 10, zIndex: 5,
+          background: "rgba(255,255,255,.08)", border: "none", color: "rgba(255,255,255,.4)",
+          borderRadius: 8, padding: "4px 10px", fontSize: 11,
         }}>
-        {showDebug ? "Ẩn log" : "Log"}
+        {showDebug ? "Ẩn" : "Log"}
       </button>
 
-      {/* Debug panel */}
       {showDebug && (
         <div style={{
-          position: "absolute", top: 36, left: 8, right: 8, zIndex: 5,
+          position: "absolute", top: 38, left: 10, right: 10, zIndex: 5,
           background: "rgba(0,0,0,.85)", borderRadius: 10, padding: "8px 10px",
           maxHeight: 200, overflowY: "auto", fontSize: 10, color: "#68d391",
           fontFamily: "monospace", lineHeight: 1.6,
         }}>
-          {debugLog.length === 0 && <div style={{ color: "#999" }}>Đang khởi tạo...</div>}
+          {debugLog.length === 0 && <div style={{ color: "#555" }}>Đang khởi tạo...</div>}
           {debugLog.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
@@ -547,25 +737,24 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
       <style>{`
         @keyframes callPulse {
           0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: .8; transform: scale(1.06); }
+          50% { opacity: .85; transform: scale(1.05); }
         }
       `}</style>
     </div>
   );
 }
 
-/* Small control button */
+/* Control button — clean circle, no label */
 function CallBtn({ onClick, active, icon }) {
   return (
     <button className="tap" onClick={onClick}
       style={{
-        width: 56, height: 56, borderRadius: "50%",
-        background: active ? "#fff" : "rgba(255,255,255,.15)",
+        width: 52, height: 52, borderRadius: "50%",
+        background: active ? "rgba(255,255,255,.95)" : "rgba(255,255,255,.12)",
         border: "none",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 22,
       }}>
-      {icon}
+      <span style={{ filter: active ? "invert(1)" : "none", display: "flex" }}>{icon}</span>
     </button>
   );
 }

@@ -12,6 +12,87 @@ import { useStore, useSettings } from "../store";
 import { hashPassword, loadAccounts, saveAccounts, maskPhone, exportAllData, importData, clearAllData, clearAllDataWithCloud, clearAllSystemData, saveJSON, loadJSON, encryptToken, decryptToken, sendBackupEmail, saveKnowledgeProfile, addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry, approveKnowledgeEntry, approveAllPending, cloudSaveAll, cloudLoadAll } from "../services";
 import { useSupabase } from "../contexts/SupabaseContext";
 
+/* ================================================================
+   APP UPDATE CARD — Check & download new APK version
+   ================================================================ */
+function AppUpdateCard({ showMsg }) {
+  const [checking, setChecking] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [currentVer, setCurrentVer] = useState(null);
+  const isNative = typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.();
+
+  useEffect(() => {
+    if (!isNative) return;
+    (async () => {
+      try {
+        const { registerPlugin } = await import("@capacitor/core");
+        const AppUpdater = registerPlugin("AppUpdater");
+        const info = await AppUpdater.getCurrentVersion();
+        setCurrentVer(info);
+      } catch {}
+    })();
+  }, [isNative]);
+
+  const checkUpdate = async () => {
+    setChecking(true); setUpdateInfo(null);
+    try {
+      const res = await fetch("/app-version.json?t=" + Date.now());
+      const data = await res.json();
+      if (currentVer && data.versionCode > (currentVer.versionCode || 0)) setUpdateInfo(data);
+      else if (!currentVer) setUpdateInfo(data);
+      else showMsg("Bạn đang dùng phiên bản mới nhất!");
+    } catch { showMsg("Không thể kiểm tra cập nhật.", "error"); }
+    setChecking(false);
+  };
+
+  const doUpdate = async () => {
+    if (!updateInfo?.apkUrl) return;
+    setDownloading(true);
+    try {
+      if (isNative) {
+        const { registerPlugin } = await import("@capacitor/core");
+        const AppUpdater = registerPlugin("AppUpdater");
+        await AppUpdater.downloadAndInstall({ url: updateInfo.apkUrl });
+        showMsg("Đang tải bản cập nhật...");
+      } else {
+        window.open(updateInfo.apkUrl, "_blank");
+        showMsg("Đang tải file APK...");
+      }
+    } catch (e) { showMsg("Lỗi tải cập nhật: " + (e.message || ""), "error"); }
+    setDownloading(false);
+  };
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px", marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 20 }}>&#x1F504;</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Cập nhật ứng dụng</div>
+          {currentVer && <div style={{ fontSize: 11, color: C.muted }}>Phiên bản hiện tại: v{currentVer.versionName}</div>}
+        </div>
+      </div>
+      {!updateInfo ? (
+        <button className="tap" disabled={checking} onClick={checkUpdate}
+          style={{ width: "100%", background: C.accent, border: "none", borderRadius: 10, padding: "10px", fontSize: 13, color: "#fff", fontWeight: 600, opacity: checking ? 0.6 : 1 }}>
+          {checking ? "Đang kiểm tra..." : "Kiểm tra cập nhật"}
+        </button>
+      ) : (
+        <div>
+          <div style={{ background: C.green + "18", border: `1px solid ${C.green}44`, borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.green }}>Có bản cập nhật mới! v{updateInfo.version}</div>
+            {updateInfo.changelog && <div style={{ fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.6, whiteSpace: "pre-line" }}>{updateInfo.changelog}</div>}
+          </div>
+          <button className="tap" disabled={downloading} onClick={doUpdate}
+            style={{ width: "100%", background: C.green, border: "none", borderRadius: 10, padding: "10px", fontSize: 13, color: "#fff", fontWeight: 600, opacity: downloading ? 0.6 : 1 }}>
+            {downloading ? "Đang tải..." : "Tải và cài đặt"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TABS = [
   { id: "profile",  label: "Hồ sơ" },
   { id: "security", label: "Bảo mật" },
@@ -113,6 +194,8 @@ export default function SettingsModal({ user, onClose }) {
     })();
   }, [user.id, user.name]);
 
+  const myAcc = accounts?.[user.id];
+
   // Auto-populate from session (email, phone, title stored at login)
   const sessionData = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}"); } catch { return {}; } })();
   const [displayName, setDisplayName] = useState(settings.displayName || user.name);
@@ -122,7 +205,6 @@ export default function SettingsModal({ user, onClose }) {
   const [newPw, setNewPw] = useState("");
   const [cfmPw, setCfmPw] = useState("");
   const [phone, setPhone] = useState("");
-  const myAcc = accounts?.[user.id];
   useEffect(() => { if (myAcc?.phone) setPhone(myAcc.phone); }, [myAcc]);
 
   const showMsg = (text, type = "success") => { setMsg(text); setMsgType(type); setTimeout(() => setMsg(""), 3000); };
@@ -348,7 +430,7 @@ export default function SettingsModal({ user, onClose }) {
 
           {/* ======== HỒ SƠ ======== */}
           {tab === "profile" && (<>
-            {/* ── Ngành nghề ── */}
+            {/* ── Ngành nghề (chỉ Trinh/director mới được đổi) ── */}
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:6 }}>NGÀNH NGHỀ</div>
               {settings.industryPreset ? (() => {
@@ -362,17 +444,25 @@ export default function SettingsModal({ user, onClose }) {
                         <div style={{ fontSize:10, color:C.muted }}>{preset.description}</div>
                       </div>
                     </div>
-                    <button className="tap" onClick={() => setShowIndustryModal(true)}
-                      style={{ padding:"10px 14px", borderRadius:12, background:C.card, border:`1px solid ${C.border}`, fontSize:12, fontWeight:600, color:C.accent, cursor:"pointer", whiteSpace:"nowrap" }}>
-                      Đổi
-                    </button>
+                    {user.id === "trinh" && (
+                      <button className="tap" onClick={() => setShowIndustryModal(true)}
+                        style={{ padding:"10px 14px", borderRadius:12, background:C.card, border:`1px solid ${C.border}`, fontSize:12, fontWeight:600, color:C.accent, cursor:"pointer", whiteSpace:"nowrap" }}>
+                        Đổi
+                      </button>
+                    )}
                   </div>
                 ) : null;
               })() : (
-                <button className="tap" onClick={() => setShowIndustryModal(true)}
-                  style={{ width:"100%", padding:"12px 16px", borderRadius:12, background:C.accent, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                  Chọn ngành nghề
-                </button>
+                user.id === "trinh" ? (
+                  <button className="tap" onClick={() => setShowIndustryModal(true)}
+                    style={{ width:"100%", padding:"12px 16px", borderRadius:12, background:C.accent, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                    Chọn ngành nghề
+                  </button>
+                ) : (
+                  <div style={{ padding:"10px 14px", borderRadius:12, background:C.accentD, border:`1px solid ${C.accent}33`, fontSize:13, color:C.text }}>
+                    Xây dựng & Nội thất
+                  </div>
+                )
               )}
             </div>
             <div style={{ marginBottom:14 }}>
@@ -769,14 +859,17 @@ export default function SettingsModal({ user, onClose }) {
             </div>
           </>)}
 
-          {/* About inline — compact */}
-          {tab === "data" && (
+          {tab === "data" && (<>
+            {/* App Update Check */}
+            <AppUpdateCard showMsg={showMsg} />
+
+            {/* About inline — compact */}
             <div style={{ marginTop:20, textAlign:"center", fontSize:11, color:C.muted, lineHeight:1.8 }}>
               <span style={{ fontFamily:"'Fraunces',serif", fontSize:14, fontWeight:700, color:C.accent }}>WorkFlow</span> v{CHANGELOG[0]?.version || "2.2"} · 3/2026<br/>
               React 19 + Claude Sonnet 4 + PWA<br/>
               AES-256-GCM · SHA-256 · OAuth 2.0
             </div>
-          )}
+          </>)}
 
 
           </>)}
@@ -1501,3 +1594,4 @@ function ConnectTab({ settings, setSettings, user, myAcc, showMsg, Toggle, Selec
     </>
   );
 }
+

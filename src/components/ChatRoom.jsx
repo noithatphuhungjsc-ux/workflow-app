@@ -45,13 +45,13 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   useEffect(() => {
     if (!supabase || !conversationId || isSubThread) return;
     supabase.from("conversations").select("id, name, created_at")
-      .like("name", `[sub:${conversationId}]%`)
+      .eq("parent_id", conversationId)
       .order("created_at", { ascending: true })
       .then(({ data, error }) => {
         if (error) { console.warn("[WF] load sub-threads:", error); return; }
         setSubChats((data || []).map(c => ({
           convId: c.id,
-          name: c.name.replace(`[sub:${conversationId}]`, ""),
+          name: c.name || "Thread",
           createdAt: c.created_at,
         })));
       });
@@ -104,9 +104,8 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     if (!name || !supabase || !userId || creatingThread) return;
     setCreatingThread(true);
     try {
-      const chatName = `[sub:${conversationId}]${name}`;
       const { data: conv, error } = await supabase.from("conversations")
-        .insert({ type: "group", name: chatName, created_by: userId })
+        .insert({ type: "group", name, created_by: userId, parent_id: conversationId })
         .select().single();
       if (error) { console.error("[WF] create sub-thread conv:", error); setCreatingThread(false); return; }
 
@@ -226,11 +225,20 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   // Merge Supabase profiles + DEV accounts (dedup by normalized name)
   const DEV_PROFILES = [
-    { id: "trinh", display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
-    { id: "lien",  display_name: "Lientran",         avatar_color: "#e74c3c" },
-    { id: "hung",  display_name: "Pham Van Hung",    avatar_color: "#3498db" },
-    { id: "mai",   display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
-    { id: "duc",   display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
+    { id: "trinh",  display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
+    { id: "lien",   display_name: "Liên Kế toán",     avatar_color: "#e74c3c" },
+    { id: "hung",   display_name: "Pham Van Hung",    avatar_color: "#3498db" },
+    { id: "mai",    display_name: "Tran Thi Mai",     avatar_color: "#27ae60" },
+    { id: "duc",    display_name: "Le Minh Duc",      avatar_color: "#8e44ad" },
+    { id: "tung",   display_name: "Tùng Tổ trưởng",   avatar_color: "#2980b9" },
+    { id: "tam",    display_name: "Tâm Tổ phó",       avatar_color: "#16a085" },
+    { id: "duong",  display_name: "Đương Tổ phó",     avatar_color: "#27ae60" },
+    { id: "minh",   display_name: "Minh Hoàn thiện",  avatar_color: "#3498db" },
+    { id: "lien2",  display_name: "Liển Hoàn thiện",  avatar_color: "#1abc9c" },
+    { id: "tuan",   display_name: "Tuấn Thợ mộc",    avatar_color: "#d35400" },
+    { id: "trang",  display_name: "Trang Táo đỏ",     avatar_color: "#c0392b" },
+    { id: "hai",    display_name: "Hải Thợ mộc",      avatar_color: "#e67e22" },
+    { id: "hoai",   display_name: "Hoài Táo đỏ",      avatar_color: "#e74c3c" },
   ];
   const mergedProfiles = (() => {
     const all = [...(profiles || [])];
@@ -476,12 +484,16 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
           </button>
         )}
         <button className="tap" onClick={() => startCall("video")}
-          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, color: C.accent }}>
-          📹
+          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
         </button>
         <button className="tap" onClick={() => startCall("audio")}
-          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, color: C.accent, marginRight: 4 }}>
-          📞
+          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginRight: 4 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+          </svg>
         </button>
       </div>
 

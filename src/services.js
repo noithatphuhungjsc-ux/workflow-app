@@ -167,6 +167,16 @@ export function scheduleSyncDebounced(_supabase, userId, key, data) {
   }, 3000); // Debounce 3s per key
 }
 
+/* Cancel ALL pending sync timers — prevents stale debounced saves from firing after data clear */
+export function cancelAllPendingSyncs() {
+  Object.keys(_syncTimers).forEach(key => {
+    clearTimeout(_syncTimers[key]);
+    delete _syncTimers[key];
+  });
+  // Also clear offline queue
+  _offlineQueue.length = 0;
+}
+
 /* -- History log -- */
 export function loadHistory() { return loadJSON("history", []); }
 export function saveHistory(h, limit = 500) { saveJSON("history", h.slice(-limit)); }
@@ -1001,9 +1011,13 @@ export async function clearAllDataWithCloud(userId) {
   localStorage.setItem("wf_data_cleared_" + userId, "1");
   // 2. Clear localStorage
   clearAllData();
-  // 3. Clear cloud — push empty data for each key with retry
+  // 3. Cancel all pending sync timers
+  cancelAllPendingSyncs();
+  // 4. Clear cloud — push empty data for each key with retry + set clear_timestamp
   const cloudKeys = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "projects", "expense_chat"];
-  const results = await Promise.allSettled(cloudKeys.map(key => cloudClearWithRetry(userId, key)));
+  const allPushes = cloudKeys.map(key => cloudClearWithRetry(userId, key));
+  allPushes.push(cloudSave(null, userId, "clear_timestamp", new Date().toISOString()));
+  const results = await Promise.allSettled(allPushes);
   const ok = results.filter(r => r.status === "fulfilled" && r.value).length;
   return { localCleared: true, cloudCleared: ok, total: cloudKeys.length };
 }
@@ -1032,11 +1046,16 @@ export async function clearAllSystemData() {
       try { localStorage.setItem(`wf_${uid}_settings`, JSON.stringify({ industryPreset: presets[uid] })); } catch {}
     }
   });
-  // 5. Push empty to cloud for all users with retry
+  // 5. Cancel all pending sync timers
+  cancelAllPendingSyncs();
+  // 6. Push empty to cloud for all users with retry + set clear_timestamp
   const cloudKeys = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "projects", "expense_chat"];
   const allPushes = [];
+  const clearTs = new Date().toISOString();
   ALL_USER_IDS.forEach(uid => {
     cloudKeys.forEach(key => allPushes.push(cloudClearWithRetry(uid, key)));
+    // Save clear_timestamp so cross-user sync knows data was intentionally cleared
+    allPushes.push(cloudSave(null, uid, "clear_timestamp", clearTs));
   });
   const results = await Promise.allSettled(allPushes);
   const ok = results.filter(r => r.status === "fulfilled" && r.value).length;

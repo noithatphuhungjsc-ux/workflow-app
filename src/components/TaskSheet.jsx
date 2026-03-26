@@ -314,7 +314,11 @@ export default function TaskSheet({ task, onClose }) {
             {project && (
               <div>
                 <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:4 }}>GIAO CHO</div>
-                <select value={task.assignee || ""} onChange={e => patchTask(task.id, { assignee: e.target.value })}
+                <select value={task.assignee || ""} onChange={e => {
+                    const name = e.target.value;
+                    const member = projectMembers.find(m => (m.name || m) === name);
+                    patchTask(task.id, { assignee: name || null, assigneeId: member?.supaId || null });
+                  }}
                   style={{ ...IS, color: task.assignee ? C.text : C.muted }}>
                   <option value="">— Chưa giao —</option>
                   {projectMembers.map(m => <option key={m.name || m} value={m.name || m}>{m.name || m}{m.role ? ` (${m.role})` : ""}</option>)}

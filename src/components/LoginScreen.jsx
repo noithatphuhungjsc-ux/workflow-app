@@ -2,11 +2,11 @@
    LOGIN SCREEN — Authentication (simplified, honest about limits)
    ================================================================ */
 import { useState, useEffect } from "react";
-import { C, TEAM_ACCOUNTS } from "../constants";
+import { C, TEAM_ACCOUNTS, DEV_ONLY_ACCOUNTS, ALL_ACCOUNTS } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
-const ACCOUNTS_VERSION = 7; // bump to force re-init (new roles: director/accountant/sales/hr/construction)
-const DEFAULT_ACCOUNTS = TEAM_ACCOUNTS.map(a => ({ ...a, pw: "111111" }));
+const ACCOUNTS_VERSION = 9; // bump to force re-init (split dev accounts)
+const DEFAULT_ACCOUNTS = ALL_ACCOUNTS.map(a => ({ ...a, pw: "111111" }));
 
 // Init default accounts with hashed passwords
 async function initAccounts() {
@@ -201,22 +201,26 @@ export default function LoginScreen({ onLogin }) {
             </div>
           )}
 
-          {/* Staff avatars — tap to auto-fill email */}
-          <div style={{ display:"flex", justifyContent:"center", gap:10, marginBottom:16 }}>
-            {Object.values(accounts).map(a => {
-              const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22" };
-              const role = a.role || "staff";
-              const active = username.toLowerCase() === (a.email || "").toLowerCase();
-              return (
-                <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
-                  style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, background:"none", border:"none", cursor:"pointer", padding:2, opacity: active ? 1 : 0.6, transform: active ? "scale(1.1)" : "none", transition:"all .15s" }}>
-                  <div style={{ width:36, height:36, borderRadius:"50%", background: roleColors[role], color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border: active ? "2.5px solid #c8956c" : "2px solid transparent", boxShadow: active ? "0 2px 8px rgba(200,149,108,.4)" : "none" }}>
-                    {a.name.split(" ").pop().charAt(0)}
-                  </div>
-                  <span style={{ fontSize:8, fontWeight:700, color: active ? "#c8956c" : C.muted, maxWidth:48, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.title || a.name.split(" ").pop()}</span>
-                </button>
-              );
-            })}
+          {/* Staff avatars — tap to auto-fill email (dev accounts hidden for staff) */}
+          <div style={{ display:"flex", justifyContent:"center", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+            {(() => {
+              const devIds = new Set(DEV_ONLY_ACCOUNTS.map(a => a.id));
+              const visibleAccounts = Object.values(accounts).filter(a => devMode || !devIds.has(a.id));
+              const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22", manager: "#2980b9" };
+              return visibleAccounts.map(a => {
+                const role = a.role || "staff";
+                const active = username.toLowerCase() === (a.email || "").toLowerCase();
+                return (
+                  <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
+                    style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, background:"none", border:"none", cursor:"pointer", padding:2, opacity: active ? 1 : 0.6, transform: active ? "scale(1.1)" : "none", transition:"all .15s" }}>
+                    <div style={{ width:32, height:32, borderRadius:"50%", background: roleColors[role] || a.color || C.accent, color:"#fff", fontSize:12, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border: active ? "2.5px solid #c8956c" : "2px solid transparent", boxShadow: active ? "0 2px 8px rgba(200,149,108,.4)" : "none" }}>
+                      {a.name.split(" ").pop().charAt(0)}
+                    </div>
+                    <span style={{ fontSize:7, fontWeight:700, color: active ? "#c8956c" : C.muted, maxWidth:42, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.title || a.name.split(" ").pop()}</span>
+                  </button>
+                );
+              });
+            })()}
           </div>
 
           {/* Login button */}

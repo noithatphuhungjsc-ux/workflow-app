@@ -117,13 +117,29 @@ export const PROJECT_COLORS = ["#2980b9","#e67e22","#27ae60","#9b59b6","#d35400"
 
 /* -- TEAM ACCOUNTS — single source of truth -- */
 export const TEAM_ACCOUNTS = [
-  { id: "trinh", name: "Nguyen Duy Trinh", email: "trinh@workflow.vn", phone: "+84983523868", role: "director", title: "Giám đốc",      color: "#9b59b6" },
-  { id: "lien",  name: "Lientran",         email: "lien@workflow.vn",  phone: "",              role: "accountant", title: "Kế toán",    color: "#e74c3c" },
-  { id: "hung",  name: "Pham Van Hung",    email: "hung@workflow.vn",  phone: "",              role: "sales",   title: "Kinh doanh",    color: "#6a7fd4" },
-  { id: "mai",   name: "Tran Thi Mai",     email: "mai@workflow.vn",   phone: "",              role: "hr",      title: "Nhân sự",       color: "#3aaa72" },
-  { id: "duc",   name: "Le Minh Duc",      email: "duc@workflow.vn",   phone: "",              role: "construction", title: "Thi công",  color: "#e67e22" },
+  { id: "trinh",  name: "Nguyen Duy Trinh", email: "trinh@workflow.vn",  phone: "+84983523868", role: "director",     title: "Giám đốc",       color: "#9b59b6" },
+  { id: "lien",   name: "Liên Kế toán",     email: "lien@workflow.vn",   phone: "",              role: "accountant",  title: "Kế toán",        color: "#e74c3c" },
+  { id: "tung",   name: "Tùng Tổ trưởng",   email: "tung@workflow.vn",   phone: "",              role: "manager",     title: "Tổ trưởng",      color: "#2980b9" },
+  { id: "tam",    name: "Tâm Tổ phó",       email: "tam@workflow.vn",    phone: "",              role: "manager",     title: "Tổ phó",         color: "#16a085" },
+  { id: "duong",  name: "Đương Tổ phó",     email: "duong@workflow.vn",  phone: "",              role: "manager",     title: "Tổ phó",         color: "#27ae60" },
+  { id: "minh",   name: "Minh Hoàn thiện",  email: "minh@workflow.vn",   phone: "",              role: "staff",       title: "Hoàn thiện",     color: "#3498db" },
+  { id: "lien2",  name: "Liển Hoàn thiện",  email: "lien2@workflow.vn",  phone: "",              role: "staff",       title: "Hoàn thiện",     color: "#1abc9c" },
+  { id: "tuan",   name: "Tuấn Thợ mộc",    email: "tuan@workflow.vn",   phone: "",              role: "staff",       title: "Thợ mộc",        color: "#d35400" },
+  { id: "trang",  name: "Trang Táo đỏ",     email: "trang@workflow.vn",  phone: "",              role: "staff",       title: "Táo đỏ",         color: "#c0392b" },
+  { id: "hai",    name: "Hải Thợ mộc",      email: "hai@workflow.vn",    phone: "",              role: "staff",       title: "Thợ mộc",        color: "#e67e22" },
+  { id: "hoai",   name: "Hoài Táo đỏ",      email: "hoai@workflow.vn",   phone: "",              role: "staff",       title: "Táo đỏ",         color: "#e74c3c" },
 ];
-export const TEAM_EMAILS = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.id, a.email]));
+
+// Dev-only accounts — chỉ hiện khi ?dev hoặc đăng nhập với director
+export const DEV_ONLY_ACCOUNTS = [
+  { id: "hung",   name: "Pham Van Hung",     email: "hung@workflow.vn",   phone: "",              role: "sales",       title: "Kinh doanh",     color: "#6a7fd4" },
+  { id: "mai",    name: "Tran Thi Mai",      email: "mai@workflow.vn",    phone: "",              role: "hr",          title: "Nhân sự",        color: "#3aaa72" },
+  { id: "duc",    name: "Le Minh Duc",       email: "duc@workflow.vn",    phone: "",              role: "construction", title: "Thi công",      color: "#e67e22" },
+];
+
+// All accounts (for auth sync, cleanup, etc.)
+export const ALL_ACCOUNTS = [...TEAM_ACCOUNTS, ...DEV_ONLY_ACCOUNTS];
+export const TEAM_EMAILS = Object.fromEntries(ALL_ACCOUNTS.map(a => [a.id, a.email]));
 
 export const DAY_NAMES = ["T2","T3","T4","T5","T6","T7","CN"];
 export const MONTH_NAMES = ["Tháng 1","Tháng 2","Tháng 3","Tháng 4","Tháng 5","Tháng 6","Tháng 7","Tháng 8","Tháng 9","Tháng 10","Tháng 11","Tháng 12"];
@@ -156,7 +172,7 @@ export const DEFAULT_SETTINGS = {
   userRole: "manager", // "manager" | "staff"
 
   // Industry preset
-  industryPreset: "",         // preset id ("fnb", "construction", ...)
+  industryPreset: "construction", // default to construction for all users
   userIndustryRole: "",       // role id from preset ("owner", "staff", ...)
   visibleTabs: { tasks: true, calendar: true, inbox: true, expense: true, report: true, ai: true },
   terminology: {},            // { task, project, deadline, assignee, expense }

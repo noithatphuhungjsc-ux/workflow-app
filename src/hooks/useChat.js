@@ -189,10 +189,27 @@ export function useChat(conversationId, userId) {
       setMessages(prev => prev.map(m => m.id === optimistic.id ? data : m));
       lastFetchRef.current = data.created_at;
 
+      // Update conversation timestamp
       await supabase
         .from("conversations")
         .update({ last_message_at: data.created_at })
         .eq("id", conversationId);
+
+      // Push notification to other members (non-blocking)
+      if (type !== "system") {
+        const senderName = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").name || ""; } catch { return ""; } })();
+        fetch("/api/push-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId,
+            senderId: userId,
+            senderName,
+            content: content.trim(),
+            messageType: type,
+          }),
+        }).catch(() => {});
+      }
     } else if (error) {
       console.warn("Send message failed:", error);
       // Remove optimistic message — do NOT auto-rejoin if removed from group

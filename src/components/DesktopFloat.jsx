@@ -232,7 +232,7 @@ export default function DesktopFloat({ onSelectTask, onOpenTab }) {
       {!open && (
         <button onClick={() => setOpen(true)}
           style={{
-            position: "fixed", bottom: 24, right: 24,
+            position: "fixed", bottom: 80, right: 24,
             width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer",
             background: urgentCount > 0
               ? `linear-gradient(135deg,${C.red},${C.accent})`

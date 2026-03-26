@@ -126,6 +126,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* -- Responsive cho desktop/tablet -- */
@@ -205,7 +206,7 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   display: flex;
   align-items: center;
   z-index: 50;
-  padding-bottom: 2px;
+  padding-bottom: env(safe-area-inset-bottom, 2px);
 }
 
 /* -- Bottom sheet (More menu, Status picker, etc.) -- */

@@ -3,7 +3,7 @@ import { C } from "../constants";
 import { useSupabase } from "../contexts/SupabaseContext";
 import { useConversations } from "../hooks/useConversations";
 import ChatRoom from "../components/ChatRoom";
-import NewChatModal, { decodeGroupName, getCategoryInfo, GROUP_CATEGORIES } from "../components/NewChatModal";
+import NewChatModal, { getCategoryInfo, GROUP_CATEGORIES } from "../components/NewChatModal";
 import { supabase } from "../lib/supabase";
 
 export default function ChatTab({ openConvId, projects, tasks, patchTask, addTask, patchProject }) {
@@ -12,34 +12,22 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const { conversations, loading, totalUnread, refresh, createDM, createGroup } = useConversations(userId);
   const [activeConv, _setActiveConv] = useState(() => sessionStorage.getItem("wf_activeConv") || null);
 
-  // Auto-open specific conversation (e.g., from project chat button)
   useEffect(() => {
     if (openConvId && openConvId !== activeConv) {
       setActiveConv(openConvId);
     }
   }, [openConvId]);
+
   const setActiveConv = useCallback((id) => {
     if (id) {
       sessionStorage.setItem("wf_activeConv", id);
-      // Verify membership — do NOT auto-join (removed members must not rejoin)
-      if (supabase && userId) {
-        supabase.from("conversation_members")
-          .select("user_id").eq("conversation_id", id).eq("user_id", userId).maybeSingle()
-          .then(({ data: existing }) => {
-            if (!existing) {
-              // Not a member — check if this is a conversation they were invited to (e.g. from openConvId)
-              // Only auto-join for DMs or project chats that are explicitly opened via props
-              if (id === openConvId) {
-                supabase.from("conversation_members").insert({ conversation_id: id, user_id: userId }).catch(() => {});
-              }
-            }
-          }).catch(() => {});
-      }
+      // NOTE: Do NOT auto-join conversations. Membership is managed via
+      // createDM, createGroup, or DeptTab. RLS enforces server-side.
     } else {
       sessionStorage.removeItem("wf_activeConv");
     }
     _setActiveConv(id);
-  }, [userId, openConvId]);
+  }, [userId]);
 
   const [showNew, setShowNew] = useState(null);
   const [profiles, setProfiles] = useState([]);
@@ -47,7 +35,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [filter, setFilter] = useState("all");
 
-  // Role check — only manager/admin/dev can create groups
   const canCreateGroup = (() => {
     try {
       const s = JSON.parse(localStorage.getItem("wf_session") || "{}");
@@ -55,7 +42,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     } catch { return false; }
   })();
 
-  // Load profiles for ChatRoom
   useEffect(() => {
     if (!supabase || !userId) return;
     (async () => {
@@ -70,7 +56,8 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
       const convId = await createDM(selection.userId);
       if (convId) setActiveConv(convId);
     } else if (selection.type === "group") {
-      const convId = await createGroup(selection.name, selection.memberIds);
+      // Pass category as column option (no more prefix encoding)
+      const convId = await createGroup(selection.name, selection.memberIds, { category: selection.category });
       if (convId) setActiveConv(convId);
     }
   };
@@ -78,18 +65,14 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   const deleteConversation = async (convId) => {
     if (!supabase || !userId) return;
     const conv = conversations.find(c => c.id === convId);
-    // For groups: leave the group (remove own membership)
-    // For DMs: remove own membership (hides conversation)
     const { error } = await supabase.from("conversation_members").delete()
       .eq("conversation_id", convId).eq("user_id", userId);
     if (error) {
-      alert("Không thể rời cuộc trò chuyện. Vui lòng thử lại.");
-      console.error("Leave conversation error:", error);
+      alert("Khong the roi cuoc tro chuyen. Vui long thu lai.");
     } else if (conv?.type === "group") {
-      // Send system message to notify others
       await supabase.from("messages").insert({
         conversation_id: convId, sender_id: userId,
-        content: `👤 đã rời khỏi nhóm`, type: "system",
+        content: "\uD83D\uDC64 da roi khoi nhom", type: "system",
       }).catch(() => {});
     }
     setConfirmDelete(null);
@@ -119,47 +102,62 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
     setActiveConv(convId);
   }, []);
 
-  // Merge project chats
+  // Merge project chats (projects with chatId that aren't in conversations yet)
   const mergedConversations = (() => {
     if (!projects?.length) return conversations;
     const existingIds = new Set(conversations.map(c => c.id));
     const projectChats = projects
       .filter(p => p.chatId && !existingIds.has(p.chatId))
       .map(p => ({
-        id: p.chatId, type: "group", name: `[project]${p.name}`,
-        displayName: `[project]${p.name}`, created_by: userId,
+        id: p.chatId, type: "group", name: p.name, category: "project",
+        displayName: p.name, created_by: userId,
         lastMessage: null, unreadCount: 0, _isProjectChat: true,
+        linked_project_id: p.id,
       }));
     return projectChats.length > 0 ? [...conversations, ...projectChats] : conversations;
   })();
 
+  // Detect dept chats: column OR legacy name patterns
+  const DEPT_NAMES = ["Toan cong ty", "Ke toan", "Kinh doanh", "Nhan su", "Thi cong"];
+  const isDeptChat = (c) => {
+    if (c.dept_role) return true;
+    if (c.type !== "group") return false;
+    const n = c.name || "";
+    // Match exact name, prefix-encoded name, or partial match
+    return DEPT_NAMES.includes(n) || n.startsWith("[dept:") || DEPT_NAMES.some(d => n.includes(d));
+  };
+  const isSubThread = (c) => c.parent_id || (c.name || "").startsWith("[sub:");
+
+  // DEBUG: log all conversations to diagnose filtering (remove later)
+  if (mergedConversations.length > 0) {
+    console.log("[ChatTab] All convos:", mergedConversations.map(c => ({ id: c.id?.slice(0,8), name: c.name, type: c.type, dept_role: c.dept_role, category: c.category, parent_id: c.parent_id, isDept: isDeptChat(c), isSub: isSubThread(c) })));
+  }
+
   // Filter — hide sub-threads and dept chats from main list
   const filtered = mergedConversations.filter(c => {
-    const cName = c.displayName || c.name || "";
-    if (cName.startsWith("[sub:")) return false; // sub-threads only visible in parent chat
-    if (cName.startsWith("[dept:")) return false; // dept chats shown in DeptTab
+    if (isDeptChat(c)) return false;    // dept chats shown in DeptTab
+    if (isSubThread(c)) return false;   // sub-threads only visible in parent chat
     if (filter === "all") return true;
     if (filter === "dm") return c.type === "dm";
     if (c.type !== "group") return false;
-    return decodeGroupName(cName).category === filter;
+    return (c.category || "other") === filter;
   });
 
   const groupCounts = {};
-  mergedConversations.forEach(c => {
+  mergedConversations.filter(c => !isDeptChat(c) && !isSubThread(c)).forEach(c => {
     if (c.type === "group") {
-      const decoded = decodeGroupName(c.displayName || c.name);
-      groupCounts[decoded.category] = (groupCounts[decoded.category] || 0) + 1;
+      const cat = c.category || "other";
+      groupCounts[cat] = (groupCounts[cat] || 0) + 1;
     }
   });
   const dmCount = mergedConversations.filter(c => c.type === "dm").length;
 
-  // Not connected yet — auto-login runs at App level, just show loading
   if (supaLoading || !isConnected) {
     return (
       <div style={{ padding: 40, textAlign: "center", color: C.muted }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>💬</div>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Đang kết nối...</div>
-        <div style={{ fontSize: 12, marginTop: 6 }}>Tự động đăng nhập từ tài khoản của bạn</div>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>{"\uD83D\uDCAC"}</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Dang ket noi...</div>
+        <div style={{ fontSize: 12, marginTop: 6 }}>Tu dong dang nhap tu tai khoan cua ban</div>
       </div>
     );
   }
@@ -167,9 +165,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   // Active conversation
   if (activeConv) {
     const conv = mergedConversations.find(c => c.id === activeConv) || conversations.find(c => c.id === activeConv);
-    const rawName = conv?.displayName || "Trò chuyện";
-    const decoded = conv?.type === "group" ? decodeGroupName(rawName) : null;
-    const name = decoded ? decoded.name : rawName;
+    const name = conv?.displayName || conv?.name || "Tro chuyen";
     const linkedProject = (projects || []).find(p => p.chatId === activeConv) || null;
     const projectTasks = linkedProject ? (tasks || []).filter(t => t.projectId === linkedProject.id && !t.deleted)
       .sort((a, b) => (a.stepIndex ?? 999) - (b.stepIndex ?? 999)) : [];
@@ -184,30 +180,29 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
 
   // Filter pills
   const filterPills = [
-    { key: "all", label: "Tất cả", count: mergedConversations.length, color: C.text },
-    { key: "dm", label: "Cá nhân", count: dmCount, color: C.accent },
+    { key: "all", label: "Tat ca", count: filtered.length, color: C.text },
+    { key: "dm", label: "Ca nhan", count: dmCount, color: C.accent },
     ...GROUP_CATEGORIES.filter(cat => groupCounts[cat.key]).map(cat => ({
       key: cat.key, label: `${cat.icon} ${cat.label}`, count: groupCounts[cat.key], color: cat.color,
     })),
   ];
 
-  // Conversation list
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}
       onClick={() => contextMenu && setContextMenu(null)}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, gap: 6 }}>
         <div style={{ flex: 1, fontSize: 15, fontWeight: 700, color: C.text }}>
-          Tin nhắn {totalUnread > 0 && <span style={{ fontSize: 11, color: "#fff", background: C.red, borderRadius: 10, padding: "1px 7px", marginLeft: 6 }}>{totalUnread}</span>}
+          Tin nhan {totalUnread > 0 && <span style={{ fontSize: 11, color: "#fff", background: C.red, borderRadius: 10, padding: "1px 7px", marginLeft: 6 }}>{totalUnread}</span>}
         </div>
         <button className="tap" onClick={() => setShowNew("dm")}
           style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>
-          + Nhắn tin
+          + Nhan tin
         </button>
         {canCreateGroup && (
           <button className="tap" onClick={() => setShowNew("group")}
             style={{ background: C.purple, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>
-            + Nhóm
+            + Nhom
           </button>
         )}
       </div>
@@ -231,17 +226,16 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
 
       {/* List */}
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {loading && <div style={{ textAlign: "center", padding: 20, color: C.muted, fontSize: 12 }}>Đang tải...</div>}
+        {loading && <div style={{ textAlign: "center", padding: 20, color: C.muted, fontSize: 12 }}>Dang tai...</div>}
         {!loading && filtered.length === 0 && (
           <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 13 }}>
-            {filter === "all" ? <>Chưa có cuộc trò chuyện nào.<br />Bấm "+ Nhắn tin" để bắt đầu.</> : "Không có cuộc trò chuyện nào trong mục này."}
+            {filter === "all" ? <>Chua co cuoc tro chuyen nao.<br />Bam "+ Nhan tin" de bat dau.</> : "Khong co cuoc tro chuyen nao trong muc nay."}
           </div>
         )}
         {filtered.map(c => {
           const isGroup = c.type === "group";
-          const decoded = isGroup ? decodeGroupName(c.displayName) : null;
-          const catInfo = decoded ? getCategoryInfo(decoded.category) : null;
-          const name = decoded ? decoded.name : c.displayName;
+          const catInfo = isGroup ? getCategoryInfo(c.category || "other") : null;
+          const name = c.displayName || c.name || "?";
 
           return (
             <div key={c.id} className="tap"
@@ -258,7 +252,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#fff", fontSize: isGroup ? 15 : 16, fontWeight: 700,
               }}>
-                {isGroup ? (catInfo?.icon || "👥") : (name || "?")[0].toUpperCase()}
+                {isGroup ? (catInfo?.icon || "\uD83D\uDC65") : (name || "?")[0].toUpperCase()}
               </div>
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -274,7 +268,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
                 </div>
                 {c.lastMessage && (
                   <div style={{ fontSize: 12, color: c.unreadCount > 0 ? C.text : C.muted, fontWeight: c.unreadCount > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
-                    {c.lastMessage.type === "image" ? "📷 Ảnh" : c.lastMessage.type === "location" ? "📍 Vị trí" : c.lastMessage.content}
+                    {c.lastMessage.type === "image" ? "\uD83D\uDCF7 Anh" : c.lastMessage.type === "location" ? "\uD83D\uDCCD Vi tri" : c.lastMessage.content}
                   </div>
                 )}
               </div>
@@ -296,7 +290,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
         })}
       </div>
 
-      {/* Context menu (delete) */}
+      {/* Context menu */}
       {contextMenu && (
         <div style={{ position: "fixed", inset: 0, zIndex: 300 }} onClick={() => setContextMenu(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{
@@ -306,7 +300,7 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
             overflow: "hidden", minWidth: 200,
           }}>
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 700, color: C.muted }}>
-              Tùy chọn
+              Tuy chon
             </div>
             {(() => {
               const conv = conversations.find(c => c.id === contextMenu.id);
@@ -314,13 +308,13 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
               return (
                 <button className="tap" onClick={() => { setConfirmDelete(contextMenu.id); setContextMenu(null); }}
                   style={{ width: "100%", padding: "12px 16px", border: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: C.red, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-                  {isGroup ? "🚪 Rời nhóm" : "🗑️ Xóa cuộc trò chuyện"}
+                  {isGroup ? "\uD83D\uDEAA Roi nhom" : "\uD83D\uDDD1\uFE0F Xoa cuoc tro chuyen"}
                 </button>
               );
             })()}
             <button className="tap" onClick={() => setContextMenu(null)}
               style={{ width: "100%", padding: "12px 16px", borderTop: `1px solid ${C.border}`, background: "transparent", fontSize: 14, fontWeight: 500, color: C.muted, textAlign: "center", cursor: "pointer", border: "none" }}>
-              Hủy
+              Huy
             </button>
           </div>
         </div>
@@ -334,19 +328,19 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
               const conv = conversations.find(c => c.id === confirmDelete);
               const isGroup = conv?.type === "group";
               return (<>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>{isGroup ? "🚪" : "🗑️"}</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>{isGroup ? "Rời nhóm?" : "Xóa cuộc trò chuyện?"}</div>
-                <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{isGroup ? "Bạn sẽ rời khỏi nhóm này và không nhận tin nhắn nữa." : "Cuộc trò chuyện sẽ bị xóa khỏi danh sách của bạn."}</div>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{isGroup ? "\uD83D\uDEAA" : "\uD83D\uDDD1\uFE0F"}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>{isGroup ? "Roi nhom?" : "Xoa cuoc tro chuyen?"}</div>
+                <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{isGroup ? "Ban se roi khoi nhom nay va khong nhan tin nhan nua." : "Cuoc tro chuyen se bi xoa khoi danh sach cua ban."}</div>
               </>);
             })()}
             <div style={{ display: "flex", gap: 10 }}>
               <button className="tap" onClick={() => setConfirmDelete(null)}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", fontSize: 14, fontWeight: 600, color: C.text, cursor: "pointer" }}>
-                Hủy
+                Huy
               </button>
               <button className="tap" onClick={() => deleteConversation(confirmDelete)}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: C.red, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                {(() => { const c = conversations.find(x => x.id === confirmDelete); return c?.type === "group" ? "Rời" : "Xóa"; })()}
+                {(() => { const c = conversations.find(x => x.id === confirmDelete); return c?.type === "group" ? "Roi" : "Xoa"; })()}
               </button>
             </div>
           </div>

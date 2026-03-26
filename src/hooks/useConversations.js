@@ -38,7 +38,6 @@ export function useConversations(userId) {
       supabase.from("conversations").select("*").in("id", convIds).order("last_message_at", { ascending: false }),
       supabase.from("conversation_members").select("conversation_id, user_id").in("conversation_id", convIds),
       supabase.from("profiles").select("id, display_name, avatar_color"),
-      // Single query for recent messages — fetch enough to cover all conversations
       supabase.from("messages")
         .select("conversation_id, content, sender_name, created_at, type, sender_id")
         .in("conversation_id", convIds)
@@ -75,18 +74,17 @@ export function useConversations(userId) {
 
       return {
         ...c,
-        displayName: displayName || c.name || "Nhóm",
+        displayName: displayName || c.name || "Nhom",
         lastMessage: lastMsg,
         unreadCount,
       };
     });
 
-    // Only update state if data actually changed (prevents flicker from polling)
+    // Only update state if data actually changed
     setConversations(prev => {
       const prevKey = JSON.stringify(prev.map(c => ({ id: c.id, lm: c.lastMessage?.created_at, u: c.unreadCount })));
       const nextKey = JSON.stringify(enriched.map(c => ({ id: c.id, lm: c.lastMessage?.created_at, u: c.unreadCount })));
       if (prevKey === nextKey) return prev;
-      // Cache for instant next render
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ userId, list: enriched })); } catch {}
       return enriched;
     });
@@ -100,10 +98,8 @@ export function useConversations(userId) {
   useEffect(() => {
     if (!supabase || !userId) return;
 
-    // Polling fallback — always works even without Realtime enabled
     const poll = setInterval(fetchConvos, 15000);
 
-    // Realtime subscription — instant if Realtime is enabled on messages table
     const channel = supabase
       .channel("convos-live")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
@@ -121,7 +117,7 @@ export function useConversations(userId) {
   const createDM = useCallback(async (otherUserId) => {
     if (!supabase || !userId) return null;
 
-    // Check if DM already exists (2 queries instead of N)
+    // Check if DM already exists
     const { data: myConvs } = await supabase
       .from("conversation_members")
       .select("conversation_id")
@@ -163,13 +159,35 @@ export function useConversations(userId) {
     return conv.id;
   }, [userId, fetchConvos]);
 
-  // Create group conversation
-  const createGroup = useCallback(async (name, memberIds) => {
+  // Create group conversation (with category column instead of prefix)
+  // Only director can create groups (enforced client-side + RLS)
+  const createGroup = useCallback(async (name, memberIds, options = {}) => {
     if (!supabase || !userId) return null;
+
+    // Permission check: only director or system (dept/project) can create groups
+    if (!options.deptRole && !options.projectId && !options.parentId) {
+      try {
+        const role = JSON.parse(localStorage.getItem("wf_session") || "{}").role;
+        if (role !== "director") {
+          console.warn("[WF] createGroup blocked: non-director user");
+          return null;
+        }
+      } catch { return null; }
+    }
+
+    const insertData = {
+      type: "group",
+      name,
+      created_by: userId,
+      category: options.category || null,
+      dept_role: options.deptRole || null,
+      linked_project_id: options.projectId || null,
+      parent_id: options.parentId || null,
+    };
 
     const { data: conv } = await supabase
       .from("conversations")
-      .insert({ type: "group", name, created_by: userId })
+      .insert(insertData)
       .select()
       .single();
 

@@ -1,17 +1,30 @@
 /* ================================================================
    Push Notification Triggers — client-side helpers
-   Sends targeted push notifications via /api/push-call
+   Sends targeted push notifications via /api/push-task
    ================================================================ */
 
 /**
  * Notify a user when they're assigned to a task
  */
-export async function notifyTaskAssigned(assigneeUserId, taskTitle, assignerName) {
-  return sendPush(assigneeUserId, {
-    title: "Việc mới được giao",
-    body: `${assignerName} đã giao cho bạn: "${taskTitle}"`,
-    icon: "/icon-192.png",
-    tag: `assign-${Date.now()}`,
+export async function notifyTaskAssigned(targetUserId, taskTitle, assignerName) {
+  return sendTaskPush({
+    event: "assigned",
+    targetUserId,
+    taskTitle,
+    assignerName,
+  });
+}
+
+/**
+ * Notify when task status changes (to owner or assignee)
+ */
+export async function notifyTaskStatusChange(targetUserId, taskTitle, newStatus, changerName) {
+  return sendTaskPush({
+    event: "status_change",
+    targetUserId,
+    taskTitle,
+    newStatus,
+    changerName,
   });
 }
 
@@ -20,36 +33,24 @@ export async function notifyTaskAssigned(assigneeUserId, taskTitle, assignerName
  */
 export async function notifyExpenseDecision(userId, expenseDesc, amount, decision, reviewerName) {
   const isApproved = decision === "approved";
-  return sendPush(userId, {
-    title: isApproved ? "Chi tiêu được duyệt" : "Chi tiêu bị từ chối",
-    body: `${reviewerName} đã ${isApproved ? "duyệt" : "từ chối"}: "${expenseDesc}" — ${amount.toLocaleString("vi-VN")}đ`,
-    icon: "/icon-192.png",
-    tag: `expense-${Date.now()}`,
+  return sendTaskPush({
+    event: "status_change",
+    targetUserId: userId,
+    taskTitle: `Chi tiêu: ${expenseDesc} — ${amount.toLocaleString("vi-VN")}đ`,
+    newStatus: isApproved ? "done" : "todo",
+    changerName: reviewerName,
   });
 }
 
 /**
- * Notify task status change to project members
+ * Low-level push sender — uses /api/push-task
  */
-export async function notifyTaskStatusChange(userId, taskTitle, newStatus, changerName) {
-  const statusLabels = { done: "Hoàn thành", inprogress: "Đang làm", todo: "Chờ xử lý" };
-  return sendPush(userId, {
-    title: "Cập nhật công việc",
-    body: `${changerName}: "${taskTitle}" → ${statusLabels[newStatus] || newStatus}`,
-    icon: "/icon-192.png",
-    tag: `status-${Date.now()}`,
-  });
-}
-
-/**
- * Low-level push sender
- */
-async function sendPush(userId, payload) {
+async function sendTaskPush(payload) {
   try {
-    await fetch("/api/push-call", {
+    await fetch("/api/push-task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, payload }),
+      body: JSON.stringify(payload),
     });
   } catch {
     // Silent fail — push is best-effort

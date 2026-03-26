@@ -5,8 +5,9 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import "./App.css";
 
-import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, TEAM_EMAILS, STATUSES, STATUS_ORDER } from "./constants";
+import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, ALL_ACCOUNTS, TEAM_EMAILS, STATUSES, STATUS_ORDER } from "./constants";
 import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail, cloudSave, cloudLoad } from "./services";
+import { isNative, initNative } from "./native/capacitor";
 import { useGmail } from "./hooks/useGmail";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
 import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel, Skeleton, Toast, TabErrorBoundary } from "./components";
@@ -98,23 +99,23 @@ function SupabaseAutoLogin() {
 
   // One-time: ensure all team members have Supabase auth accounts
   useEffect(() => {
-    if (localStorage.getItem("wf_auth_synced_v3")) return;
-    TEAM_ACCOUNTS.forEach(a => {
+    if (localStorage.getItem("wf_auth_synced_v4")) return;
+    ALL_ACCOUNTS.forEach(a => {
       fetch("/api/cloud-sync", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "ensure_auth", email: a.email, password: "111111", displayName: a.name }),
       }).catch(() => {});
     });
-    localStorage.setItem("wf_auth_synced_v3", "1");
+    localStorage.setItem("wf_auth_synced_v4", "1");
   }, []);
 
   // One-time: cleanup old OAuth profiles
   useEffect(() => {
-    if (localStorage.getItem("wf_cleanup_v2")) return;
+    if (localStorage.getItem("wf_cleanup_v3")) return;
     fetch("/api/cloud-sync", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "cleanup_profiles" }),
-    }).then(() => localStorage.setItem("wf_cleanup_v2", "1")).catch(() => {});
+    }).then(() => localStorage.setItem("wf_cleanup_v3", "1")).catch(() => {});
   }, []);
 
   return null;
@@ -156,6 +157,22 @@ export default function App() {
     setUserPrefix("");
     document.title = "WorkFlow";
   };
+
+  // One-time: clean up old localStorage keys (tasks/projects now in Supabase)
+  useEffect(() => {
+    if (localStorage.getItem("wf_redesign_cleanup_v1")) return;
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (/^wf_[a-f0-9-]+_(tasks|projects)$/.test(k)) keysToRemove.push(k);
+      if (/^wf_convos_cache/.test(k)) keysToRemove.push(k);
+      if (/^wf_activeConv/.test(k)) keysToRemove.push(k);
+      if (/^wf_pinned_msgs_/.test(k)) keysToRemove.push(k);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    localStorage.setItem("wf_redesign_cleanup_v1", "1");
+  }, []);
 
   if (!user) return <LoginScreen onLogin={(acc) => { acc.lastActive = Date.now(); setUserPrefix(acc.id); setUser(acc); document.title = `WorkFlow — ${acc.name}`; }} />;
 
@@ -308,6 +325,39 @@ function MainApp({ user, onLogout }) {
   const supaUserId = supaSession?.user?.id;
   const { totalUnread: chatUnread } = useConversations(supaUserId);
 
+  // Init native features (Capacitor — push, statusbar, keyboard)
+  useEffect(() => {
+    if (isNative && supaUserId) {
+      initNative(supabase, supaUserId);
+    }
+  }, [supaUserId]);
+
+  // Listen for native incoming call events (from FCM push / launch intent)
+  useEffect(() => {
+    if (!isNative) return;
+    const handler = (e) => {
+      const { callerName, mode, conversationId, action } = e.detail || {};
+      if (!conversationId) return;
+      const callData = {
+        conversationId,
+        convName: callerName || "Cuộc gọi",
+        mode: mode || "audio",
+        callerId: null,
+        callMsgId: null,
+      };
+      if (action === "accept") {
+        // User tapped Accept in IncomingCallActivity — go straight to call
+        setTab("inbox");
+        setGlobalCall({ ...callData, accepted: true });
+      } else {
+        // Show ringing UI
+        setGlobalCall(callData);
+      }
+    };
+    window.addEventListener("native-call-incoming", handler);
+    return () => window.removeEventListener("native-call-incoming", handler);
+  }, []);
+
   // Push notification for new chat messages
   const prevUnreadRef = useRef(0);
   useEffect(() => {
@@ -322,47 +372,69 @@ function MainApp({ user, onLogout }) {
     }
     prevUnreadRef.current = chatUnread;
   }, [chatUnread, tab]);
-  const lastCallCheckRef = useRef(new Date().toISOString());
   const ringtoneRef = useRef(null);
+  const seenCallMsgIds = useRef(new Set());
 
   useEffect(() => {
     if (!supabase || !supaUserId) return;
 
-    const checkCalls = async () => {
-      const { data } = await supabase
-        .from("messages")
-        .select("id, conversation_id, sender_id, content, created_at")
-        .eq("type", "call")
-        .neq("sender_id", supaUserId)
-        .gt("created_at", lastCallCheckRef.current)
-        .order("created_at", { ascending: false })
-        .limit(1);
+    // Dual detection: Realtime (instant) + Polling fallback (reliable)
+    const processCallMsg = async (msg) => {
+      if (!msg || msg.sender_id === supaUserId) return;
+      if (seenCallMsgIds.current.has(msg.id)) return;
+      seenCallMsgIds.current.add(msg.id);
 
-      if (!data || data.length === 0) return;
-      const msg = data[0];
       const age = Date.now() - new Date(msg.created_at).getTime();
-      if (age > 30000) return; // ignore calls older than 30s
+      if (age > 30000) return;
 
-      lastCallCheckRef.current = msg.created_at;
+      const { data: membership } = await supabase
+        .from("conversation_members").select("user_id")
+        .eq("conversation_id", msg.conversation_id)
+        .eq("user_id", supaUserId).single();
+      if (!membership) return;
 
-      // Get caller name
       const { data: callerProfile } = await supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", msg.sender_id)
-        .single();
+        .from("profiles").select("display_name")
+        .eq("id", msg.sender_id).single();
 
       setGlobalCall({
         conversationId: msg.conversation_id,
         convName: callerProfile?.display_name || "Cuộc gọi",
         mode: msg.content?.includes("video") ? "video" : "audio",
         callerId: msg.sender_id,
+        callMsgId: msg.id,
       });
     };
 
-    const interval = setInterval(checkCalls, 3000);
-    checkCalls();
-    return () => clearInterval(interval);
+    // 1. Realtime listener (instant detection)
+    const channel = supabase.channel("incoming-calls")
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "messages",
+        filter: "type=eq.call",
+      }, (payload) => processCallMsg(payload.new))
+      .subscribe();
+
+    // 2. Polling fallback (in case Realtime misses — e.g. replication not enabled)
+    const startTime = new Date().toISOString();
+    const lastCheckRef = { current: startTime };
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data } = await supabase.from("messages")
+          .select("id, conversation_id, sender_id, content, created_at")
+          .eq("type", "call").neq("sender_id", supaUserId)
+          .gt("created_at", lastCheckRef.current)
+          .order("created_at", { ascending: false }).limit(1);
+        if (data?.[0]) {
+          lastCheckRef.current = data[0].created_at;
+          processCallMsg(data[0]);
+        }
+      } catch {}
+    }, 2000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+    };
   }, [supaUserId]);
 
   // Ringtone — only play while ringing (globalCall exists but NOT accepted)
@@ -381,43 +453,70 @@ function MainApp({ user, onLogout }) {
       return;
     }
 
-    // Start ringtone
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const notes = [523.25, 659.25, 783.99, 659.25];
-      const playNote = () => {
-        const time = ctx.currentTime;
-        notes.forEach((freq, i) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = "sine"; osc.frequency.value = freq;
-          gain.gain.setValueAtTime(0.3, time + i * 0.2);
-          gain.gain.exponentialRampToValueAtTime(0.01, time + i * 0.2 + 0.18);
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.start(time + i * 0.2); osc.stop(time + i * 0.2 + 0.2);
-        });
-      };
-      playNote();
-      const interval = setInterval(playNote, 1200);
-      ringtoneRef.current = { ctx, interval };
-    } catch {}
+    // Start ringtone — classic phone ring pattern (ring 2s, pause 3s)
+    const startRingtone = async () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === "suspended") await ctx.resume();
 
-    // Auto-dismiss after 30s
-    const timeout = setTimeout(() => setGlobalCall(null), 30000);
+        const playRing = () => {
+          if (ctx.state === "closed") return;
+          const t = ctx.currentTime;
+          // Ring: two-tone warble (480Hz + 620Hz) for 2 seconds — classic phone ring
+          [480, 620].forEach(freq => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine"; osc.frequency.value = freq;
+            // Pulsing effect: on/off 25 times per second (25Hz AM modulation)
+            for (let i = 0; i < 50; i++) {
+              const onTime = t + i * 0.04;
+              gain.gain.setValueAtTime(i % 2 === 0 ? 0.15 : 0.02, onTime);
+            }
+            gain.gain.setValueAtTime(0, t + 2);
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(t); osc.stop(t + 2);
+          });
+        };
+
+        playRing();
+        const interval = setInterval(playRing, 5000); // 2s ring + 3s silence
+        ringtoneRef.current = { ctx, interval };
+      } catch {}
+    };
+    startRingtone();
+
+    // Auto-dismiss after 30s (missed call)
+    const timeout = setTimeout(() => {
+      setGlobalCall(prev => {
+        if (prev && !prev.accepted) updateMissedCall(prev.callMsgId, prev.mode);
+        return null;
+      });
+    }, 30000);
     return () => {
       clearTimeout(timeout);
       stopRingtone();
     };
   }, [globalCall]);
 
+  // Update message content to "Cuộc gọi nhỡ"
+  const updateMissedCall = async (msgId, callMode) => {
+    if (!msgId) return;
+    const emoji = callMode === "video" ? "📹" : "📞";
+    await supabase.from("messages")
+      .update({ content: `${emoji} Cuộc gọi nhỡ` })
+      .eq("id", msgId);
+  };
+
   const acceptGlobalCall = () => {
     if (!globalCall) return;
-    // Navigate to inbox tab → ChatTab will pick it up
     setTab("inbox");
     setGlobalCall(prev => ({ ...prev, accepted: true }));
   };
 
-  const declineGlobalCall = () => setGlobalCall(null);
+  const declineGlobalCall = () => {
+    if (globalCall?.callMsgId) updateMissedCall(globalCall.callMsgId, globalCall.mode);
+    setGlobalCall(null);
+  };
   const endGlobalCall = useCallback(() => setGlobalCall(null), []);
 
   /* ── Global new-message alarm (when NOT on inbox tab) ── */
@@ -591,9 +690,8 @@ function MainApp({ user, onLogout }) {
       if (proj.chatId || proj.deleted || ensuredChatRef.current.has(proj.id)) return;
       ensuredChatRef.current.add(proj.id);
       try {
-        const chatName = `[project]${proj.name}`;
         const { data: conv } = await supabase.from("conversations")
-          .insert({ type: "group", name: chatName, created_by: uid })
+          .insert({ type: "group", name: proj.name, created_by: uid, category: "project", linked_project_id: String(proj.id) })
           .select().single();
         if (!conv) return;
         // Add creator + project members
@@ -659,9 +757,10 @@ function MainApp({ user, onLogout }) {
       const q = searchQ.trim().toLowerCase();
       list = list.filter(t => t.title?.toLowerCase().includes(q) || t.assignee?.toLowerCase().includes(q));
     }
-    // Staff: only see tasks assigned to them or tasks without assignee that they created
+    // Staff: only see tasks owned by them or assigned to them
+    // (RLS already handles this on Supabase side, this is a client-side safety filter)
     if (isStaff && myName) {
-      list = list.filter(t => !t.assignee || t.assignee === myName);
+      list = list.filter(t => !t.assignee || t.assignee === myName || t.ownerId === supaSession?.user?.id || t.assigneeId === supaSession?.user?.id);
     }
     // Project filter
     if (projFilter === "standalone") list = list.filter(t => !t.projectId);
@@ -960,7 +1059,7 @@ function MainApp({ user, onLogout }) {
                     const filteredT = ct.filter(t => !projectIds.has(t.projectId));
                     if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
                   } else {
-                    const updated = ct.map(t => projectIds.has(t.projectId) ? { ...t, projectId: null, stepIndex: null, assignee: null } : t);
+                    const updated = ct.map(t => projectIds.has(t.projectId) ? { ...t, projectId: null, stepIndex: null, assignee: null, assigneeId: null } : t);
                     if (JSON.stringify(updated) !== JSON.stringify(ct)) await cloudSave(null, lid, "tasks", updated);
                   }
                 } catch {}
@@ -1403,7 +1502,7 @@ function MainApp({ user, onLogout }) {
       {addOpen && <VoiceAddModal onClose={() => setAddOpen(false)} />}
       {heyOpen && <HeyModal onClose={() => setHeyOpen(false)} onChat={(txt) => { setHeyOpen(false); setTab("ai"); setTimeout(() => sendChat(txt), 500); }} buildSystemPrompt={buildSystemPrompt} user={{ ...user, name: settings.displayName || user.name }} />}
       {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} />}
-      {!settings.industryPreset && <IndustrySetupModal onClose={() => {}} />}
+      {!settings.industryPreset && user?.id === "trinh" && <IndustrySetupModal onClose={() => {}} />}
       {qrOpen && <QRScanModal tasks={tasks} patchTask={patchTask} addExpense={addExpense} onClose={() => setQrOpen(false)} />}
 
       {/* ── CHANGELOG ── */}
@@ -1426,17 +1525,15 @@ function MainApp({ user, onLogout }) {
 
       {/* ── NEW PROJECT MODAL ── */}
       {newProjOpen && <NewProjectModal onAdd={async (p) => {
-        const id = Date.now() + Math.random();
         // Remove selectedSupaMembers from stored project data (only used for chat sync)
         const { selectedSupaMembers, ...projData } = p;
-        const proj = { ...projData, id, createdAt: new Date().toISOString().split("T")[0] };
+        const proj = { ...projData };
 
         // Auto-create group chat for project (if Supabase connected)
         if (supabase && supaSession?.user?.id) {
           try {
-            const chatName = `[project]${p.name}`;
             const { data: conv } = await supabase.from("conversations")
-              .insert({ type: "group", name: chatName, created_by: supaSession.user.id })
+              .insert({ type: "group", name: p.name, created_by: supaSession.user.id, category: "project", linked_project_id: String(id) })
               .select().single();
             if (conv) {
               // Add creator + all selected members to chat
@@ -1460,23 +1557,31 @@ function MainApp({ user, onLogout }) {
           } catch (e) { console.warn("Auto-create project chat failed:", e); }
         }
 
-        addProject(proj);
+        const createdProj = await addProject(proj);
+        const projId = createdProj?.id || proj.id;
+
+        // Update chatId on project if chat was created
+        if (proj.chatId && createdProj?.id && !createdProj.chatId) {
+          patchProject(createdProj.id, { chatId: proj.chatId });
+        }
+
         // Auto-create tasks from workflow steps — round-robin assign to members
         const assignableMembers = (p.members || []).filter(m => m.supaId !== supaSession?.user?.id);
         if (p.steps && p.steps.length > 0) {
           const createdTasks = [];
-          p.steps.forEach((step, i) => {
+          for (let i = 0; i < p.steps.length; i++) {
+            const step = p.steps[i];
             const assignee = assignableMembers.length > 0 ? assignableMembers[i % assignableMembers.length] : null;
             const taskData = {
               title: `${i+1}. ${step}`,
-              projectId: id,
+              projectId: String(projId),
               stepIndex: i,
               category: "work",
-              ...(assignee ? { assignee: assignee.name } : {}),
+              ...(assignee ? { assignee: assignee.name, assigneeId: assignee.supaId || null } : {}),
             };
             createdTasks.push({ step, assignee: assignee?.name || null });
-            setTimeout(() => addTask(taskData), i * 10);
-          });
+            addTask(taskData);
+          }
           // Send assignment summary to project chat
           if (proj.chatId && supabase && supaSession?.user?.id && assignableMembers.length > 0) {
             const byMember = {};
@@ -1487,24 +1592,23 @@ function MainApp({ user, onLogout }) {
               }
             });
             const lines = Object.entries(byMember).map(([name, tasks]) =>
-              `👤 ${name}:\n${tasks.map(t => `   ✅ ${t}`).join("\n")}`
+              `\uD83D\uDC64 ${name}:\n${tasks.map(t => `   \u2705 ${t}`).join("\n")}`
             ).join("\n\n");
             supabase.from("messages").insert({
               conversation_id: proj.chatId,
               sender_id: supaSession.user.id,
-              content: `📌 Phân công công việc:\n\n${lines}`,
+              content: `\uD83D\uDCCC Phan cong cong viec:\n\n${lines}`,
               type: "system",
             }).then(() => {}).catch(() => {});
           }
         }
         setNewProjOpen(false);
-        setProjFilter(id);
-        // Auto-open project chat if available, otherwise open project detail
+        if (projId) setProjFilter(projId);
         if (proj.chatId) {
           setOpenConvId(proj.chatId);
           setTab("inbox");
-        } else {
-          setProjDetail(proj);
+        } else if (createdProj) {
+          setProjDetail(createdProj);
         }
       }} onClose={() => setNewProjOpen(false)} />}
 
@@ -1513,7 +1617,7 @@ function MainApp({ user, onLogout }) {
         const proj = projects.find(p => p.id === id);
         if (supabase && proj?.chatId) {
           // Delete sub-threads first
-          const { data: subs } = await supabase.from("conversations").select("id").like("name", `[sub:${proj.chatId}]%`);
+          const { data: subs } = await supabase.from("conversations").select("id").eq("parent_id", proj.chatId);
           for (const sub of (subs || [])) {
             await supabase.from("messages").delete().eq("conversation_id", sub.id);
             await supabase.from("conversation_members").delete().eq("conversation_id", sub.id);

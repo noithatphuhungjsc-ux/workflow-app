@@ -1,27 +1,17 @@
 import { useState, useEffect } from "react";
-import { C } from "../constants";
+import { C, TEAM_ACCOUNTS, DEV_ONLY_ACCOUNTS } from "../constants";
 import { supabase } from "../lib/supabase";
 
+const DEV_IDS = new Set(DEV_ONLY_ACCOUNTS.map(a => a.id));
+
 const GROUP_CATEGORIES = [
-  { key: "work",    icon: "💼", label: "Công việc",  color: C.accent },
-  { key: "family",  icon: "🏠", label: "Gia đình",   color: "#e67e22" },
-  { key: "friends", icon: "🎉", label: "Bạn bè",     color: C.green },
-  { key: "project", icon: "📁", label: "Dự án",      color: C.purple },
-  { key: "class",   icon: "🎓", label: "Lớp học",    color: "#3498db" },
-  { key: "other",   icon: "💬", label: "Khác",       color: C.muted },
+  { key: "work",    icon: "\uD83D\uDCBC", label: "Cong viec",  color: C.accent },
+  { key: "family",  icon: "\uD83C\uDFE0", label: "Gia dinh",   color: "#e67e22" },
+  { key: "friends", icon: "\uD83C\uDF89", label: "Ban be",      color: C.green },
+  { key: "project", icon: "\uD83D\uDCC1", label: "Du an",       color: C.purple },
+  { key: "class",   icon: "\uD83C\uDF93", label: "Lop hoc",     color: "#3498db" },
+  { key: "other",   icon: "\uD83D\uDCAC", label: "Khac",        color: C.muted },
 ];
-
-// Encode category into group name: "[work]Tên nhóm"
-export function encodeGroupName(category, name) {
-  return `[${category}]${name}`;
-}
-
-// Decode: returns { category, name }
-export function decodeGroupName(raw) {
-  const match = raw?.match(/^\[(\w+)\](.+)$/);
-  if (match) return { category: match[1], name: match[2] };
-  return { category: "other", name: raw || "Nhóm" };
-}
 
 export function getCategoryInfo(key) {
   return GROUP_CATEGORIES.find(c => c.key === key) || GROUP_CATEGORIES[GROUP_CATEGORIES.length - 1];
@@ -32,26 +22,53 @@ export { GROUP_CATEGORIES };
 export default function NewChatModal({ userId, onSelect, onClose, initialMode = "dm" }) {
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(initialMode); // dm | group
+  const [mode, setMode] = useState(initialMode);
   const [groupName, setGroupName] = useState("");
   const [category, setCategory] = useState("work");
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
 
-  // Team member names — only show known team, filter out random OAuth profiles
-  const TEAM_NAMES = ["Nguyen Duy Trinh", "Lientran", "Pham Van Hung", "Tran Thi Mai", "Le Minh Duc"];
-  const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
+  const isDirector = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").role === "director"; } catch { return false; } })();
+  const myLocalId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id || ""; } catch { return ""; } })();
 
   useEffect(() => {
-    if (!supabase || !userId) return;
     (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, display_name, avatar_color")
-        .neq("id", userId);
-      // Filter to only team members
-      const filtered = (data || []).filter(p => TEAM_NAMES.some(n => norm(n) === norm(p.display_name)));
-      setTeamMembers(filtered);
+      // 1. Try Supabase profiles
+      let supaProfiles = [];
+      if (supabase && userId) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, display_name, avatar_color")
+          .neq("id", userId);
+        supaProfiles = data || [];
+      }
+
+      // 2. Build list from TEAM_ACCOUNTS (always visible) + Supabase profiles
+      const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
+      const accountList = isDirector ? [...TEAM_ACCOUNTS, ...DEV_ONLY_ACCOUNTS] : TEAM_ACCOUNTS;
+      const merged = accountList
+        .filter(a => a.id !== myLocalId) // exclude self
+        .map(a => {
+          // Match with Supabase profile by name
+          const supaMatch = supaProfiles.find(p => norm(p.display_name) === norm(a.name));
+          return {
+            id: supaMatch?.id || a.id, // prefer Supabase UUID if available
+            display_name: supaMatch?.display_name || a.name,
+            avatar_color: supaMatch?.avatar_color || a.color,
+            localId: a.id,
+            title: a.title || "",
+          };
+        });
+
+      // Also add any Supabase profiles NOT in TEAM_ACCOUNTS (e.g., external users)
+      const mergedNames = new Set(accountList.map(a => norm(a.name)));
+      for (const p of supaProfiles) {
+        if (!mergedNames.has(norm(p.display_name))) {
+          merged.push({ id: p.id, display_name: p.display_name, avatar_color: p.avatar_color });
+        }
+      }
+
+      setTeamMembers(merged);
       setLoading(false);
     })();
   }, [userId]);
@@ -64,7 +81,8 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
     if (mode === "dm" && selected.length === 1) {
       onSelect({ type: "dm", userId: selected[0] });
     } else if (mode === "group" && selected.length >= 1 && groupName.trim()) {
-      onSelect({ type: "group", name: encodeGroupName(category, groupName.trim()), memberIds: selected });
+      // Pass clean name + category separately (no more prefix encoding)
+      onSelect({ type: "group", name: groupName.trim(), category, memberIds: selected });
     }
   };
 
@@ -81,14 +99,14 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
         {/* Header */}
         <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1, fontSize: 16, fontWeight: 700, color: C.text }}>
-            {mode === "dm" ? "Nhắn tin mới" : "Tạo nhóm mới"}
+            {mode === "dm" ? "Nhan tin moi" : "Tao nhom moi"}
           </div>
-          <button className="tap" onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: C.muted }}>✕</button>
+          <button className="tap" onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: C.muted }}>{"\u2715"}</button>
         </div>
 
         {/* Mode tabs */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}` }}>
-          {[["dm", "💬 Cá nhân"], ["group", "👥 Nhóm"]].map(([m, label]) => (
+          {[["dm", "\uD83D\uDCAC Ca nhan"], ["group", "\uD83D\uDC65 Nhom"]].map(([m, label]) => (
             <button key={m} className="tap" onClick={() => { setMode(m); setSelected([]); }}
               style={{ flex: 1, padding: "10px", fontSize: 13, fontWeight: 600, border: "none",
                 background: mode === m ? `${C.accent}12` : "transparent",
@@ -102,9 +120,8 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
         {/* Group options */}
         {mode === "group" && (
           <div style={{ padding: "12px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* Category picker */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 6, letterSpacing: 0.5 }}>PHÂN LOẠI NHÓM</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 6, letterSpacing: 0.5 }}>PHAN LOAI NHOM</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {GROUP_CATEGORIES.map(cat => (
                   <button key={cat.key} className="tap" onClick={() => setCategory(cat.key)}
@@ -121,9 +138,8 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
               </div>
             </div>
 
-            {/* Group name */}
             <input value={groupName} onChange={e => setGroupName(e.target.value)}
-              placeholder={`Tên nhóm ${catInfo.label.toLowerCase()}...`}
+              placeholder={`Ten nhom ${catInfo.label.toLowerCase()}...`}
               style={{ width: "100%", fontSize: 14, border: `1.5px solid ${catInfo.color}44`, borderRadius: 10, padding: "9px 12px", outline: "none", color: C.text, background: C.bg, boxSizing: "border-box" }} />
           </div>
         )}
@@ -131,11 +147,11 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
         {/* Search */}
         <div style={{ padding: "8px 16px 0" }}>
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Tìm thành viên..."
+            placeholder="Tim thanh vien..."
             style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 12px", outline: "none", color: C.text, background: C.bg, boxSizing: "border-box" }} />
         </div>
 
-        {/* Selected chips (group mode) */}
+        {/* Selected chips */}
         {mode === "group" && selected.length > 0 && (
           <div style={{ padding: "8px 16px 0", display: "flex", flexWrap: "wrap", gap: 6 }}>
             {selected.map(id => {
@@ -147,7 +163,7 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
                     padding: "4px 10px", borderRadius: 14, fontSize: 12, fontWeight: 600,
                     background: `${C.accent}15`, color: C.accent, cursor: "pointer",
                   }}>
-                  {m?.display_name || "?"} ✕
+                  {m?.display_name || "?"} {"\u2715"}
                 </span>
               );
             })}
@@ -156,10 +172,10 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
 
         {/* Member list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px" }}>
-          {loading && <div style={{ textAlign: "center", padding: 20, color: C.muted, fontSize: 12 }}>Đang tải...</div>}
+          {loading && <div style={{ textAlign: "center", padding: 20, color: C.muted, fontSize: 12 }}>Dang tai...</div>}
           {!loading && filtered.length === 0 && (
             <div style={{ textAlign: "center", padding: 20, color: C.muted, fontSize: 13 }}>
-              {search ? "Không tìm thấy." : "Chưa có thành viên nào."}
+              {search ? "Khong tim thay." : "Chua co thanh vien nao."}
             </div>
           )}
           {filtered.map(m => {
@@ -171,10 +187,13 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
                 <div style={{ width: 36, height: 36, borderRadius: "50%", background: m.avatar_color || C.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
                   {(m.display_name || "?")[0].toUpperCase()}
                 </div>
-                <div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: C.text }}>{m.display_name}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{m.display_name}</div>
+                  {m.title && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{m.title}</div>}
+                </div>
                 {mode === "group" && (
                   <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isSel ? C.accent : C.border}`, background: isSel ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700 }}>
-                    {isSel && "✓"}
+                    {isSel && "\u2713"}
                   </div>
                 )}
               </div>
@@ -192,7 +211,7 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
                 color: "#fff", fontSize: 14, fontWeight: 700,
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}>
-              {catInfo.icon} Tạo nhóm {catInfo.label} ({selected.length} người)
+              {catInfo.icon} Tao nhom {catInfo.label} ({selected.length} nguoi)
             </button>
           </div>
         )}

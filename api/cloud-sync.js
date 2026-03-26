@@ -110,8 +110,17 @@ export default async function handler(req, res) {
 
     // Cleanup: delete old OAuth profiles + auth users not in team
     if (action === "cleanup_profiles") {
-      const TEAM_NAMES = ["Nguyen Duy Trinh", "Lientran", "Pham Van Hung", "Tran Thi Mai", "Le Minh Duc"];
-      const TEAM_EMAILS = ["trinh@workflow.vn", "lien@workflow.vn", "hung@workflow.vn", "mai@workflow.vn", "duc@workflow.vn"];
+      const TEAM_NAMES = [
+        "Nguyen Duy Trinh", "Lientran", "Pham Van Hung", "Tran Thi Mai", "Le Minh Duc",
+        "Liên Kế toán", "Tùng Tổ trưởng", "Tâm Tổ phó", "Đương Tổ phó",
+        "Minh Hoàn thiện", "Liển Hoàn thiện", "Tuấn Thợ mộc", "Trang Táo đỏ",
+        "Hải Thợ mộc", "Hoài Táo đỏ",
+      ];
+      const TEAM_EMAILS = [
+        "trinh@workflow.vn", "lien@workflow.vn", "hung@workflow.vn", "mai@workflow.vn", "duc@workflow.vn",
+        "tung@workflow.vn", "tam@workflow.vn", "duong@workflow.vn", "minh@workflow.vn",
+        "lien2@workflow.vn", "tuan@workflow.vn", "trang@workflow.vn", "hai@workflow.vn", "hoai@workflow.vn",
+      ];
       const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
 
       // Get all profiles
@@ -145,6 +154,42 @@ export default async function handler(req, res) {
     // Default: save user data
     if (!userId || !key) return res.status(400).json({ error: "Missing userId or key" });
     const resolvedId = await resolveUserId(supa, userId);
+
+    // SERVER-SIDE GUARD: If clear_timestamp exists, reject writes of stale data
+    // This prevents old code on users' devices from pushing localStorage back after admin clear
+    const DATA_KEYS = ["tasks", "projects", "expenses"];
+    if (DATA_KEYS.includes(key) && Array.isArray(data) && data.length > 0) {
+      const { data: clearRow } = await supa.from("user_data")
+        .select("value")
+        .eq("user_id", resolvedId)
+        .eq("key", "clear_timestamp")
+        .maybeSingle();
+      if (clearRow?.value) {
+        const clearTime = new Date(clearRow.value).getTime();
+        // Check if ANY item in data was updated AFTER the clear — if not, reject
+        const hasNewData = data.some(item => {
+          const itemTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+          return itemTime > clearTime;
+        });
+        if (!hasNewData) {
+          return res.json({ ok: true, blocked: true, reason: "stale_data_after_clear" });
+        }
+        // Filter out stale items, only save new ones
+        const freshData = data.filter(item => {
+          const itemTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+          return itemTime > clearTime;
+        });
+        const { error } = await supa.from("user_data").upsert({
+          user_id: resolvedId,
+          key,
+          value: freshData,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id,key" });
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ ok: true, filtered: true, kept: freshData.length, dropped: data.length - freshData.length });
+      }
+    }
+
     const { error } = await supa.from("user_data").upsert({
       user_id: resolvedId,
       key,
