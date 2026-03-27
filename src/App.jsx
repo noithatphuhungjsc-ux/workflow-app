@@ -293,6 +293,7 @@ function MainApp({ user, onLogout }) {
   } = useMiniVoice({ tasks, memory, setMemory, knowledge, setKnowledge, settings, addTask, deleteTask, patchTask, buildSystemPrompt, msgs });
 
   /* ── Push subscription — register for background push (lock screen, app closed) ── */
+  const [pushBlocked, setPushBlocked] = useState(false);
   useEffect(() => {
     if (!settings.notificationsEnabled) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
@@ -300,15 +301,22 @@ function MainApp({ user, onLogout }) {
     if (!vapidKey) { console.warn("[Push] No VAPID key"); return; }
     const subscribePush = async () => {
       try {
-        // Request permission — will show prompt if "default"
+        // Check permission
         let perm = Notification.permission;
+        if (perm === "denied") {
+          setPushBlocked(true);
+          console.warn("[Push] Permission DENIED — user must allow in browser settings");
+          return;
+        }
         if (perm === "default") {
           perm = await Notification.requestPermission();
         }
         if (perm !== "granted") {
+          setPushBlocked(true);
           console.warn("[Push] Permission:", perm);
           return;
         }
+        setPushBlocked(false);
         const reg = await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
         if (!sub) {
