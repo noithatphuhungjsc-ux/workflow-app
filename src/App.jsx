@@ -381,14 +381,12 @@ function MainApp({ user, onLogout }) {
     return () => window.removeEventListener("native-call-incoming", handler);
   }, []);
 
-  // Local notification for new chat messages — ONLY when push subscription is NOT active.
-  // Server push (Web Push / FCM) already sends notifications via SW when app is background/closed.
-  // This local fallback only fires if push is blocked or not supported (avoids duplicate notifications).
+  // Local notification for new chat messages (when app is open but on another tab).
+  // Server Web Push handles background/screen-off via SW separately.
   const prevUnreadRef = useRef(0);
   useEffect(() => {
     if (chatUnread > prevUnreadRef.current && tab !== "inbox") {
-      // Only show local notification if push is blocked (server push won't fire)
-      if (pushBlocked && "Notification" in window && Notification.permission === "granted") {
+      if ("Notification" in window && Notification.permission === "granted") {
         const n = chatUnread - prevUnreadRef.current;
         navigator.serviceWorker?.ready.then(reg => {
           if (reg) reg.showNotification("WorkFlow", { body: `${n} tin nhắn mới`, icon: "/icon-192.png", tag: "chat-unread" });
@@ -396,7 +394,7 @@ function MainApp({ user, onLogout }) {
       }
     }
     prevUnreadRef.current = chatUnread;
-  }, [chatUnread, tab, pushBlocked]);
+  }, [chatUnread, tab]);
   const ringtoneRef = useRef(null);
   const seenCallMsgIds = useRef(new Set());
 

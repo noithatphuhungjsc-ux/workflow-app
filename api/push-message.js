@@ -217,6 +217,7 @@ export default async function handler(req, res) {
       if (ok) nativeSent++;
     }
 
+    console.log("[push-message]", { recipients: userIds.length, webSent, nativeSent, subsFound: (subsRes.data||[]).length, tokensFound: (tokensRes.data||[]).length, allSearchIds });
     return res.json({ sent: webSent + nativeSent, webSent, nativeSent, recipients: userIds.length });
   } catch (e) {
     console.error("[push-message] Error:", e);
