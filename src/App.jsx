@@ -381,11 +381,11 @@ function MainApp({ user, onLogout }) {
     return () => window.removeEventListener("native-call-incoming", handler);
   }, []);
 
-  // Local notification for new chat messages (when app is open but on another tab).
-  // Server Web Push handles background/screen-off via SW separately.
+  // Push notification for new chat messages
   const prevUnreadRef = useRef(0);
   useEffect(() => {
     if (chatUnread > prevUnreadRef.current && tab !== "inbox") {
+      // Browser notification — use SW on mobile (new Notification() throws on Android)
       if ("Notification" in window && Notification.permission === "granted") {
         const n = chatUnread - prevUnreadRef.current;
         navigator.serviceWorker?.ready.then(reg => {
