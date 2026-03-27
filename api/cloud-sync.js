@@ -1,6 +1,6 @@
 /* Cloud sync API — uses service role key to bypass RLS */
 import { createClient } from "@supabase/supabase-js";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 let _supa = null;
 function getSupabase() {
@@ -23,7 +23,6 @@ const LOCAL_ID_TO_UUID = {
 
 // Generate a deterministic UUID from local ID (for accounts not yet in mapping)
 function localIdToUUID(localId) {
-  const { createHash } = require("crypto");
   const hash = createHash("sha256").update("workflow-" + localId).digest("hex");
   // Format as UUID v4-like: xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx
   return [
