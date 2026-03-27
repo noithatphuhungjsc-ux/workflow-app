@@ -154,7 +154,7 @@ export default async function handler(req, res) {
     const userIds = members.map(m => m.user_id);
 
     // Also resolve local IDs — subscriptions may be stored under "trinh" instead of UUID
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profErr } = await supabase
       .from("profiles")
       .select("id, display_name")
       .in("id", userIds);
@@ -174,6 +174,12 @@ export default async function handler(req, res) {
     // Search subscriptions by BOTH Supabase UUID and local ID
     const allSearchIds = [...userIds, ...localIds];
 
+    // DEBUG — remove after fixing
+    console.log("[push-message] DEBUG:", {
+      userIds, profiles: (profiles || []).map(p => ({ id: p.id, name: p.display_name })),
+      profErr: profErr?.message, localIds, allSearchIds,
+    });
+
     // Batch fetch all subscriptions + tokens
     const [subsRes, tokensRes] = await Promise.all([
       webpush ? supabase.from("push_subscriptions")
@@ -183,6 +189,9 @@ export default async function handler(req, res) {
         .select("user_id, token, platform")
         .in("user_id", allSearchIds),
     ]);
+
+    // DEBUG
+    console.log("[push-message] subs found:", (subsRes.data || []).length, "tokens found:", (tokensRes.data || []).length);
 
     // Web Push — high urgency so it wakes the device
     if (webpush) {
@@ -213,7 +222,7 @@ export default async function handler(req, res) {
       if (ok) nativeSent++;
     }
 
-    return res.json({ sent: webSent + nativeSent, webSent, nativeSent, recipients: userIds.length });
+    return res.json({ sent: webSent + nativeSent, webSent, nativeSent, recipients: userIds.length, _debug: { allSearchIds, subsFound: (subsRes.data || []).length, localIds } });
   } catch (e) {
     console.error("[push-message] Error:", e);
     return res.status(500).json({ error: e.message });
