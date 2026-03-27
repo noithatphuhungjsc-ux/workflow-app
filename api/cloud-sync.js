@@ -20,11 +20,27 @@ const LOCAL_ID_TO_UUID = {
   mai:   "80fb3b1e-f0ca-4850-bbda-fb6e8cdd25c9",
   duc:   "516cb441-6615-4df4-9993-0fe16b5acaf0",
 };
+
+// Generate a deterministic UUID from local ID (for accounts not yet in mapping)
+function localIdToUUID(localId) {
+  const { createHash } = require("crypto");
+  const hash = createHash("sha256").update("workflow-" + localId).digest("hex");
+  // Format as UUID v4-like: xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx
+  return [
+    hash.slice(0, 8), hash.slice(8, 12),
+    "4" + hash.slice(13, 16),
+    "8" + hash.slice(17, 20),
+    hash.slice(20, 32),
+  ].join("-");
+}
+
 function resolveUserId(_supa, localId) {
   // Already a UUID
   if (localId && localId.includes("-") && localId.length > 30) return localId;
-  // Direct mapping — no async lookup, no cold start failures
-  return LOCAL_ID_TO_UUID[localId] || localId;
+  // Direct mapping first
+  if (LOCAL_ID_TO_UUID[localId]) return LOCAL_ID_TO_UUID[localId];
+  // Generate deterministic UUID for unmapped local IDs
+  return localIdToUUID(localId);
 }
 
 const ALLOWED_ORIGINS = ["https://workflow-app-lemon.vercel.app", "http://localhost:5173"];
