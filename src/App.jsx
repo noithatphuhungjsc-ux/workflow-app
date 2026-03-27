@@ -1310,7 +1310,7 @@ function MainApp({ user, onLogout }) {
         <button className="tap" onClick={() => setAddOpen(true)}
           style={{
             position: "fixed", bottom: "112px", right: 16, zIndex: 60,
-            width: 48, height: 48, borderRadius: 14, border: "none",
+            width: 48, height: 48, borderRadius: 14,
             background: C.card, border: `1px solid ${C.border}`,
             color: C.accent, fontSize: 24, fontWeight: 700, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
