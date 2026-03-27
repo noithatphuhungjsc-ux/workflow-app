@@ -292,11 +292,17 @@ function MainApp({ user, onLogout }) {
     closeMiniVoice, startMiniListening, sendMiniVoice, sendMiniVoiceRef,
   } = useMiniVoice({ tasks, memory, setMemory, knowledge, setKnowledge, settings, addTask, deleteTask, patchTask, buildSystemPrompt, msgs });
 
+  /* ── Chat unread tracking — works from any tab ── */
+  const { session: supaSession } = useSupabase();
+  const supaUserId = supaSession?.user?.id;
+
   /* ── Push subscription — register for background push (lock screen, app closed) ── */
   const [pushBlocked, setPushBlocked] = useState(false);
   useEffect(() => {
     if (!settings.notificationsEnabled) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    // Must use Supabase UUID (matches conversation_members.user_id)
+    const pushUserId = supaUserId || user.id;
     const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
     if (!vapidKey) { console.warn("[Push] No VAPID key"); return; }
     const subscribePush = async () => {
@@ -323,15 +329,15 @@ function MainApp({ user, onLogout }) {
           const urlB64 = Uint8Array.from(atob(vapidKey.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
           sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64 });
         }
-        // Save subscription to backend
+        // Save subscription with Supabase UUID (so push-message can find it)
         const subJSON = sub.toJSON();
         const resp = await fetch("/api/push-subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id, subscription: subJSON }),
+          body: JSON.stringify({ userId: pushUserId, subscription: subJSON }),
         });
         const result = await resp.json();
-        if (result.ok) console.log("[Push] Subscribed OK for user:", user.id);
+        if (result.ok) console.log("[Push] Subscribed OK for user:", pushUserId);
         else console.warn("[Push] Subscribe response:", result);
       } catch (e) { console.warn("[Push] Subscribe failed:", e); }
     };
@@ -339,11 +345,7 @@ function MainApp({ user, onLogout }) {
     // Re-subscribe every 12 hours (in case token rotates)
     const interval = setInterval(subscribePush, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [settings.notificationsEnabled, user.id]);
-
-  /* ── Chat unread tracking — works from any tab ── */
-  const { session: supaSession } = useSupabase();
-  const supaUserId = supaSession?.user?.id;
+  }, [settings.notificationsEnabled, supaUserId, user.id]);
   const { totalUnread: chatUnread } = useConversations(supaUserId);
 
   // Init native features (Capacitor — push, statusbar, keyboard)
