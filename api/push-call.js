@@ -138,7 +138,7 @@ export default async function handler(req, res) {
           await webpush.sendNotification({
             endpoint: sub.endpoint,
             keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth },
-          }, payload);
+          }, payload, { TTL: 120, urgency: "high" });
           webSent++;
         } catch (e) {
           if (e.statusCode === 410 || e.statusCode === 404) {

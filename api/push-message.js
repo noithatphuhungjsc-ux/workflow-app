@@ -163,13 +163,19 @@ export default async function handler(req, res) {
         .in("user_id", userIds),
     ]);
 
-    // Web Push
+    // Web Push — high urgency so it wakes the device
     if (webpush) {
+      const pushOptions = {
+        TTL: 60 * 60, // 1 hour
+        urgency: "high", // wake device from sleep
+        topic: `msg-${conversationId}`,
+      };
       for (const sub of (subsRes.data || [])) {
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth } },
-            JSON.stringify(notification)
+            JSON.stringify(notification),
+            pushOptions
           );
           webSent++;
         } catch (e) {
