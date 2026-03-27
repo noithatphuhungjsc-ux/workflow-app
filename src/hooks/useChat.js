@@ -208,7 +208,7 @@ export function useChat(conversationId, userId) {
             content: content.trim(),
             messageType: type,
           }),
-        }).catch(() => {});
+        }).then(r => r.json()).then(r => console.log("[Push] send result:", r)).catch(e => console.warn("[Push] send error:", e));
       }
     } else if (error) {
       console.warn("Send message failed:", error);
