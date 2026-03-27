@@ -70,6 +70,11 @@ async function sendFCM(fcmToken, notification) {
   if (!sa.project_id) return false;
   const accessToken = await getAccessToken();
   if (!accessToken) return false;
+  // DATA-ONLY message — no "notification" field!
+  // This ensures onMessageReceived() is ALWAYS called (even when app is killed/background),
+  // so MyFirebaseMessagingService can show the notification with proper channel + lock screen.
+  // If we include "notification" field, Android handles it automatically but uses a
+  // non-existent channel which causes silent drops on Android 8+.
   const res = await fetch(
     `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
     {
@@ -78,14 +83,13 @@ async function sendFCM(fcmToken, notification) {
       body: JSON.stringify({
         message: {
           token: fcmToken,
-          notification: { title: notification.title, body: notification.body },
           data: {
             type: "message",
             conversationId: notification.conversationId || "",
-            title: notification.title,
-            body: notification.body,
+            title: notification.title || "WorkFlow",
+            body: notification.body || "Tin nhắn mới",
           },
-          android: { priority: "HIGH", notification: { channelId: "messages", sound: "default" } },
+          android: { priority: "HIGH" },
         },
       }),
     }
@@ -174,12 +178,6 @@ export default async function handler(req, res) {
     // Search subscriptions by BOTH Supabase UUID and local ID
     const allSearchIds = [...userIds, ...localIds];
 
-    // DEBUG — remove after fixing
-    console.log("[push-message] DEBUG:", {
-      userIds, profiles: (profiles || []).map(p => ({ id: p.id, name: p.display_name })),
-      profErr: profErr?.message, localIds, allSearchIds,
-    });
-
     // Batch fetch all subscriptions + tokens
     const [subsRes, tokensRes] = await Promise.all([
       webpush ? supabase.from("push_subscriptions")
@@ -189,9 +187,6 @@ export default async function handler(req, res) {
         .select("user_id, token, platform")
         .in("user_id", allSearchIds),
     ]);
-
-    // DEBUG
-    console.log("[push-message] subs found:", (subsRes.data || []).length, "tokens found:", (tokensRes.data || []).length);
 
     // Web Push — high urgency so it wakes the device
     if (webpush) {
@@ -222,7 +217,7 @@ export default async function handler(req, res) {
       if (ok) nativeSent++;
     }
 
-    return res.json({ sent: webSent + nativeSent, webSent, nativeSent, recipients: userIds.length, _debug: { allSearchIds, subsFound: (subsRes.data || []).length, localIds } });
+    return res.json({ sent: webSent + nativeSent, webSent, nativeSent, recipients: userIds.length });
   } catch (e) {
     console.error("[push-message] Error:", e);
     return res.status(500).json({ error: e.message });
