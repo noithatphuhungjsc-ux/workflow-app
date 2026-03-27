@@ -292,16 +292,23 @@ function MainApp({ user, onLogout }) {
     closeMiniVoice, startMiniListening, sendMiniVoice, sendMiniVoiceRef,
   } = useMiniVoice({ tasks, memory, setMemory, knowledge, setKnowledge, settings, addTask, deleteTask, patchTask, buildSystemPrompt, msgs });
 
-  /* ── Push subscription — register for background push ── */
+  /* ── Push subscription — register for background push (lock screen, app closed) ── */
   useEffect(() => {
     if (!settings.notificationsEnabled) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
     const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-    if (!vapidKey) return;
+    if (!vapidKey) { console.warn("[Push] No VAPID key"); return; }
     const subscribePush = async () => {
       try {
-        const perm = await Notification.requestPermission();
-        if (perm !== "granted") return;
+        // Request permission — will show prompt if "default"
+        let perm = Notification.permission;
+        if (perm === "default") {
+          perm = await Notification.requestPermission();
+        }
+        if (perm !== "granted") {
+          console.warn("[Push] Permission:", perm);
+          return;
+        }
         const reg = await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
         if (!sub) {
@@ -310,14 +317,20 @@ function MainApp({ user, onLogout }) {
         }
         // Save subscription to backend
         const subJSON = sub.toJSON();
-        await fetch("/api/push-subscribe", {
+        const resp = await fetch("/api/push-subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: user.id, subscription: subJSON }),
         });
-      } catch (e) { console.warn("Push subscribe failed:", e); }
+        const result = await resp.json();
+        if (result.ok) console.log("[Push] Subscribed OK for user:", user.id);
+        else console.warn("[Push] Subscribe response:", result);
+      } catch (e) { console.warn("[Push] Subscribe failed:", e); }
     };
     subscribePush();
+    // Re-subscribe every 12 hours (in case token rotates)
+    const interval = setInterval(subscribePush, 12 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [settings.notificationsEnabled, user.id]);
 
   /* ── Chat unread tracking — works from any tab ── */

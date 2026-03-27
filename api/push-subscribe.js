@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 );
 
 export default async function handler(req, res) {
@@ -14,6 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Upsert subscription — update if same user+endpoint exists
     const { error } = await supabase.from("push_subscriptions").upsert({
       user_id: userId,
       endpoint: subscription.endpoint,
@@ -21,9 +22,13 @@ export default async function handler(req, res) {
       keys_auth: subscription.keys.auth,
     }, { onConflict: "user_id,endpoint" });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      console.error("[push-subscribe] DB error:", error.message);
+      return res.status(500).json({ error: error.message });
+    }
     return res.json({ ok: true });
   } catch (e) {
+    console.error("[push-subscribe] Error:", e.message);
     return res.status(500).json({ error: e.message });
   }
 }
