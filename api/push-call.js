@@ -119,12 +119,24 @@ export default async function handler(req, res) {
     let webSent = 0;
     let nativeSent = 0;
 
+    // Resolve local ID for fallback lookup
+    const LOCAL_NAMES = {
+      "Nguyen Duy Trinh": "trinh", "Liên Kế toán": "lien", "Tùng Tổ trưởng": "tung",
+      "Tâm Tổ phó": "tam", "Đương Tổ phó": "duong", "Minh Hoàn thiện": "minh",
+      "Liển Hoàn thiện": "lien2", "Tuấn Thợ mộc": "tuan", "Trang Táo đỏ": "trang",
+      "Hải Thợ mộc": "hai", "Hoài Táo đỏ": "hoai",
+      "Pham Van Hung": "hung", "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+    };
+    const { data: prof } = await supabase.from("profiles").select("display_name").eq("id", targetUserId).single();
+    const localId = prof?.display_name ? LOCAL_NAMES[prof.display_name] : null;
+    const searchIds = localId ? [targetUserId, localId] : [targetUserId];
+
     // 1. Web Push
     if (webpush) {
       const { data: subs } = await supabase
         .from("push_subscriptions")
         .select("endpoint, keys_p256dh, keys_auth")
-        .eq("user_id", targetUserId);
+        .in("user_id", searchIds);
 
       const payload = JSON.stringify({
         title: mode === "video" ? `${callerName} goi video` : `${callerName} dang goi`,
@@ -152,7 +164,7 @@ export default async function handler(req, res) {
     const { data: tokens } = await supabase
       .from("push_tokens")
       .select("token, platform")
-      .eq("user_id", targetUserId);
+      .in("user_id", searchIds);
 
     for (const t of (tokens || [])) {
       const title = mode === "video" ? `${callerName} goi video` : `${callerName} dang goi`;

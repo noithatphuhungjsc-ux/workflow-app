@@ -153,14 +153,35 @@ export default async function handler(req, res) {
     let nativeSent = 0;
     const userIds = members.map(m => m.user_id);
 
+    // Also resolve local IDs — subscriptions may be stored under "trinh" instead of UUID
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, display_name")
+      .in("id", userIds);
+
+    // Map Supabase UUID → local account ID (e.g. "trinh", "minh")
+    const LOCAL_NAMES = {
+      "Nguyen Duy Trinh": "trinh", "Liên Kế toán": "lien", "Tùng Tổ trưởng": "tung",
+      "Tâm Tổ phó": "tam", "Đương Tổ phó": "duong", "Minh Hoàn thiện": "minh",
+      "Liển Hoàn thiện": "lien2", "Tuấn Thợ mộc": "tuan", "Trang Táo đỏ": "trang",
+      "Hải Thợ mộc": "hai", "Hoài Táo đỏ": "hoai",
+      "Pham Van Hung": "hung", "Tran Thi Mai": "mai", "Le Minh Duc": "duc",
+    };
+    const localIds = (profiles || [])
+      .map(p => LOCAL_NAMES[p.display_name])
+      .filter(Boolean);
+
+    // Search subscriptions by BOTH Supabase UUID and local ID
+    const allSearchIds = [...userIds, ...localIds];
+
     // Batch fetch all subscriptions + tokens
     const [subsRes, tokensRes] = await Promise.all([
       webpush ? supabase.from("push_subscriptions")
         .select("user_id, endpoint, keys_p256dh, keys_auth")
-        .in("user_id", userIds) : { data: [] },
+        .in("user_id", allSearchIds) : { data: [] },
       supabase.from("push_tokens")
         .select("user_id, token, platform")
-        .in("user_id", userIds),
+        .in("user_id", allSearchIds),
     ]);
 
     // Web Push — high urgency so it wakes the device
