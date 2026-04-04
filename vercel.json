@@ -12,7 +12,7 @@
         { "key": "X-XSS-Protection", "value": "1; mode=block" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(self), geolocation=(self), microphone=(self)" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://meqzxwlbdxtdilkrwmxp.supabase.co wss://meqzxwlbdxtdilkrwmxp.supabase.co; img-src 'self' data: blob: https://img.vietqr.io https://meqzxwlbdxtdilkrwmxp.supabase.co https://staticmap.openstreetmap.de; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'" }
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://gmail.googleapis.com https://meqzxwlbdxtdilkrwmxp.supabase.co wss://meqzxwlbdxtdilkrwmxp.supabase.co; img-src 'self' data: blob: https://img.vietqr.io https://meqzxwlbdxtdilkrwmxp.supabase.co https://staticmap.openstreetmap.de; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'" }
       ]
     },
     {

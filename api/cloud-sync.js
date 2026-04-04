@@ -50,10 +50,22 @@ function getAllowedOrigin(req) {
   return ALLOWED_ORIGINS[0];
 }
 
+// Verify Supabase JWT and return user ID (null if invalid/missing)
+async function verifyAuth(req, supa) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  try {
+    const { data: { user }, error } = await supa.auth.getUser(token);
+    if (error || !user) return null;
+    return user.id;
+  } catch { return null; }
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", getAllowedOrigin(req));
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const supa = getSupabase();
@@ -150,7 +162,7 @@ export default async function handler(req, res) {
         await supa.from("user_data").delete().eq("user_id", p.id);
         const { error } = await supa.from("profiles").delete().eq("id", p.id);
         // Also try to delete auth user
-        try { await supa.auth.admin.deleteUser(p.id); } catch {}
+        try { await supa.auth.admin.deleteUser(p.id); } catch (e) { console.warn("[cleanup] deleteUser failed:", p.id, e.message); }
         results.push({ id: p.id, name: p.display_name, error: error?.message || null });
       }
 
@@ -159,7 +171,7 @@ export default async function handler(req, res) {
       for (const u of (users || [])) {
         const email = u.email || "";
         if (!TEAM_EMAILS.includes(email) && !toDelete.find(p => p.id === u.id)) {
-          try { await supa.auth.admin.deleteUser(u.id); results.push({ id: u.id, email, authOnly: true }); } catch {}
+          try { await supa.auth.admin.deleteUser(u.id); results.push({ id: u.id, email, authOnly: true }); } catch (e) { console.warn("[cleanup] deleteOrphan failed:", u.id, e.message); }
         }
       }
 

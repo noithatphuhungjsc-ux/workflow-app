@@ -25,7 +25,9 @@ dist-ssr
 
 # Environment variables
 .env
+.env.*
 .env.local
+.env.prod
 .env.*.local
 
 .vercel

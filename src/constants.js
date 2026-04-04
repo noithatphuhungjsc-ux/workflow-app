@@ -315,3 +315,6 @@ export function parseWorkflow(r) {
 
 /* -- SCHEMA VERSION for localStorage migration -- */
 export const SCHEMA_VERSION = 2;
+
+/* -- DEFAULT PASSWORD for auto-created accounts (change via Settings > Staff) -- */
+export const DEFAULT_PASSWORD = "111111";

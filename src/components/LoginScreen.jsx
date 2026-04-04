@@ -2,11 +2,11 @@
    LOGIN SCREEN — Authentication (simplified, honest about limits)
    ================================================================ */
 import { useState, useEffect } from "react";
-import { C, TEAM_ACCOUNTS, DEV_ONLY_ACCOUNTS, ALL_ACCOUNTS } from "../constants";
+import { C, TEAM_ACCOUNTS, DEV_ONLY_ACCOUNTS, ALL_ACCOUNTS, DEFAULT_PASSWORD } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
 const ACCOUNTS_VERSION = 9; // bump to force re-init (split dev accounts)
-const DEFAULT_ACCOUNTS = ALL_ACCOUNTS.map(a => ({ ...a, pw: "111111" }));
+const DEFAULT_ACCOUNTS = ALL_ACCOUNTS.map(a => ({ ...a, pw: DEFAULT_PASSWORD }));
 
 // Init default accounts with hashed passwords
 async function initAccounts() {

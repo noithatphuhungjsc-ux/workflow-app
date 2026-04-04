@@ -1,0 +1,10 @@
+export { default as ProfileTab } from "./ProfileTab";
+export { default as SecurityTab } from "./SecurityTab";
+export { default as AITab } from "./AITab";
+export { default as ConnectionTab } from "./ConnectionTab";
+export { default as ExpenseSettingsTab } from "./ExpenseSettingsTab";
+export { default as AppearanceTab } from "./AppearanceTab";
+export { default as DataTab } from "./DataTab";
+export { default as TrainingTab } from "./TrainingTab";
+export { default as WorkflowTab } from "./WorkflowTab";
+export { default as OrgChartTab } from "./OrgChartTab";

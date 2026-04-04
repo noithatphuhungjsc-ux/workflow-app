@@ -128,11 +128,6 @@ export default function ChatTab({ openConvId, projects, tasks, patchTask, addTas
   };
   const isSubThread = (c) => c.parent_id || (c.name || "").startsWith("[sub:");
 
-  // DEBUG: log all conversations to diagnose filtering (remove later)
-  if (mergedConversations.length > 0) {
-    console.log("[ChatTab] All convos:", mergedConversations.map(c => ({ id: c.id?.slice(0,8), name: c.name, type: c.type, dept_role: c.dept_role, category: c.category, parent_id: c.parent_id, isDept: isDeptChat(c), isSub: isSubThread(c) })));
-  }
-
   // Filter — hide sub-threads and dept chats from main list
   const filtered = mergedConversations.filter(c => {
     if (isDeptChat(c)) return false;    // dept chats shown in DeptTab

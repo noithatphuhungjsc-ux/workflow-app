@@ -2,10 +2,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { C } from "../constants";
 import { useChat } from "../hooks/useChat";
-import ChatBubble from "./ChatBubble";
 import CallScreen from "./CallScreen";
 import { supabase } from "../lib/supabase";
 import ProjectInfoModal from "./ProjectInfoModal";
+import ChatHeader from "./chat/ChatHeader";
+import MessageList from "./chat/MessageList";
+import ChatInput from "./chat/ChatInput";
 
 const PIN_MSG_KEY = (convId) => `wf_pinned_msgs_${convId}`;
 const getPinnedMsgs = (convId) => { try { return JSON.parse(localStorage.getItem(PIN_MSG_KEY(convId)) || "[]"); } catch { return []; } };
@@ -23,24 +25,25 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   const [replyTo, setReplyTo] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [showThreads, setShowThreads] = useState(false);
-  const [activeThread, setActiveThread] = useState(null); // {convId, name}
+  const [activeThread, setActiveThread] = useState(null);
   const [newThreadName, setNewThreadName] = useState("");
   const [creatingThread, setCreatingThread] = useState(false);
-  const [threadMembers, setThreadMembers] = useState([]); // selected supaIds for new thread
-  const [showMemberMgmt, setShowMemberMgmt] = useState(false); // sub-thread member management
+  const [threadMembers, setThreadMembers] = useState([]);
+  const [showMemberMgmt, setShowMemberMgmt] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const recognitionRef = useRef(null);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const containerRef = useRef(null);
 
-  /* ─── SUB-THREADS: 100% Supabase, zero dependency on linkedProject ─── */
+  // @ mention state
+  const [mentionQuery, setMentionQuery] = useState(null);
 
-  // 1) Load sub-threads from Supabase — any group chat can have threads
+  /* ─── SUB-THREADS ─── */
   const [subChats, setSubChats] = useState([]);
   useEffect(() => {
     if (!supabase || !conversationId || isSubThread) return;
@@ -50,15 +53,12 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
       .then(({ data, error }) => {
         if (error) { console.warn("[WF] load sub-threads:", error); return; }
         setSubChats((data || []).map(c => ({
-          convId: c.id,
-          name: c.name || "Thread",
-          createdAt: c.created_at,
+          convId: c.id, name: c.name || "Thread", createdAt: c.created_at,
         })));
       });
   }, [conversationId, isSubThread]);
 
-  // 2) Load ALL members of THIS conversation (for picker when creating thread)
-  const [chatMembers, setChatMembers] = useState([]); // [{supaId, name, color}]
+  const [chatMembers, setChatMembers] = useState([]);
   useEffect(() => {
     if (!supabase || !userId || !conversationId) return;
     supabase.from("conversation_members").select("user_id").eq("conversation_id", conversationId)
@@ -72,7 +72,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
       });
   }, [conversationId, userId, profiles]);
 
-  // 3) For sub-thread: load current members + available from parent
   const [threadCurrentMembers, setThreadCurrentMembers] = useState([]);
   useEffect(() => {
     if (!isSubThread || !supabase || !conversationId) return;
@@ -80,25 +79,20 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
       .then(({ data }) => { if (data) setThreadCurrentMembers(data.map(d => d.user_id)); });
   }, [isSubThread, conversationId]);
 
-  // parentProjectMemberList comes from parent ChatRoom's chatMembers
-  // Only show members who are actually in the parent group — not all profiles
   const availableForThread = (() => {
     if (!isSubThread) return [];
     if (parentProjectMemberList?.length > 0) {
       return parentProjectMemberList.filter(m => !threadCurrentMembers.includes(m.supaId));
     }
-    // Fallback: only use profiles that are TEAM_ACCOUNTS (not random profiles)
     return (profiles || [])
       .filter(p => p.id !== userId && !threadCurrentMembers.includes(p.id))
       .map(p => ({ supaId: p.id, name: p.display_name || "?", color: p.avatar_color }));
   })();
 
-  // 4) Toggle member selection when creating new thread
   const toggleThreadMember = (supaId) => {
     setThreadMembers(prev => prev.includes(supaId) ? prev.filter(id => id !== supaId) : [...prev, supaId]);
   };
 
-  // 5) Create sub-thread
   const createSubThread = async () => {
     const name = newThreadName.trim();
     if (!name || !supabase || !userId || creatingThread) return;
@@ -108,29 +102,21 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
         .insert({ type: "group", name, created_by: userId, parent_id: conversationId })
         .select().single();
       if (error) { console.error("[WF] create sub-thread conv:", error); setCreatingThread(false); return; }
-
-      // Add creator + selected (or all) members
       const addedIds = threadMembers.length > 0 ? threadMembers : chatMembers.map(m => m.supaId);
       const memberInserts = [{ conversation_id: conv.id, user_id: userId }];
       addedIds.forEach(uid => { if (uid !== userId) memberInserts.push({ conversation_id: conv.id, user_id: uid }); });
       const { error: memErr } = await supabase.from("conversation_members").insert(memberInserts);
       if (memErr) console.warn("[WF] insert sub-thread members:", memErr);
-
-      // Names for system message
       const addedNames = addedIds.map(uid => {
         const p = (profiles || []).find(pr => pr.id === uid);
         return p?.display_name || "";
       }).filter(Boolean);
-
-      // System messages
       await supabase.from("messages").insert({
         conversation_id: conv.id, sender_id: userId,
         content: `📑 Chủ đề "${name}" — ${addedNames.length > 0 ? addedNames.join(", ") : "tất cả thành viên"}`,
         type: "system",
       });
       await sendMessage(`📑 Đã tạo chủ đề mới: "${name}"`, "system");
-
-      // Update state immediately
       setSubChats(prev => [...prev, { convId: conv.id, name, createdAt: new Date().toISOString() }]);
       setNewThreadName("");
       setThreadMembers([]);
@@ -140,7 +126,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     setCreatingThread(false);
   };
 
-  // 6) Check if current user can manage members (creator or director)
   const [convCreatedBy, setConvCreatedBy] = useState(null);
   useEffect(() => {
     if (!supabase || !conversationId) return;
@@ -151,7 +136,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   const isDirectorUser = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").role === "director"; } catch { return false; } })();
   const canManageMembers = convCreatedBy === userId || isDirectorUser;
 
-  // Add/remove member from current sub-thread (only creator or director)
   const addThreadMember = async (supaId) => {
     if (!supabase || !conversationId || !supaId) return;
     if (!canManageMembers) { alert("Chỉ người tạo nhóm hoặc giám đốc mới có quyền thêm thành viên."); return; }
@@ -173,14 +157,11 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     setThreadCurrentMembers(prev => prev.filter(id => id !== supaId));
   };
 
+  /* ─── SCROLL ─── */
   useEffect(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }, [messages.length, otherTyping]);
 
-  // Container ref — use CSS for layout, no JS height manipulation
-  const containerRef = useRef(null);
-
-  // Cleanup camera on unmount
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -189,6 +170,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     };
   }, []);
 
+  /* ─── SEND ─── */
   const handleSend = async () => {
     const t = text.replace(/\[|\]/g, "").trim();
     if (!t) return;
@@ -199,18 +181,9 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     inputRef.current?.focus();
   };
 
-  // @ mention state
-  const [mentionQuery, setMentionQuery] = useState(null); // null = hidden, "" = show all
-
-  const handleInputChange = (e) => {
-    const val = e.target.value;
+  const handleTextChange = (val) => {
     setText(val);
     setTyping(!!val.trim());
-    // Detect @ mention
-    const cursor = e.target.selectionStart;
-    const before = val.slice(0, cursor);
-    const atMatch = before.match(/@(\S*)$/);
-    setMentionQuery(atMatch ? atMatch[1].toLowerCase() : null);
   };
 
   const insertMention = (name) => {
@@ -223,7 +196,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     inputRef.current?.focus();
   };
 
-  // Merge Supabase profiles + DEV accounts (dedup by normalized name)
+  /* ─── PROFILES ─── */
   const DEV_PROFILES = [
     { id: "trinh",  display_name: "Nguyen Duy Trinh", avatar_color: "#9b59b6" },
     { id: "lien",   display_name: "Liên Kế toán",     avatar_color: "#e74c3c" },
@@ -249,19 +222,19 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     });
     return all;
   })();
-  const localDevId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id; } catch { return null; } })();
+
   const mentionList = chatMembers
     .filter(m => !mentionQuery || (m.name || "").toLowerCase().includes(mentionQuery))
     .map(m => ({ id: m.supaId, name: m.name, color: m.color }));
 
-  // Pin/unpin message
+  /* ─── PIN ─── */
   const togglePinMsg = (msgId) => {
     const next = pinnedMsgs.includes(msgId) ? pinnedMsgs.filter(id => id !== msgId) : [...pinnedMsgs, msgId];
     setPinnedMsgs(next);
     setPinnedMsgsStore(conversationId, next);
   };
 
-  // Upload file to Supabase Storage
+  /* ─── FILE UPLOAD ─── */
   const [uploadError, setUploadError] = useState("");
   const uploadFile = async (file, type) => {
     if (!supabase || !file) return null;
@@ -269,7 +242,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     setUploadError("");
     setShowAttach(false);
     try {
-      // Compress images before upload
       let uploadData = file;
       if (type === "image" && file.size > 500000) {
         try {
@@ -286,7 +258,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
           uploadData = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.8));
         } catch { uploadData = file; }
       }
-
       const ext = type === "image" ? "jpg" : file.name.split(".").pop();
       const path = `${conversationId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const contentType = type === "image" ? "image/jpeg" : file.type;
@@ -325,7 +296,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     e.target.value = "";
   };
 
-  // Send location
+  /* ─── LOCATION ─── */
   const [locLoading, setLocLoading] = useState(false);
   const sendLocation = () => {
     setShowAttach(false);
@@ -348,11 +319,11 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     );
   };
 
-  // Camera functions
+  /* ─── CAMERA ─── */
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment", width: 1280, height: 720 } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: 1280, height: 720 }
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -376,16 +347,12 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return;
-    
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-    
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
     ctx.drawImage(video, 0, 0);
-    
     canvas.toBlob(async (blob) => {
       if (blob) {
         stopCamera();
@@ -394,29 +361,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
     }, "image/jpeg", 0.8);
   };
 
-  // Speech-to-text
-  const hasSpeech = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
-
-  const toggleVoice = useCallback(() => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const recognition = new SR();
-    recognition.lang = "vi-VN";
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.onresult = (e) => { setText(e.results[0][0].transcript); };
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [isListening]);
-
+  /* ─── HELPERS ─── */
   const startCall = (mode = "audio") => setCallState({ isIncoming: false, mode });
 
   const getName = (senderId) => {
@@ -435,101 +380,33 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
 
   const pinnedMessages = messages.filter(m => pinnedMsgs.includes(m.id));
 
+  const handleReply = (m) => {
+    setReplyTo(m);
+    inputRef.current?.focus();
+  };
+
   return createPortal(
     <div ref={containerRef} className="chatroom-container" style={{ background: C.bg }}>
 
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "0 8px", minHeight: 52, flexShrink: 0,
-        background: C.surface, borderBottom: `1px solid ${C.border}`,
-      }}>
-        <button className="tap" onClick={onBack}
-          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.accent }}>
-          ‹
-        </button>
-        <div style={{ width: 34, height: 34, borderRadius: "50%", background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
-          {(convName || "?")[0].toUpperCase()}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {isSubThread ? `📑 ${convName}` : (convName || "Trò chuyện")}
-          </div>
-          <div style={{ fontSize: 10, fontWeight: 500, color: isSubThread ? C.muted : (otherTyping ? C.accent : C.green) }}>
-            {isSubThread ? `← ${parentConvName} · ${threadCurrentMembers.length} thành viên` : (otherTyping ? "Đang nhập..." : "Đang hoạt động")}
-          </div>
-        </div>
-        {isSubThread && (
-          <button className="tap" onClick={() => setShowMemberMgmt(true)}
-            style={{ position:"relative", background:"none", border:"none", width:36, height:36, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, color:C.accent }}>
-            👥
-            <span style={{ position:"absolute", top:2, right:1, background:C.accent, color:"#fff", fontSize:8, fontWeight:700, borderRadius:8, minWidth:14, height:14, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 2px" }}>
-              {threadCurrentMembers.length}
-            </span>
-          </button>
-        )}
-        {convType === "group" && !isSubThread && (
-          <button className="tap" onClick={() => setShowThreads(true)}
-            style={{ position:"relative", background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: linkedProject?.color || C.accent }}>
-            📑
-            {subChats.length > 0 && (
-              <span style={{ position:"absolute", top:2, right:2, background:C.accent, color:"#fff", fontSize:8, fontWeight:700, borderRadius:8, minWidth:14, height:14, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 2px" }}>{subChats.length}</span>
-            )}
-          </button>
-        )}
-        {(linkedProject || convType === "group") && (
-          <button className="tap" onClick={() => setShowProjectInfo(true)}
-            style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: linkedProject?.color || C.accent }}>
-            {linkedProject ? "📂" : "ℹ️"}
-          </button>
-        )}
-        <button className="tap" onClick={() => startCall("video")}
-          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-          </svg>
-        </button>
-        <button className="tap" onClick={() => startCall("audio")}
-          style={{ background: "none", border: "none", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginRight: 4 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
-          </svg>
-        </button>
-      </div>
-
-      {/* Pinned messages — always visible below header */}
-      {pinnedMessages.length > 0 && (
-        <div style={{ background: `${C.gold}08`, borderBottom: `1px solid ${C.gold}22`, padding: "6px 12px", maxHeight: 100, overflowY: "auto", flexShrink: 0 }}>
-          {pinnedMessages.map(m => {
-            const sender = profiles?.find(p => p.id === m.sender_id);
-            return (
-              <div key={m.id} style={{ fontSize: 12, color: C.text, padding: "5px 8px", background: C.surface, borderRadius: 8, marginBottom: 3, display: "flex", alignItems: "center", gap: 6, borderLeft: `3px solid ${C.gold}` }}>
-                <span style={{ fontSize: 11 }}>📌</span>
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {sender?.display_name && <span style={{ fontWeight: 600, fontSize: 11, color: C.accent, marginRight: 4 }}>{sender.display_name}:</span>}
-                  {m.type === "image" ? "📷 Ảnh" : m.type === "location" ? "📍 Vị trí" : m.content}
-                </span>
-                <button className="tap" onClick={() => togglePinMsg(m.id)}
-                  style={{ background: "none", border: "none", fontSize: 12, color: C.muted, cursor: "pointer", flexShrink: 0, padding: "2px 4px" }}>✕</button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Project: compact progress strip (tap → project info) ── */}
-      {linkedProject && projectTasks.length > 0 && (
-        <div className="tap" onClick={() => setShowProjectInfo(true)}
-          style={{ flexShrink:0, display:"flex", alignItems:"center", gap:8, padding:"6px 12px", background:`${linkedProject.color}08`, borderBottom:`1px solid ${linkedProject.color}22`, cursor:"pointer" }}>
-          <div style={{ flex:1, height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
-            <div style={{ height:"100%", width:`${Math.round(projectTasks.filter(t=>t.status==="done").length/projectTasks.length*100)}%`, background:linkedProject.color, borderRadius:2 }} />
-          </div>
-          <span style={{ fontSize:10, color:linkedProject.color, fontWeight:700, whiteSpace:"nowrap" }}>
-            {projectTasks.filter(t=>t.status==="done").length}/{projectTasks.length} xong
-            {projectTasks.filter(t=>t.status==="inprogress").length > 0 && ` · ${projectTasks.filter(t=>t.status==="inprogress").length} đang làm`}
-          </span>
-        </div>
-      )}
+      <ChatHeader
+        convName={convName}
+        convType={convType}
+        isSubThread={isSubThread}
+        parentConvName={parentConvName}
+        otherTyping={otherTyping}
+        linkedProject={linkedProject}
+        subChats={subChats}
+        threadCurrentMembers={threadCurrentMembers}
+        onBack={onBack}
+        onShowThreads={() => setShowThreads(true)}
+        onShowMemberMgmt={() => setShowMemberMgmt(true)}
+        onShowProjectInfo={() => setShowProjectInfo(true)}
+        onStartCall={startCall}
+        pinnedMessages={pinnedMessages}
+        profiles={profiles}
+        togglePinMsg={togglePinMsg}
+        projectTasks={projectTasks}
+      />
 
       {/* Call Screen */}
       {callState && (
@@ -538,256 +415,57 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
           onEnd={() => setCallState(null)} />
       )}
 
-      {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "12px 10px 8px", WebkitOverflowScrolling: "touch" }}>
-        {loading && <div style={{ textAlign: "center", padding: 30, color: C.muted, fontSize: 12 }}>Đang tải...</div>}
-        {!loading && messages.length === 0 && (
-          linkedProject ? (
-            <div style={{ textAlign: "center", padding: "40px 20px", color: C.muted }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>📂</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: linkedProject.color }}>{linkedProject.name}</div>
-              <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.6 }}>
-                Nhóm chat dự án — {linkedProject.members?.length || 1} thành viên
-                {projectTasks.length > 0 && <><br />{projectTasks.length} công việc · bấm 📋 để xem & giao việc</>}
-              </div>
-              <div style={{ fontSize: 11, marginTop: 10, color: C.accent, fontWeight: 600 }}>
-                Trao đổi tiến độ, giao việc, báo cáo tại đây
-              </div>
-            </div>
-          ) : convType === "group" ? (
-            <div style={{ textAlign: "center", padding: "50px 20px", color: C.muted }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>👥</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{convName}</div>
-              <div style={{ fontSize: 12, marginTop: 6 }}>Nhóm đã được tạo — bắt đầu trao đổi</div>
-            </div>
-          ) : (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>👋</div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>Bắt đầu trò chuyện!</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>Gửi lời chào đến {convName || "bạn bè"}</div>
-            </div>
-          )
-        )}
-        {messages.map((m, i) => {
-          const showDate = i === 0 || new Date(m.created_at).toDateString() !== new Date(messages[i - 1].created_at).toDateString();
-          const status = getStatus(m);
-          const isLastOwn = m.sender_id === userId && !messages.slice(i + 1).some(nm => nm.sender_id === userId);
-          return (
-            <div key={m.id} id={`msg-${m.id}`}>
-              {showDate && (
-                <div style={{ textAlign: "center", padding: "10px 0 6px" }}>
-                  <span style={{ fontSize: 10, color: C.muted, background: `${C.border}66`, padding: "3px 10px", borderRadius: 10 }}>
-                    {new Date(m.created_at).toLocaleDateString("vi-VN", { weekday: "short", day: "numeric", month: "short" })}
-                  </span>
-                </div>
-              )}
-              <ChatBubble
-                message={m}
-                isMine={m.sender_id === userId}
-                senderName={getName(m.sender_id)}
-                status={isLastOwn ? status : null}
-                isPinned={pinnedMsgs.includes(m.id)}
-                onDelete={deleteMessage}
-                onPin={togglePinMsg}
-                onReply={() => { setReplyTo(m); inputRef.current?.focus(); }}
-                allMessages={messages}
-                getName={getName}
-              />
-            </div>
-          );
-        })}
+      <MessageList
+        ref={scrollRef}
+        messages={messages}
+        loading={loading}
+        userId={userId}
+        convType={convType}
+        convName={convName}
+        linkedProject={linkedProject}
+        projectTasks={projectTasks}
+        otherTyping={otherTyping}
+        pinnedMsgs={pinnedMsgs}
+        getName={getName}
+        getStatus={getStatus}
+        deleteMessage={deleteMessage}
+        togglePinMsg={togglePinMsg}
+        onReply={handleReply}
+        bottomRef={bottomRef}
+      />
 
-        {otherTyping && (
-          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 6 }}>
-            <div style={{ background: C.card, borderRadius: "16px 16px 16px 4px", padding: "10px 14px", border: `1px solid ${C.border}`, display: "flex", gap: 4, alignItems: "center" }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.muted, animation: "typeDot 1.2s infinite 0s" }} />
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.muted, animation: "typeDot 1.2s infinite 0.2s" }} />
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.muted, animation: "typeDot 1.2s infinite 0.4s" }} />
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} style={{ height: 4 }} />
-      </div>
-
-      {/* Upload progress / error */}
-      {(uploading || locLoading || uploadError) && (
-        <div style={{ padding: "6px 14px", background: uploadError ? `${C.red}10` : `${C.accent}10`, fontSize: 12, color: uploadError ? C.red : C.accent, fontWeight: 600, textAlign: "center", flexShrink: 0 }}>
-          {uploading ? "Đang tải lên..." : locLoading ? "Đang lấy vị trí..." : uploadError}
-          {uploadError && <button onClick={() => setUploadError("")} style={{ background: "none", border: "none", color: C.muted, marginLeft: 8, fontSize: 14, cursor: "pointer" }}>✕</button>}
-        </div>
-      )}
-
-      {/* Reply preview */}
-      {replyTo && (
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: `${C.accent}08`, borderTop: `1px solid ${C.border}`, borderLeft: `3px solid ${C.accent}` }}>
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <div style={{ fontSize: 11, color: C.accent, fontWeight: 700 }}>Trả lời {getName(replyTo.sender_id)}</div>
-            <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {replyTo.type === "image" ? "📷 Ảnh" : replyTo.type === "file" ? "📎 Tệp" : replyTo.content}
-            </div>
-          </div>
-          <button onClick={() => setReplyTo(null)} style={{ background: "none", border: "none", fontSize: 18, color: C.muted, cursor: "pointer", padding: 4 }}>✕</button>
-        </div>
-      )}
-
-      {/* Input bar */}
-      <div style={{ flexShrink: 0, background: C.surface, borderTop: `1px solid ${C.border}`, paddingBottom: 4 }}>
-        {isListening && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px 0", background: `${C.red}10` }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, animation: "blink 1s infinite" }} />
-            <span style={{ fontSize: 12, color: C.red, fontWeight: 600 }}>Tôi đang nghe...</span>
-          </div>
-        )}
-
-        {/* Attachment menu */}
-        {showAttach && (
-          <div style={{ display: "flex", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, background: C.bg }}>
-            <button className="tap" onClick={() => imageInputRef.current?.click()}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer" }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#4CAF5020", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📷</div>
-              <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>Thư viện</span>
-            </button>
-            <button className="tap" onClick={() => fileInputRef.current?.click()}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer" }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${C.accent}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📎</div>
-              <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>Tệp</span>
-            </button>
-            <button className="tap" onClick={sendLocation}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer" }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${C.red}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📍</div>
-              <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>Vị trí</span>
-            </button>
-          </div>
-        )}
-
-        {/* @ Mention popup */}
-        {mentionQuery !== null && mentionList.length > 0 && (
-          <div style={{ maxHeight: 150, overflowY: "auto", borderBottom: `1px solid ${C.border}`, background: C.surface }}>
-            {mentionList.map(p => (
-              <div key={p.id} className="tap" onClick={() => insertMention(p.name)}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "pointer", borderBottom: `1px solid ${C.border}11` }}>
-                <div style={{ width: 26, height: 26, borderRadius: "50%", background: p.color || C.accent, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {(p.name || "?")[0].toUpperCase()}
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{p.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 6, padding: "8px 10px" }}>
-          {/* Attach button */}
-          <button className="tap" onClick={() => setShowAttach(!showAttach)}
-            style={{
-              width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-              background: showAttach ? C.accent : `${C.accent}12`,
-              border: "none", color: showAttach ? "#fff" : C.accent,
-              fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all .2s",
-            }}>
-            +
-          </button>
-
-          {/* Camera button */}
-          <button className="tap" onClick={startCamera}
-            style={{
-              width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-              background: `${C.accent}12`, border: "none", color: C.accent,
-              fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all .2s",
-            }}>
-            📸
-          </button>
-
-          {hasSpeech && (
-            <button className="tap" onClick={toggleVoice}
-              style={{
-                width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-                background: isListening ? C.red : `${C.accent}12`,
-                border: "none", color: isListening ? "#fff" : C.accent,
-                fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all .2s",
-              }}>
-              🎤
-            </button>
-          )}
-
-          <div style={{
-            flex: 1, minWidth: 0, background: C.bg,
-            border: `1.5px solid ${isListening ? C.red : C.border}`,
-            borderRadius: 22, display: "flex", alignItems: "center",
-            transition: "border-color .2s",
-          }}>
-            <input ref={inputRef} value={text} onChange={handleInputChange}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder={isListening ? "Đang chuyển giọng nói..." : "Nhập tin nhắn..."}
-              style={{ flex: 1, minWidth: 0, fontSize: 15, color: C.text, background: "transparent", border: "none", outline: "none", padding: "10px 14px", lineHeight: 1.3 }} />
-          </div>
-
-          <button className="tap" onClick={handleSend} disabled={!text.trim()}
-            style={{
-              width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-              background: text.trim() ? C.accent : C.border,
-              border: "none", color: "#fff", fontSize: 16, fontWeight: 700,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background .2s", opacity: text.trim() ? 1 : 0.5,
-            }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Hidden file inputs */}
-      <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageSelect} />
-      <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFileSelect} />
-
-      {/* Camera Modal */}
-      {showCamera && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
-          background: "#000", display: "flex", flexDirection: "column"
-        }}>
-          <video ref={videoRef} autoPlay playsInline
-            style={{ flex: 1, width: "100%", objectFit: "cover" }} />
-          <canvas ref={canvasRef} style={{ display: "none" }} />
-          
-          <div style={{
-            position: "absolute", top: 20, left: 20, right: 20,
-            display: "flex", justifyContent: "space-between", alignItems: "center"
-          }}>
-            <button className="tap" onClick={stopCamera}
-              style={{
-                background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%",
-                width: 44, height: 44, color: "#fff", fontSize: 20,
-                display: "flex", alignItems: "center", justifyContent: "center"
-              }}>
-              ✕
-            </button>
-            <div style={{ color: "#fff", fontSize: 14, fontWeight: 600, textShadow: "0 1px 3px rgba(0,0,0,0.8)" }}>
-              Chụp ảnh
-            </div>
-            <div style={{ width: 44 }} />
-          </div>
-
-          <div style={{
-            position: "absolute", bottom: 40, left: 0, right: 0,
-            display: "flex", justifyContent: "center", alignItems: "center"
-          }}>
-            <button className="tap" onClick={capturePhoto}
-              style={{
-                background: "#fff", border: "4px solid rgba(255,255,255,0.3)",
-                borderRadius: "50%", width: 80, height: 80,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 28, color: "#000"
-              }}>
-              📷
-            </button>
-          </div>
-        </div>
-      )}
+      <ChatInput
+        text={text}
+        setText={handleTextChange}
+        replyTo={replyTo}
+        setReplyTo={setReplyTo}
+        isListening={isListening}
+        setIsListening={setIsListening}
+        uploading={uploading}
+        locLoading={locLoading}
+        uploadError={uploadError}
+        setUploadError={setUploadError}
+        showAttach={showAttach}
+        setShowAttach={setShowAttach}
+        mentionQuery={mentionQuery}
+        setMentionQuery={setMentionQuery}
+        mentionList={mentionList}
+        insertMention={insertMention}
+        getName={getName}
+        onSend={handleSend}
+        onImageSelect={handleImageSelect}
+        onFileSelect={handleFileSelect}
+        onSendLocation={sendLocation}
+        onStartCamera={startCamera}
+        inputRef={inputRef}
+        imageInputRef={imageInputRef}
+        fileInputRef={fileInputRef}
+        showCamera={showCamera}
+        videoRef={videoRef}
+        canvasRef={canvasRef}
+        onStopCamera={stopCamera}
+        onCapturePhoto={capturePhoto}
+      />
 
       {/* Project Info Modal */}
       {showProjectInfo && (convType === "group" || linkedProject) && (
@@ -809,7 +487,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
             background:C.surface, display:"flex", flexDirection:"column",
             animation:"slideLeft .2s ease-out", boxShadow:"-4px 0 20px rgba(0,0,0,.15)",
           }}>
-            {/* Panel header */}
             <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
               <button className="tap" onClick={() => setShowThreads(false)} style={{ background:"none", border:"none", fontSize:20, color:C.muted, padding:2 }}>✕</button>
               <div style={{ flex:1 }}>
@@ -817,8 +494,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                 <div style={{ fontSize:11, color:C.muted }}>{linkedProject?.name || convName}</div>
               </div>
             </div>
-
-            {/* Thread list */}
             <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
               {subChats.length === 0 && (
                 <div style={{ textAlign:"center", padding:"30px 16px", color:C.muted }}>
@@ -828,7 +503,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                 </div>
               )}
               {subChats.map(sc => {
-                const memberCount = chatMembers.length + 1; // +1 for self
+                const memberCount = chatMembers.length + 1;
                 return (
                   <div key={sc.convId} className="tap" onClick={() => { setActiveThread(sc); setShowThreads(false); }}
                     style={{
@@ -848,8 +523,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                 );
               })}
             </div>
-
-            {/* Create new thread */}
             <div style={{ padding:"12px 14px", borderTop:`1px solid ${C.border}`, background:C.card }}>
               <div style={{ display:"flex", gap:8, marginBottom: chatMembers.length > 0 ? 8 : 0 }}>
                 <input value={newThreadName} onChange={e => setNewThreadName(e.target.value)}
@@ -909,7 +582,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
             background:C.surface, display:"flex", flexDirection:"column",
             animation:"slideLeft .2s ease-out", boxShadow:"-4px 0 20px rgba(0,0,0,.15)",
           }}>
-            {/* Header */}
             <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
               <button className="tap" onClick={() => setShowMemberMgmt(false)} style={{ background:"none", border:"none", fontSize:20, color:C.muted, padding:2 }}>✕</button>
               <div style={{ flex:1 }}>
@@ -917,9 +589,7 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                 <div style={{ fontSize:11, color:C.muted }}>{convName} · {threadCurrentMembers.length} người</div>
               </div>
             </div>
-
             <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
-              {/* Current members */}
               <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:8, textTransform:"uppercase", letterSpacing:.5 }}>Trong chủ đề</div>
               {threadCurrentMembers.map(uid => {
                 const p = (profiles || []).find(pr => pr.id === uid);
@@ -947,8 +617,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                   </div>
                 );
               })}
-
-              {/* Available to add (only for creator or director) */}
               {canManageMembers && availableForThread.length > 0 && (
                 <>
                   <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginTop:16, marginBottom:8, textTransform:"uppercase", letterSpacing:.5 }}>Thêm thành viên</div>
@@ -972,7 +640,6 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
                   ))}
                 </>
               )}
-
               {availableForThread.length === 0 && threadCurrentMembers.length > 0 && (
                 <div style={{ textAlign:"center", padding:"20px 16px", color:C.muted, fontSize:12 }}>
                   Tất cả thành viên dự án đã trong chủ đề

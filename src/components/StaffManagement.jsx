@@ -3,7 +3,7 @@
    Chỉ hiện cho admin/dev/manager
    ================================================================ */
 import { useState, useEffect } from "react";
-import { C } from "../constants";
+import { C, DEFAULT_PASSWORD } from "../constants";
 import { loadAccounts, saveAccounts, hashPassword } from "../services";
 
 const IS = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", color: C.text, fontSize: 14, width: "100%" };
@@ -18,7 +18,7 @@ export default function StaffManagement({ currentUserId }) {
   const [accounts, setAccounts] = useState({});
   const [editing, setEditing] = useState(null); // account id being edited
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "staff", title: "", pw: "111111" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "staff", title: "", pw: DEFAULT_PASSWORD });
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function StaffManagement({ currentUserId }) {
   const startAdd = () => {
     setAdding(true);
     setEditing(null);
-    setForm({ name: "", email: "", phone: "", role: "staff", title: "", pw: "111111" });
+    setForm({ name: "", email: "", phone: "", role: "staff", title: "", pw: DEFAULT_PASSWORD });
   };
 
   const startEdit = (acc) => {

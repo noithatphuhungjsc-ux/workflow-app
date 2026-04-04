@@ -5,12 +5,13 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import "./App.css";
 
-import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, ALL_ACCOUNTS, TEAM_EMAILS, STATUSES, STATUS_ORDER } from "./constants";
+import { C, todayStr, fmtDate, isOverdue, t, hasPermission, TEAM_ACCOUNTS, ALL_ACCOUNTS, TEAM_EMAILS, STATUSES, STATUS_ORDER, DEFAULT_PASSWORD } from "./constants";
 import { setUserPrefix, loadJSON, saveJSON, encryptToken, decryptToken, sendBackupEmail, cloudSave, cloudLoad } from "./services";
 import { isNative, initNative } from "./native/capacitor";
 import { useGmail } from "./hooks/useGmail";
 import { AppProvider, useStore, useTasks, useSettings } from "./store";
 import { Pill, Filters, ProjectFilters, TaskRow, UserMenu, UndoToast, MdBlock, Empty, getAlertLevel, Skeleton, Toast, TabErrorBoundary } from "./components";
+import TasksTabContent from "./components/TasksTabContent";
 import { CHANGELOG } from "./changelog";
 
 /* Static imports — needed immediately */
@@ -21,6 +22,8 @@ import { useConversations } from "./hooks/useConversations";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useWoryChat } from "./hooks/useWoryChat";
 import { useMiniVoice } from "./hooks/useMiniVoice";
+import WoryOverlay from "./components/WoryOverlay";
+import BottomNav from "./components/BottomNav";
 import { useOffline } from "./hooks/useOffline";
 import { useAuditLog } from "./hooks/useAuditLog";
 
@@ -79,7 +82,7 @@ function SupabaseAutoLogin() {
     if (tried.current) return;
     tried.current = true;
 
-    const pw = "111111";
+    const pw = DEFAULT_PASSWORD;
     const name = s.name || email.split("@")[0];
     (async () => {
       // First ensure auth account exists on server
@@ -88,7 +91,7 @@ function SupabaseAutoLogin() {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "ensure_auth", email, password: pw, displayName: name }),
         });
-      } catch {}
+      } catch (e) { console.warn("[WF] ensure_auth failed:", e.message); }
       const r = await signIn(email, pw);
       if (r.error) {
         const r2 = await signUp(email, pw, name);
@@ -103,8 +106,8 @@ function SupabaseAutoLogin() {
     ALL_ACCOUNTS.forEach(a => {
       fetch("/api/cloud-sync", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ensure_auth", email: a.email, password: "111111", displayName: a.name }),
-      }).catch(() => {});
+        body: JSON.stringify({ action: "ensure_auth", email: a.email, password: DEFAULT_PASSWORD, displayName: a.name }),
+      }).catch(e => console.warn("[WF] ensure_auth batch:", e.message));
     });
     localStorage.setItem("wf_auth_synced_v4", "1");
   }, []);
@@ -451,7 +454,7 @@ function MainApp({ user, onLogout }) {
           lastCheckRef.current = data[0].created_at;
           processCallMsg(data[0]);
         }
-      } catch {}
+      } catch (e) { console.warn("[WF] call poll error:", e.message); }
     }, 2000);
 
     return () => {
@@ -601,8 +604,13 @@ function MainApp({ user, onLogout }) {
       setTimeout(() => setMsgToast(null), 5000);
     };
 
-    const interval = setInterval(checkNewMsgs, 4000);
-    return () => clearInterval(interval);
+    const interval = setInterval(checkNewMsgs, 15000);
+    // Pause polling when tab is hidden to save resources
+    const onVisibility = () => {
+      if (!document.hidden) checkNewMsgs();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisibility); };
   }, [supaUserId, tab]);
 
   /* ── Notification reminders ── */
@@ -931,235 +939,21 @@ function MainApp({ user, onLogout }) {
       }} key={tab} style={{ flex: 1, overflowY: "auto", padding: "0 13px", paddingBottom: 50, animation: `${tabDir.current === "right" ? "slideInRight" : "slideInLeft"} .2s ease` }}>
 
         {tab === "tasks" && (
-          <div style={{ animation: "fadeIn .2s" }}>
-            {/* Search bar + edit/delete buttons */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-              <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-                <input
-                  className="input-base"
-                  value={searchQ}
-                  onChange={e => setSearchQ(e.target.value)}
-                  placeholder={`Tìm ${t("task", settings).toLowerCase()}...`}
-                  style={{ paddingLeft: 34, paddingTop: 0, paddingBottom: 0, fontSize: 15, height: 40, boxSizing: "border-box", margin: 0 }}
-                />
-                <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: C.muted, pointerEvents: "none" }}>🔍</span>
-                {searchQ && (
-                  <span className="tap" onClick={() => setSearchQ("")}
-                    style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: C.muted, cursor: "pointer", lineHeight: 1 }}>×</span>
-                )}
-              </div>
-              {!selectMode && (
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <button className="tap" onClick={() => { setSelectMode("edit"); setSelectedIds(new Set()); }}
-                    style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.accent, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                    title="Sửa hàng loạt">✏️</button>
-                  <button className="tap" onClick={() => { setSelectMode("delete"); setSelectedIds(new Set()); }}
-                    style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, color: C.red, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                    title="Xóa hàng loạt">🗑️</button>
-                </div>
-              )}
-            </div>
-            {/* ── Pending delete approval banner (director only) ── */}
-            {pendingDeleteCount > 0 && filter !== "pending_delete" && (
-              <div className="tap" onClick={() => setFilter("pending_delete")}
-                style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", marginBottom:10, borderRadius:12,
-                  background:"linear-gradient(135deg, #e74c3c11, #e74c3c08)", border:`1px solid #e74c3c33`, cursor:"pointer" }}>
-                <div style={{ width:36, height:36, borderRadius:10, background:"#e74c3c18", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🔔</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:"#e74c3c" }}>{pendingDeleteCount} yêu cầu xóa chờ duyệt</div>
-                  <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>Nhân viên yêu cầu xóa công việc — Nhấn để duyệt</div>
-                </div>
-                <span style={{ fontSize:18, color:C.muted }}>›</span>
-              </div>
-            )}
-            {/* ── Filter pills ── */}
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
-              <div className="no-scrollbar" style={{ display:"flex", gap:6, flex:1, overflowX:"auto", paddingBottom:2 }}>
-                <Filters filter={filter} setFilter={setFilter} pendingDeleteCount={pendingDeleteCount} />
-              </div>
-            </div>
-            {filter === "pending_delete" && filteredTasks.length > 0 && !selectMode && (
-              <div style={{ display:"flex", gap:6, marginBottom:8, justifyContent:"flex-end" }}>
-                <button className="tap" onClick={() => {
-                  if (!window.confirm(`Duyệt xóa TẤT CẢ ${filteredTasks.length} công việc?`)) return;
-                  filteredTasks.forEach(t => deleteTask(t.id));
-                  setFilter("all");
-                }}
-                  style={{ padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:12, fontWeight:700 }}>
-                  Duyệt tất cả
-                </button>
-                <button className="tap" onClick={() => {
-                  filteredTasks.forEach(t => patchTask(t.id, { deleteRequest: null }));
-                  setFilter("all");
-                }}
-                  style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:12, fontWeight:600 }}>
-                  Từ chối tất cả
-                </button>
-              </div>
-            )}
-            {/* ── Multi-select toolbar ── */}
-            {selectMode && (
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"8px 10px", background: selectMode === "delete" ? `${C.red}08` : `${C.accent}08`, borderRadius:10, border:`1px solid ${selectMode === "delete" ? C.red + "33" : C.accent + "33"}` }}>
-                <label className="tap" style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:13, fontWeight:600, color:C.text }}>
-                  <input type="checkbox" checked={filteredTasks.length > 0 && selectedIds.size === filteredTasks.length}
-                    onChange={() => setSelectedIds(prev => prev.size === filteredTasks.length ? new Set() : new Set(filteredTasks.map(t => t.id)))}
-                    style={{ width:16, height:16, accentColor: selectMode === "delete" ? C.red : C.accent }} />
-                  Chọn tất cả
-                </label>
-                <span style={{ fontSize:13, color:C.muted }}>{selectedIds.size}/{filteredTasks.length}</span>
-                <div style={{ flex:1 }} />
-                {selectedIds.size > 0 && selectMode === "delete" && (
-                  <div style={{ display:"flex", gap:4 }}>
-                    {filter === "pending_delete" && !isStaff && (
-                      <>
-                        <button className="tap" onClick={() => {
-                          if (!window.confirm(`Duyệt xóa ${selectedIds.size} công việc?`)) return;
-                          selectedIds.forEach(id => deleteTask(id));
-                          exitSelectMode(); if (pendingDeleteCount <= selectedIds.size) setFilter("all");
-                        }}
-                          style={{ padding:"5px 12px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:13, fontWeight:700 }}>
-                          Duyệt ({selectedIds.size})
-                        </button>
-                        <button className="tap" onClick={() => {
-                          selectedIds.forEach(id => patchTask(id, { deleteRequest: null }));
-                          exitSelectMode();
-                        }}
-                          style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:13, fontWeight:600 }}>
-                          Từ chối
-                        </button>
-                      </>
-                    )}
-                    {(filter !== "pending_delete" || isStaff) && (
-                      <button className="tap" onClick={() => {
-                        if (isStaff) {
-                          if (!window.confirm(`Yêu cầu xóa ${selectedIds.size} công việc? Admin sẽ duyệt.`)) return;
-                          selectedIds.forEach(id => patchTask(id, { deleteRequest: { status: "pending", by: settings.displayName || "NV", at: new Date().toISOString() } }));
-                        } else {
-                          if (!window.confirm(`Xóa ${selectedIds.size} công việc?`)) return;
-                          selectedIds.forEach(id => deleteTask(id));
-                        }
-                        exitSelectMode();
-                      }}
-                        style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.red, color:"#fff", fontSize:13, fontWeight:700 }}>
-                        {isStaff ? "Yêu cầu xóa" : `Xóa (${selectedIds.size})`}
-                      </button>
-                    )}
-                  </div>
-                )}
-                {selectedIds.size > 0 && selectMode === "edit" && (
-                  <button className="tap" onClick={() => setStatusPickerTask({ ids: [...selectedIds] })}
-                    style={{ padding:"5px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:13, fontWeight:700 }}>
-                    Doi trang thai ({selectedIds.size})
-                  </button>
-                )}
-                <button className="tap" onClick={exitSelectMode}
-                  style={{ padding:"5px 10px", borderRadius:8, border:`1px solid ${C.border}`, background:C.card, color:C.muted, fontSize:13, fontWeight:600 }}>
-                  Huỷ
-                </button>
-              </div>
-            )}
-            {/* Project dashboard removed — filters below are sufficient */}
-            <ProjectFilters projects={projects} filter={projFilter} setFilter={setProjFilter} onAdd={() => setNewProjOpen(true)} onOpen={setProjDetail} isStaff={isStaff} myName={myName} onDeleteAll={async () => {
-              if (!window.confirm("Xoa tat ca du an va cong viec lien quan?")) return;
-              const choice = "2";
-              // 1. Collect all member localIds from all projects
-              const allLids = new Set();
-              const DEV_NAME_MAP = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.name, a.id]));
-              projects.forEach(p => p.members?.forEach(m => { const lid = DEV_NAME_MAP[m.name]; if (lid) allLids.add(lid); }));
-              const myId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id; } catch { return null; } })();
-              if (myId) allLids.add(myId);
-              const projectIds = new Set(projects.map(p => p.id));
-              // 2. Clean ALL members' cloud data
-              await Promise.all([...allLids].map(async (lid) => {
-                try {
-                  const ep = await cloudLoad(null, lid, "projects");
-                  const cp = Array.isArray(ep?.data) ? ep.data : [];
-                  const filteredP = cp.filter(p => !projectIds.has(p.id));
-                  if (filteredP.length !== cp.length) await cloudSave(null, lid, "projects", filteredP);
-                  const et = await cloudLoad(null, lid, "tasks");
-                  const ct = Array.isArray(et?.data) ? et.data : [];
-                  if (choice === "2") {
-                    const filteredT = ct.filter(t => !projectIds.has(t.projectId));
-                    if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
-                  } else {
-                    const updated = ct.map(t => projectIds.has(t.projectId) ? { ...t, projectId: null, stepIndex: null, assignee: null, assigneeId: null } : t);
-                    if (JSON.stringify(updated) !== JSON.stringify(ct)) await cloudSave(null, lid, "tasks", updated);
-                  }
-                } catch {}
-              }));
-              // 3. Delete chats on Supabase
-              if (supabase) {
-                for (const p of projects) {
-                  if (p.chatId) {
-                    try {
-                      await supabase.from("messages").delete().eq("conversation_id", p.chatId);
-                      await supabase.from("conversation_members").delete().eq("conversation_id", p.chatId);
-                      await supabase.from("conversations").delete().eq("id", p.chatId);
-                    } catch {}
-                  }
-                }
-              }
-              // 4. THEN delete locally
-              if (choice === "1") { tasks.filter(t => t.projectId).forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); }
-              else { tasks.filter(t => t.projectId).forEach(t => hardDelete(t.id)); }
-              projects.forEach(p => deleteProject(p.id));
-              setProjFilter("all");
-            }} />
-            {filteredTasks.length === 0 && <Empty icon="📋" title={`Chưa có ${t("task",settings).toLowerCase()}`} subtitle="Nhấn + để thêm mục đầu tiên" action="Thêm ngay" onAction={() => setAddOpen(true)} />}
-            {(() => {
-              let lastProjectId = "__none__";
-              const isAllView = projFilter === "all";
-              return filteredTasks.map((tk, i) => {
-                const curProjectId = tk.projectId || null;
-                const showHeader = isAllView && curProjectId !== lastProjectId;
-                lastProjectId = curProjectId;
-                const proj = curProjectId ? projects.find(p => p.id === curProjectId) : null;
-                return (
-                  <div key={tk.id} style={i < 12 ? { animation:"fadeIn .2s ease backwards", animationDelay:`${i*25}ms` } : undefined}>
-                    {showHeader && (
-                      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"12px 4px 8px", marginTop: i > 0 ? 12 : 0 }}>
-                        {curProjectId ? (
-                          <>
-                            <div style={{ width:10, height:10, borderRadius:5, background: proj?.color || C.accent, flexShrink:0 }} />
-                            <span style={{ fontSize:15, fontWeight:700, color: proj?.color || C.accent }}>Dự án: {proj?.name || "Dự án"}</span>
-                            <div style={{ flex:1, height:1, background: C.border }} />
-                          </>
-                        ) : (
-                          <>
-                            <span style={{ fontSize:15, fontWeight:700, color: C.muted }}>Công việc riêng</span>
-                            <div style={{ flex:1, height:1, background: C.border }} />
-                          </>
-                        )}
-                      </div>
-                    )}
-                    <div style={{ display:"flex", alignItems:"stretch", marginBottom:4 }}>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <TaskRow task={tk}
-                          onPress={selectMode ? () => toggleSelect(tk.id) : () => setSel(tk)}
-                          projectName={!isAllView && tk.projectId ? (proj?.name || "Dự án") : null}
-                          onStatusChange={selectMode ? undefined : (t2, s) => patchTask(t2.id, { status: s })}
-                          onPatchTask={(id, data) => patchTask(id, data)}
-                          timerTick={timerTick} />
-                      </div>
-                      {selectMode && (
-                        <div className="tap" onClick={() => toggleSelect(tk.id)}
-                          style={{ width:36, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
-                          <div style={{
-                            width:20, height:20, borderRadius:6,
-                            border: selectedIds.has(tk.id) ? "none" : `2px solid ${C.border}`,
-                            background: selectedIds.has(tk.id) ? (selectMode === "delete" ? C.red : C.accent) : "transparent",
-                            display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"
-                          }}>
-                            {selectedIds.has(tk.id) && <span style={{ color:"#fff", fontSize:13, fontWeight:700, lineHeight:1 }}>&#x2713;</span>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
+          <TasksTabContent
+            tasks={tasks} filteredTasks={filteredTasks} projects={projects}
+            filter={filter} setFilter={setFilter} projFilter={projFilter} setProjFilter={setProjFilter}
+            searchQ={searchQ} setSearchQ={setSearchQ}
+            selectMode={selectMode} setSelectMode={setSelectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds} exitSelectMode={exitSelectMode}
+            pendingDeleteCount={pendingDeleteCount} isStaff={isStaff} isDirector={isDirector} myName={myName}
+            patchTask={patchTask} deleteTask={deleteTask} addTask={addTask} hardDelete={hardDelete}
+            setSel={setSel} setAddOpen={setAddOpen} setNewProjOpen={setNewProjOpen} setProjDetail={setProjDetail}
+            setStatusPickerTask={setStatusPickerTask} toggleSelect={toggleSelect}
+            settings={settings}
+            supabase={supabase} supaSession={supaSession} cloudLoad={cloudLoad} cloudSave={cloudSave}
+            timerTick={timerTick}
+            Empty={Empty} Filters={Filters} ProjectFilters={ProjectFilters} TaskRow={TaskRow}
+            deleteProject={deleteProject}
+          />
         )}
 
         {tab === "calendar" && <TabErrorBoundary><CalendarTab tasks={tasks} onPress={t => setSel(t)} patchTask={patchTask} /></TabErrorBoundary>}
@@ -1318,185 +1112,16 @@ function MainApp({ user, onLogout }) {
           }}>+</button>
       )}
 
-      {/* ── WORY FAB — floating assistant button ── */}
-      <button className="tap" onClick={() => setWoryOpen(v => !v)}
-        style={{
-          position: "fixed", bottom: "52px", right: 16, zIndex: 70,
-          width: 52, height: 52, borderRadius: "50%", border: "none",
-          background: woryOpen ? C.muted : `linear-gradient(135deg, ${C.accent}, ${C.purple})`,
-          color: "#fff", fontSize: woryOpen ? 18 : 20, fontWeight: 700, cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: `0 4px 16px ${woryOpen ? "rgba(0,0,0,.15)" : C.accent + "55"}`,
-          transition: "all .2s",
-        }}>
-        {woryOpen ? "✕" : "✦"}
-        {!woryOpen && aiLoad && (
-          <div style={{ position:"absolute", top:-2, right:-2, width:12, height:12, borderRadius:"50%", background:C.green, border:"2px solid #fff" }} />
-        )}
-      </button>
+      <WoryOverlay
+        woryOpen={woryOpen} setWoryOpen={setWoryOpen}
+        msgs={msgs} aiIn={aiIn} setAiIn={setAiIn} aiLoad={aiLoad} sendChat={sendChat}
+        canNewChat={canNewChat} startNewChat={startNewChat} chatStartedAt={chatStartedAt}
+        voice={voice} endRef={endRef} C={C} MdBlock={MdBlock}
+      />
 
-      {/* ── WORY OVERLAY (bottom sheet chat) ── */}
-      {woryOpen && (
-        <>
-          <div style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,.3)" }} onClick={() => setWoryOpen(false)} />
-          <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480,
-            height:"calc(75vh - env(safe-area-inset-bottom, 0px))", background:"#fff", borderRadius:"20px 20px 0 0", zIndex:201,
-            display:"flex", flexDirection:"column", animation:"slideUp .25s" }}>
-            {/* Header */}
-            <div style={{ padding:"14px 16px 10px", borderBottom:`1px solid ${C.border}`, flexShrink:0, display:"flex", alignItems:"center", gap:8 }}>
-              <div style={{ width:28, height:28, borderRadius:"50%", background:`linear-gradient(135deg,${C.accent},${C.purple})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, color:"#fff" }}>W</div>
-              <span style={{ fontSize:15, fontWeight:700, color:C.text, flex:1 }}>Wory</span>
-              <button className="tap" onClick={() => {
-                if (!canNewChat()) {
-                  const h = Math.ceil((2 * 24 * 60 * 60 * 1000 - (Date.now() - chatStartedAt)) / 3600000);
-                  alert(`Chưa đủ 2 ngày. Còn ~${h}h nữa.`);
-                  return;
-                }
-                if (!confirm("Lưu trữ và bắt đầu chat mới?")) return;
-                startNewChat();
-              }} style={{ background:C.card, color: canNewChat() ? C.accent : C.muted, border:`1px solid ${canNewChat() ? C.accent+"44" : C.border}`, borderRadius:8, padding:"4px 10px", fontSize:12, fontWeight:600, opacity: canNewChat() ? 1 : 0.6 }}>
-                + Mới
-              </button>
-              <button className="tap" onClick={() => setWoryOpen(false)}
-                style={{ background:"none", border:"none", fontSize:18, color:C.muted, cursor:"pointer", padding:"4px" }}>✕</button>
-            </div>
-            {/* Quick prompts */}
-            <div className="no-scrollbar" style={{ display:"flex", gap:6, padding:"8px 14px", overflowX:"auto", flexShrink:0 }}>
-              {["Lên kế hoạch hôm nay", "Hôm nay làm gì trước?", "Tôi bị stress quá", "Kể chuyện vui đi"].map(q => (
-                <button key={q} className="tap" onClick={() => sendChat(q)}
-                  style={{ flexShrink:0, background:C.card, color:C.sub, border:`1px solid ${C.border}`, borderRadius:20, padding:"5px 12px", fontSize:12 }}>{q}</button>
-              ))}
-            </div>
-            {/* Messages */}
-            <div style={{ flex:1, overflowY:"auto", padding:"8px 14px" }}>
-              {msgs.map((m, i) => (
-                <div key={i} style={{ display:"flex", flexDirection:"column", alignItems: m.role === "user" ? "flex-end" : "flex-start", marginBottom:8 }}>
-                  {m.role === "assistant" && (
-                    <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
-                      <div style={{ width:18, height:18, borderRadius:"50%", background:`linear-gradient(135deg,${C.accent},${C.purple})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, color:"#fff" }}>W</div>
-                      <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>Wory</span>
-                    </div>
-                  )}
-                  {m.role === "user" ? (
-                    <div style={{ maxWidth:"85%", background:C.accent, borderRadius:"16px 16px 4px 16px", padding:"10px 14px", fontSize:14, lineHeight:1.5, color:"#fff", whiteSpace:"pre-wrap", marginLeft:"auto" }}>{m.content}</div>
-                  ) : (
-                    <div style={{ maxWidth:"92%" }}>
-                      <div style={{ background:C.card, borderRadius:"16px 16px 16px 4px", border:`1px solid ${C.border}`, padding:"10px 14px", fontSize:14, lineHeight:1.6, color:C.text }}>
-                        <MdBlock text={m.content} />
-                        {aiLoad && i === msgs.length - 1 && <span style={{ display:"inline-block", width:2, height:14, background:C.accent, marginLeft:2, animation:"blink 1s infinite", verticalAlign:"text-bottom" }} />}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {aiLoad && msgs[msgs.length - 1]?.content === "" && (
-                <div style={{ display:"flex" }}><div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:"16px 16px 16px 4px", padding:"10px 14px" }}><div className="dots"><span /><span /><span /></div></div></div>
-              )}
-              <div ref={endRef} />
-            </div>
-            {/* Input */}
-            <div style={{ padding:"10px 12px", borderTop:`1px solid ${C.border}`, flexShrink:0, display:"flex", gap:8, alignItems:"center", paddingBottom:"calc(10px + env(safe-area-inset-bottom))" }}>
-              <input value={aiIn} onChange={e => setAiIn(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat()}
-                placeholder="Nhắn tin cho Wory..."
-                style={{ flex:1, background:C.card, border:`1px solid ${C.border}`, borderRadius:24, padding:"10px 14px", fontSize:15, color:C.text }} />
-              {aiIn.trim() ? (
-                <button className="tap" onClick={() => sendChat()} disabled={aiLoad}
-                  style={{ width:40, height:40, borderRadius:"50%", border:"none", flexShrink:0, background: aiLoad ? C.border : C.accent, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, color:"#fff" }}>
-                  &#x2191;
-                </button>
-              ) : voice.ok ? (
-                <button className="tap" onClick={() => { window.speechSynthesis?.cancel(); voice.toggle(); }}
-                  style={{ width:40, height:40, borderRadius:"50%", border:"none", flexShrink:0, position:"relative",
-                    background: voice.on ? C.red : `${C.purple}18`,
-                    display:"flex", alignItems:"center", justifyContent:"center", fontSize:17 }}>
-                  {voice.on && <div style={{ position:"absolute", inset:-4, borderRadius:"50%", border:`2px solid ${C.red}44`, animation:"ripple 1.1s infinite", pointerEvents:"none" }} />}
-                  &#x1F3A4;
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ── BOTTOM NAV (5 tabs: Việc, Phòng ban, Yêu cầu, Chat, Thêm) ── */}
-      <div className="bottom-nav">
-        {[
-          ["tasks","\u{1F4CB}", t("task", settings)],
-          ["dept","\u{1F3E2}","Phòng ban"],
-          ["requests","\u{1F4CB}","Yêu cầu"],
-          ["inbox","\u{1F4AC}","Chat", chatUnread],
-        ].filter(([key]) => {
-          const vt = settings.visibleTabs;
-          if (vt && vt[key] === false) return false;
-          return true;
-        }).map(([key, icon, label, badgeCount]) => {
-          const active = tab === key;
-          return (
-            <button key={key} className="tap" data-guide={`nav-${key}`} onClick={() => setTab(key)}
-              style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "6px 0 2px", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, position:"relative" }}>
-              <div style={{ width:40, height:32, borderRadius:10, background: active ? `${C.accent}15` : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all .2s", position:"relative" }}>
-                <span style={{ fontSize: 20, lineHeight: 1, filter: active ? "none" : "grayscale(0.5) opacity(0.5)" }}>
-                  {icon}
-                </span>
-                {badgeCount > 0 && !active && (
-                  <div style={{ position:"absolute", top:-2, right:-4, minWidth:16, height:16, borderRadius:8, background:"#e74c3c", color:"#fff", fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px" }}>
-                    {badgeCount > 9 ? "9+" : badgeCount}
-                  </div>
-                )}
-              </div>
-              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? C.accent : "#999" }}>{label}</span>
-            </button>
-          );
-        })}
-        {/* More menu button */}
-        <button className="tap" onClick={() => setMoreMenuOpen(v => !v)}
-          style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "6px 0 2px", display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-          <div style={{ width:40, height:32, borderRadius:10, background: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? `${C.accent}15` : "transparent", display:"flex", alignItems:"center", justifyContent:"center", transition:"all .2s" }}>
-            <span style={{ fontSize: 20, lineHeight: 1, filter: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? "none" : "grayscale(0.5) opacity(0.5)" }}>&#x2261;</span>
-          </div>
-          <span style={{ fontSize: 10, fontWeight: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? 700 : 500, color: ["calendar","expense","dashboard","report","dev","attendance","ai"].includes(tab) ? C.accent : "#999" }}>Thêm</span>
-        </button>
-      </div>
-
-      {/* ── MORE MENU (bottom sheet) ── */}
-      {moreMenuOpen && (
-        <>
-          <div style={{ position:"fixed", inset:0, zIndex:998, background:"rgba(0,0,0,.3)" }} onClick={() => setMoreMenuOpen(false)} />
-          <div className="bottom-sheet">
-            <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 14px" }} />
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-              {[
-                ["calendar","\u{1F4C5}","Lịch", C.accent],
-                ["expense","\u{1F4B0}", t("expense", settings), C.gold],
-                ["attendance","\u{1F552}","Chấm công", C.green],
-                ["dashboard","\u{1F4CA}","Tổng quan", C.purple],
-                isDirector && ["report","\u{1F4C4}","Báo cáo", "#e67e22"],
-              ].filter(Boolean).filter(([key]) => {
-                const vt = settings.visibleTabs;
-                if (vt && vt[key] === false) return false;
-                return hasPermission(settings, key);
-              }).map(([key, icon, label, iconColor]) => {
-                const active = tab === key;
-                return (
-                  <button key={key} className="tap" onClick={() => { setTab(key); setMoreMenuOpen(false); }}
-                    style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8,
-                      padding:"16px 10px", borderRadius:16, cursor:"pointer", transition:"all .15s",
-                      background: active ? `${iconColor}12` : C.card,
-                      border: active ? `1.5px solid ${iconColor}35` : `1px solid ${C.border}`,
-                      boxShadow: active ? `0 2px 8px ${iconColor}20` : "none" }}>
-                    <div style={{ width:48, height:48, borderRadius:14, background:`${iconColor}15`,
-                      display:"flex", alignItems:"center", justifyContent:"center",
-                      boxShadow:`0 2px 6px ${iconColor}18` }}>
-                      <span style={{ fontSize:24, lineHeight:1 }}>{icon}</span>
-                    </div>
-                    <span style={{ fontSize:13, fontWeight: active ? 700 : 600, color: active ? iconColor : C.text }}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+      <BottomNav tab={tab} setTab={setTab} chatUnread={chatUnread}
+        moreMenuOpen={moreMenuOpen} setMoreMenuOpen={setMoreMenuOpen}
+        settings={settings} isDirector={isDirector} C={C} t={t} hasPermission={hasPermission} />
 
       {/* ── STATUS PICKER SHEET (replaces window.prompt) ── */}
       {statusPickerTask && (
