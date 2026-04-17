@@ -1,7 +1,11 @@
 /* Gmail OAuth — Step 2: Exchange code for tokens, redirect back to app */
+import { getPublicAppUrl } from './_middleware.js';
+import { validateOAuthCode, sendValidationError } from './_validators.js';
+
 export default async function handler(req, res) {
   const { code } = req.query;
-  if (!code) return res.status(400).json({ error: 'No code' });
+  const codeErr = validateOAuthCode(code);
+  if (codeErr) return sendValidationError(res, codeErr);
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -49,7 +53,12 @@ export default async function handler(req, res) {
     const isPopup = req.query.state === 'popup';
 
     if (isPopup) {
-      // Return HTML that sends token to opener via postMessage, then closes
+      // Return HTML that sends token to opener via postMessage, then closes.
+      // Note: postMessage target origin must match the opener's origin EXACTLY.
+      // If PUBLIC_APP_URL differs from where the opener is running (e.g. opener
+      // on a transient VERCEL_URL preview), the message is dropped silently.
+      // NEVER use '*' here — that would leak the refresh_token to any window.
+      const appOrigin = getPublicAppUrl();
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.send(`<!DOCTYPE html><html><head><title>Gmail Connected</title></head><body>
         <div style="font-family:system-ui;text-align:center;padding:40px">
@@ -59,7 +68,7 @@ export default async function handler(req, res) {
           <div style="font-size:12px;color:#aaa;margin-top:16px">Cửa sổ sẽ tự đóng...</div>
         </div>
         <script>
-          try { window.opener.postMessage({ type:'gmail_connected', token:'${encoded}' }, 'https://workflow-app-lemon.vercel.app'); }
+          try { window.opener.postMessage({ type:'gmail_connected', token:'${encoded}' }, '${appOrigin}'); }
           catch(e) {}
           setTimeout(function(){ window.close(); }, 1500);
         </script>

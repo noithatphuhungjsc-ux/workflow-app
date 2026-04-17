@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { C } from "../constants";
 import { supabase } from "../lib/supabase";
+import { authHeaders } from "../services/authHeaders";
 import VConsole from "vconsole";
 
 const PROJECT = "workflow-app";
@@ -123,10 +124,16 @@ const USER_IDS = ["trinh", "lien", "hung", "mai", "duc"];
 const CLOUD_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
 const LOCAL_EXTRA = ["history", "chat_started", "chat_archives", "gmail_token", "expense_wory_report"];
 
+// NOTE: cloudPush writes to OTHER users' data (cross-user). After đợt 2A,
+// /api/cloud-sync enforces that non-admin callers can only touch their own
+// user_id, so this call will 403 unless the currently-authenticated Supabase
+// user has user_metadata.role === "admin". No in-app isAdmin gate exists yet
+// for the DataTools component below — the destructive buttons are visible to
+// anyone on the Dev tab. Add a role check before wiring this to real users.
 async function cloudPush(uid, key, data) {
   const res = await fetch("/api/cloud-sync", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(),
     body: JSON.stringify({ userId: uid, key, data }),
   });
   return res.ok;

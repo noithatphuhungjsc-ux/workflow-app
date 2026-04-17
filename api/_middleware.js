@@ -3,16 +3,30 @@
    Usage: import { cors, requireAuth, requireRole } from './_middleware';
    ================================================================ */
 
-const ALLOWED_ORIGINS = ["https://workflow-app-lemon.vercel.app", "http://localhost:5173"];
+const DEV_ORIGIN = "http://localhost:5173";
+
+/**
+ * Return the canonical public URL of this app deployment.
+ * Priority: PUBLIC_APP_URL (set in Vercel dashboard, stable prod domain)
+ *          > VERCEL_URL (auto-injected per-deployment, changes on preview)
+ *          > localhost dev fallback
+ */
+export function getPublicAppUrl() {
+  if (process.env.PUBLIC_APP_URL) return process.env.PUBLIC_APP_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return DEV_ORIGIN;
+}
 
 /**
  * Get allowed CORS origin from request
  */
 export function getAllowedOrigin(req) {
   const origin = req.headers.origin || "";
-  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  const appUrl = getPublicAppUrl();
+  if (origin === appUrl || origin === DEV_ORIGIN) return origin;
+  // Allow any Vercel preview deployment of this project
   if (origin.startsWith("https://workflow-app-") && origin.endsWith(".vercel.app")) return origin;
-  return ALLOWED_ORIGINS[0];
+  return appUrl;
 }
 
 /**
@@ -34,7 +48,7 @@ export async function verifyAuth(req) {
   const token = auth.slice(7);
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseKey) return null;
 

@@ -5,6 +5,7 @@ import { useState, useRef, useCallback } from "react";
 import { C, PRIORITIES, STATUSES, WORKFLOWS, EXPENSE_CATEGORIES, TEAM_ACCOUNTS, getElapsed, formatTimer, fmtMoney } from "../constants";
 import { ConfirmDialog, LazyImage } from "../components";
 import { useStore } from "../store";
+import { callClaude } from "../services/ai";
 
 const IS = { background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", color:C.text, fontSize:14, width:"100%", boxSizing:"border-box" };
 const NOTE_STATUSES = [
@@ -145,18 +146,12 @@ export default function TaskSheet({ task, onClose }) {
       const base64 = photo.data.split(",")[1];
       const mediaType = photo.data.startsWith("data:image/png") ? "image/png" : "image/jpeg";
       const catKeys = Object.keys(CATS);
-      const res = await fetch("/api/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system: `Bạn là AI đọc hóa đơn. Trả về JSON duy nhất, KHÔNG markdown, KHÔNG giải thích. Format: {"amount":number,"description":"string","items":[{"desc":"string","amount":number}]}. amount là tổng tiền (VND, bỏ dấu chấm/phẩy). items là danh sách từng mục nếu có. Nếu không đọc được thì trả {"amount":0,"description":"Không đọc được","items":[]}.`,
-          messages: [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            { type: "text", text: `Đọc hóa đơn này. Trích xuất tổng tiền và mô tả. Danh mục phù hợp: ${catKeys.join(", ")}. Trả JSON.` }
-          ]}], max_tokens: 500,
-        }),
-      });
-      const data = await res.json();
-      const text = data?.content?.[0]?.text || "";
+      const system = `Bạn là AI đọc hóa đơn. Trả về JSON duy nhất, KHÔNG markdown, KHÔNG giải thích. Format: {"amount":number,"description":"string","items":[{"desc":"string","amount":number}]}. amount là tổng tiền (VND, bỏ dấu chấm/phẩy). items là danh sách từng mục nếu có. Nếu không đọc được thì trả {"amount":0,"description":"Không đọc được","items":[]}.`;
+      const messages = [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+        { type: "text", text: `Đọc hóa đơn này. Trích xuất tổng tiền và mô tả. Danh mục phù hợp: ${catKeys.join(", ")}. Trả JSON.` }
+      ]}];
+      const text = await callClaude(system, messages, 500);
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);

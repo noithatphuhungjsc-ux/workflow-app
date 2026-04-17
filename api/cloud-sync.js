@@ -1,6 +1,11 @@
 /* Cloud sync API — uses service role key to bypass RLS */
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID, createHash } from "crypto";
+import { getAllowedOrigin, verifyAuth } from "./_middleware.js";
+import {
+  validateDisplayName, validateKey, validateDataSize,
+  validateEmail, validatePassword, sendValidationError,
+} from "./_validators.js";
 
 let _supa = null;
 function getSupabase() {
@@ -42,25 +47,11 @@ function resolveUserId(_supa, localId) {
   return localIdToUUID(localId);
 }
 
-const ALLOWED_ORIGINS = ["https://workflow-app-lemon.vercel.app", "http://localhost:5173"];
-function getAllowedOrigin(req) {
-  const origin = req.headers.origin || "";
-  if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  if (origin.startsWith("https://workflow-app-") && origin.endsWith(".vercel.app")) return origin;
-  return ALLOWED_ORIGINS[0];
-}
-
-// Verify Supabase JWT and return user ID (null if invalid/missing)
-async function verifyAuth(req, supa) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) return null;
-  const token = authHeader.slice(7);
-  try {
-    const { data: { user }, error } = await supa.auth.getUser(token);
-    if (error || !user) return null;
-    return user.id;
-  } catch { return null; }
-}
+// Bootstrap actions run BEFORE the caller has a Supabase JWT (first-time account
+// setup). They are intentionally left unauthenticated because the caller supplies
+// email+password / displayName they already own — no server-side privilege is
+// granted beyond what the caller provided. Add CAPTCHA / IP rate limit if abused.
+const BOOTSTRAP_ACTIONS = new Set(["ensure_auth", "ensure_profile"]);
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", getAllowedOrigin(req));
@@ -71,10 +62,38 @@ export default async function handler(req, res) {
   const supa = getSupabase();
   if (!supa) return res.status(500).json({ error: "Supabase not configured" });
 
+  // Auth gate — required for all actions except bootstrap
+  const action = (req.body && req.body.action) || null;
+  let authUser = null;
+  if (!BOOTSTRAP_ACTIONS.has(action)) {
+    authUser = await verifyAuth(req);
+    if (!authUser) return res.status(401).json({ error: "unauthorized" });
+    // Destructive admin action
+    if (action === "cleanup_profiles" && authUser.role !== "admin") {
+      return res.status(403).json({ error: "forbidden: admin required" });
+    }
+  }
+
+  // Enforce that the authenticated user only touches their own user_id
+  // (admin bypasses). Returns true if allowed, false if denied (403 sent).
+  function canAccess(rawUserId) {
+    if (!authUser || authUser.role === "admin") return true;
+    const resolved = resolveUserId(supa, rawUserId);
+    if (authUser.userId === resolved) return true;
+    res.status(403).json({ error: "forbidden: cannot access other user data" });
+    return false;
+  }
+
   // GET: load user data
   if (req.method === "GET") {
     const { userId: rawUserId, key } = req.query;
     if (!rawUserId) return res.status(400).json({ error: "Missing userId" });
+    if (!canAccess(rawUserId)) return;
+    // key is optional on GET (load all keys when absent); validate only if provided
+    if (key) {
+      const keyErr = validateKey(key);
+      if (keyErr) return sendValidationError(res, keyErr);
+    }
     const userId = await resolveUserId(supa, rawUserId);
 
     const query = supa.from("user_data").select("key, value");
@@ -95,6 +114,8 @@ export default async function handler(req, res) {
     // Ensure profile exists for local accounts
     if (action === "ensure_profile") {
       if (!userId || !displayName) return res.status(400).json({ error: "Missing userId or displayName" });
+      const dnErr = validateDisplayName(displayName);
+      if (dnErr) return sendValidationError(res, dnErr);
       const { data: existing } = await supa.from("profiles").select("id").eq("display_name", displayName).maybeSingle();
       if (existing) return res.json({ ok: true, profileId: existing.id });
       // Create profile with generated UUID (profiles.id is uuid type)
@@ -111,6 +132,14 @@ export default async function handler(req, res) {
     if (action === "ensure_auth") {
       const { email, password, displayName: dn } = req.body;
       if (!email || !password) return res.status(400).json({ error: "Missing email or password" });
+      const emailErr = validateEmail(email);
+      if (emailErr) return sendValidationError(res, emailErr);
+      const pwErr = validatePassword(password);
+      if (pwErr) return sendValidationError(res, pwErr);
+      if (dn != null) {
+        const dnErr = validateDisplayName(dn);
+        if (dnErr) return sendValidationError(res, dnErr);
+      }
       // Check if user already exists
       const { data: { users } } = await supa.auth.admin.listUsers({ filter: email });
       const existing = (users || []).find(u => u.email === email);
@@ -180,6 +209,11 @@ export default async function handler(req, res) {
 
     // Default: save user data
     if (!userId || !key) return res.status(400).json({ error: "Missing userId or key" });
+    if (!canAccess(userId)) return;
+    const keyErr = validateKey(key);
+    if (keyErr) return sendValidationError(res, keyErr);
+    const sizeErr = validateDataSize(data);
+    if (sizeErr) return sendValidationError(res, sizeErr);
     const resolvedId = await resolveUserId(supa, userId);
 
     // SERVER-SIDE GUARD: If clear_timestamp exists, reject writes of stale data

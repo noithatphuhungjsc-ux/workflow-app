@@ -1,3 +1,6 @@
+import { requireAuth, getAllowedOrigin } from './_middleware.js';
+import { validateMessages, sendValidationError } from './_validators.js';
+
 // Rate limiting: simple in-memory store (resets on cold start)
 const rateMap = new Map();
 const RATE_LIMIT = 30; // max requests per minute
@@ -14,23 +17,19 @@ function checkRate(ip) {
   return entry.count <= RATE_LIMIT;
 }
 
-const ALLOWED_ORIGINS = ["https://workflow-app-lemon.vercel.app", "http://localhost:5173"];
-function getAllowedOrigin(req) {
-  const origin = req.headers.origin || "";
-  if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  if (origin.startsWith("https://workflow-app-") && origin.endsWith(".vercel.app")) return origin;
-  return ALLOWED_ORIGINS[0];
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', getAllowedOrigin(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Rate limiting
+  // Require authenticated user (prevents anonymous Anthropic credit burn)
+  const user = await requireAuth(req, res);
+  if (!user) return; // 401 already sent by requireAuth
+
+  // Rate limiting (defense in depth — per IP on top of auth)
   const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
   if (!checkRate(clientIp)) {
     return res.status(429).json({ error: 'Quá nhiều yêu cầu. Vui lòng đợi 1 phút.' });
@@ -39,15 +38,13 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
 
-  try {
-    const { system, messages, max_tokens } = req.body;
+  const { system, messages, max_tokens } = req.body || {};
+  const msgErr = validateMessages(messages);
+  if (msgErr) return sendValidationError(res, msgErr);
+  // Cap max_tokens to prevent abuse
+  const safeMaxTokens = Math.min(max_tokens || 1500, 2500);
 
-    // Validate input
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'Invalid request' });
-    }
-    // Cap max_tokens to prevent abuse
-    const safeMaxTokens = Math.min(max_tokens || 1500, 2500);
+  try {
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

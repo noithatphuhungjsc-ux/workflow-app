@@ -2,6 +2,7 @@
    CLOUD SYNC — Supabase backup & restore
    ================================================================ */
 import { loadJSON } from "./storage";
+import { authHeaders } from "./authHeaders";
 
 const _syncTimers = {};
 const SYNC_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
@@ -12,11 +13,11 @@ export async function cloudSave(_supabase, userId, key, data) {
   try {
     const res = await fetch("/api/cloud-sync", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authHeaders(),
       body: JSON.stringify({ userId, key, data }),
     });
     const result = await res.json();
-    if (!res.ok) console.warn("Cloud save error:", key, result.error);
+    if (!res.ok) console.warn("[cloudSave]", key, result.error, result.detail || "");
     return res.ok;
   } catch (e) { console.warn("Cloud save failed:", e); return false; }
 }
@@ -25,9 +26,9 @@ export async function cloudLoad(_supabase, userId, key) {
   if (!userId) return null;
   try {
     const url = `/api/cloud-sync?userId=${encodeURIComponent(userId)}${key ? `&key=${encodeURIComponent(key)}` : ""}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: await authHeaders() });
     const result = await res.json();
-    if (!res.ok) { console.warn("[WF] Cloud load error:", key, result.error); return null; }
+    if (!res.ok) { console.warn("[cloudLoad]", key, result.error, result.detail || ""); return null; }
     if (key && result.data?.length) return result.data[0];
     return result.data?.length ? result.data : null;
   } catch (e) { console.warn("[WF] Cloud load failed:", key, e.message); return null; }
@@ -49,9 +50,9 @@ export async function cloudSaveAll(_supabase, userId) {
 export async function cloudLoadAll(_supabase, userId) {
   if (!userId) return null;
   try {
-    const res = await fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}`, { headers: await authHeaders() });
     const result = await res.json();
-    if (!res.ok) { console.warn("[WF] Cloud loadAll error:", result.error); return null; }
+    if (!res.ok) { console.warn("[cloudLoadAll]", result.error, result.detail || ""); return null; }
     return result.data || null;
   } catch (e) { console.warn("[WF] Cloud loadAll failed:", e.message); return null; }
 }
@@ -60,12 +61,21 @@ export async function cloudLoadAll(_supabase, userId) {
 export async function cloudLoadKeys(_supabase, userId, keys) {
   if (!userId || !keys?.length) return null;
   try {
-    const results = await Promise.all(keys.map(key =>
-      fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}&key=${encodeURIComponent(key)}`)
-        .then(r => r.json())
-        .then(r => r.data?.[0] || null)
-        .catch(e => { console.warn("[WF] Cloud loadKey failed:", key, e.message); return null; })
-    ));
+    const headers = await authHeaders();
+    const results = await Promise.all(keys.map(async key => {
+      try {
+        const res = await fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}&key=${encodeURIComponent(key)}`, { headers });
+        const json = await res.json();
+        if (!res.ok) {
+          console.warn("[cloudLoadKeys]", key, json.error, json.detail || "");
+          return null;
+        }
+        return json.data?.[0] ?? null;
+      } catch (err) {
+        console.warn("[cloudLoadKeys]", key, "network error:", err?.message);
+        return null;
+      }
+    }));
     return results.filter(Boolean);
   } catch (e) { console.warn("[WF] Cloud loadKeys failed:", e.message); return null; }
 }
