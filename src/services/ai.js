@@ -1,27 +1,34 @@
 /* ================================================================
    CLAUDE API — always through server proxy (key never exposed to browser)
    ================================================================ */
+import { authHeaders } from "./authHeaders";
 
 export async function callClaude(system, messages, maxTokens = 700) {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(),
     body: JSON.stringify({ system, messages, max_tokens: maxTokens }),
   });
   const d = await res.json();
-  if (d.error) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error));
+  if (d.error) {
+    const msg = typeof d.error === "string" ? d.error : JSON.stringify(d.error);
+    throw new Error(msg + (d.detail ? `: ${d.detail}` : ""));
+  }
   return d.content?.[0]?.text || "";
 }
 
 export async function callClaudeStream(system, messages, onDelta, maxTokens = 1500) {
   const res = await fetch("/api/chat-stream", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(),
     body: JSON.stringify({ system, messages, max_tokens: maxTokens }),
   });
   if (!res.ok) {
     let errMsg = `API error (${res.status})`;
-    try { const j = await res.json(); errMsg = j.error || errMsg; } catch {}
+    try {
+      const j = await res.json();
+      if (j.error) errMsg = j.error + (j.detail ? `: ${j.detail}` : "");
+    } catch {}
     throw new Error(errMsg);
   }
 

@@ -112,15 +112,6 @@ function SupabaseAutoLogin() {
     localStorage.setItem("wf_auth_synced_v4", "1");
   }, []);
 
-  // One-time: cleanup old OAuth profiles
-  useEffect(() => {
-    if (localStorage.getItem("wf_cleanup_v3")) return;
-    fetch("/api/cloud-sync", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "cleanup_profiles" }),
-    }).then(() => localStorage.setItem("wf_cleanup_v3", "1")).catch(() => {});
-  }, []);
-
   return null;
 }
 

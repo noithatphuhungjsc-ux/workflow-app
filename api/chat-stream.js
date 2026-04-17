@@ -1,4 +1,6 @@
 // Node.js Serverless Function (not Edge — Edge IPs may be blocked by Anthropic)
+import { requireAuth, getAllowedOrigin } from './_middleware.js';
+import { validateMessages, sendValidationError } from './_validators.js';
 
 // Simple rate limiting — per-instance (resets on cold start)
 const rateMap = new Map();
@@ -16,23 +18,19 @@ function checkRate(ip) {
   return entry.count <= RATE_LIMIT;
 }
 
-const ALLOWED_ORIGINS = ["https://workflow-app-lemon.vercel.app", "http://localhost:5173"];
-function getAllowedOrigin(origin) {
-  if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  if (origin && origin.startsWith("https://workflow-app-") && origin.endsWith(".vercel.app")) return origin;
-  return ALLOWED_ORIGINS[0];
-}
-
 export default async function handler(req, res) {
-  const origin = req.headers.origin || "";
-  res.setHeader('Access-Control-Allow-Origin', getAllowedOrigin(origin));
+  res.setHeader('Access-Control-Allow-Origin', getAllowedOrigin(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
-  // Rate limiting
+  // Require authenticated user (prevents anonymous Anthropic credit burn)
+  const user = await requireAuth(req, res);
+  if (!user) return; // 401 already sent by requireAuth
+
+  // Rate limiting (defense in depth — per IP on top of auth)
   const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0]?.trim() || 'unknown';
   if (!checkRate(clientIp)) {
     return res.status(429).json({ error: 'Quá nhiều yêu cầu. Vui lòng đợi 1 phút.' });
@@ -42,9 +40,8 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
 
   const { system, messages, max_tokens } = req.body || {};
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'Invalid request' });
-  }
+  const msgErr = validateMessages(messages);
+  if (msgErr) return sendValidationError(res, msgErr);
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
