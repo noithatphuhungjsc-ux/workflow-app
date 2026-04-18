@@ -363,7 +363,7 @@ export function UserMenu({ user, onLogout, onSettings }) {
                   </div>
                   <div style={{ flex:1, textAlign:"left", minWidth:0 }}>
                     <div style={{ fontSize:12, fontWeight: isCurrent ? 700 : 500, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {acc.name.split(" ").pop()}
+                      {acc.name}
                     </div>
                   </div>
                   <span style={{ fontSize:9, color:acc.color, fontWeight:700 }}>{ROLE_LABELS[acc.role]}</span>
