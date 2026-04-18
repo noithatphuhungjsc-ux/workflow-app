@@ -26,6 +26,26 @@ const LOCAL_ID_TO_UUID = {
   duc:   "516cb441-6615-4df4-9993-0fe16b5acaf0",
 };
 
+// 2-ID bridge: user_data table is keyed by LOCAL_ID_TO_UUID (deterministic),
+// but auth.users.id is a random Supabase UUID. canAccess uses this email map
+// to confirm a logged-in user is the rightful owner of a local-id slot.
+const LOCAL_ID_TO_EMAIL = {
+  trinh: "trinh@workflow.vn",
+  lien:  "lien@workflow.vn",
+  hung:  "hung@workflow.vn",
+  mai:   "mai@workflow.vn",
+  duc:   "duc@workflow.vn",
+  tung:  "tung@workflow.vn",
+  tam:   "tam@workflow.vn",
+  duong: "duong@workflow.vn",
+  minh:  "minh@workflow.vn",
+  lien2: "lien2@workflow.vn",
+  tuan:  "tuan@workflow.vn",
+  trang: "trang@workflow.vn",
+  hai:   "hai@workflow.vn",
+  hoai:  "hoai@workflow.vn",
+};
+
 // Generate a deterministic UUID from local ID (for accounts not yet in mapping)
 function localIdToUUID(localId) {
   const hash = createHash("sha256").update("workflow-" + localId).digest("hex");
@@ -80,6 +100,10 @@ export default async function handler(req, res) {
     if (!authUser || authUser.role === "admin") return true;
     const resolved = resolveUserId(supa, rawUserId);
     if (authUser.userId === resolved) return true;
+    // 2-ID bridge: rawUserId is a local id ("trinh") that resolves to a
+    // deterministic UUID for user_data, but authUser.userId is a random
+    // Supabase auth UUID. Match by email via LOCAL_ID_TO_EMAIL.
+    if (LOCAL_ID_TO_EMAIL[rawUserId] && authUser.email === LOCAL_ID_TO_EMAIL[rawUserId]) return true;
     res.status(403).json({ error: "forbidden: cannot access other user data" });
     return false;
   }
