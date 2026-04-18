@@ -49,14 +49,20 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
       const merged = accountList
         .filter(a => a.id !== myLocalId) // exclude self
         .map(a => {
-          // Match with Supabase profile by name
+          // Match with Supabase profile by name. If no profile exists yet
+          // (account never logged in), `notReady` flags the row so the UI
+          // can disable picking — otherwise we'd insert the local string id
+          // ("lien") into conversation_members.user_id, which then never
+          // matches the auth UUID created on first login → RLS reject all
+          // future messages in that conversation.
           const supaMatch = supaProfiles.find(p => norm(p.display_name) === norm(a.name));
           return {
-            id: supaMatch?.id || a.id, // prefer Supabase UUID if available
+            id: supaMatch?.id || a.id,
             display_name: supaMatch?.display_name || a.name,
             avatar_color: supaMatch?.avatar_color || a.color,
             localId: a.id,
             title: a.title || "",
+            notReady: !supaMatch,
           };
         });
 
@@ -180,18 +186,24 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
           )}
           {filtered.map(m => {
             const isSel = selected.includes(m.id);
+            const disabled = m.notReady;
             return (
-              <div key={m.id} className="tap"
-                onClick={() => mode === "dm" ? onSelect({ type: "dm", userId: m.id }) : toggleMember(m.id)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderBottom: `1px solid ${C.border}22`, cursor: "pointer" }}>
+              <div key={m.id} className={disabled ? "" : "tap"}
+                onClick={() => {
+                  if (disabled) return;
+                  mode === "dm" ? onSelect({ type: "dm", userId: m.id }) : toggleMember(m.id);
+                }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderBottom: `1px solid ${C.border}22`, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>
                 <div style={{ width: 36, height: 36, borderRadius: "50%", background: m.avatar_color || C.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
                   {(m.display_name || "?")[0].toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{m.display_name}</div>
-                  {m.title && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{m.title}</div>}
+                  {disabled
+                    ? <div style={{ fontSize: 11, color: "#e67e22", marginTop: 1 }}>Chưa đăng nhập lần nào — không thể tạo chat</div>
+                    : m.title && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{m.title}</div>}
                 </div>
-                {mode === "group" && (
+                {mode === "group" && !disabled && (
                   <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isSel ? C.accent : C.border}`, background: isSel ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700 }}>
                     {isSel && "\u2713"}
                   </div>
