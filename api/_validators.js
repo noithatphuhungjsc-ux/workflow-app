@@ -7,7 +7,7 @@ export const LIMITS = {
   MESSAGE_MAX_BYTES: 200 * 1024,       // 200KB per single message
   MESSAGES_MAX_COUNT: 30,
   EMAIL_MAX: 254,                      // RFC 5321
-  PASSWORD_MIN: 8,
+  PASSWORD_MIN: 6,
   PASSWORD_MAX: 128,
   OAUTH_CODE_MAX: 2000,
 };
