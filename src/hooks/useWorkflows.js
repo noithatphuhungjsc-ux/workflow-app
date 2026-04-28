@@ -121,3 +121,34 @@ export function useWorkflows() {
 
   return { workflows, loading, refresh: fetchAll, createWorkflow, updateWorkflow, deleteWorkflow };
 }
+
+/**
+ * Profiles grouped by department. For NewProjectModal phase assignment.
+ * Returns: { byDept: Map<dept_id, profile[]>, all: profile[], loading }
+ */
+export function useDepartmentProfiles() {
+  const [profiles, setProfiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, display_name, avatar_color, department_id, dept_role, is_dept_lead, role")
+        .order("dept_role", { ascending: true })
+        .order("display_name");
+      if (error) console.warn("[useDepartmentProfiles]", error.message);
+      setProfiles(data || []);
+      setLoading(false);
+    })();
+  }, []);
+
+  const byDept = new Map();
+  for (const p of profiles) {
+    if (!p.department_id) continue;
+    if (!byDept.has(p.department_id)) byDept.set(p.department_id, []);
+    byDept.get(p.department_id).push(p);
+  }
+  return { profiles, byDept, loading };
+}
