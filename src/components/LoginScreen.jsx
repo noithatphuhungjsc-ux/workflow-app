@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { C, TEAM_ACCOUNTS, DEV_ONLY_ACCOUNTS, ALL_ACCOUNTS, DEFAULT_PASSWORD } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
-const ACCOUNTS_VERSION = 9; // bump to force re-init (split dev accounts)
+const ACCOUNTS_VERSION = 10; // v10: 25 accounts (1 director + 24 test by department)
 const DEFAULT_ACCOUNTS = ALL_ACCOUNTS.map(a => ({ ...a, pw: DEFAULT_PASSWORD }));
 
 // Init default accounts with hashed passwords

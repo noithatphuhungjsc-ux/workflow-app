@@ -116,26 +116,46 @@ export const PAYMENT_SOURCES = {
 export const PROJECT_COLORS = ["#2980b9","#e67e22","#27ae60","#9b59b6","#d35400","#16a085","#c0392b","#2c3e50"];
 
 /* -- TEAM ACCOUNTS — single source of truth -- */
+// Đồng bộ với 25 account đã seed trong Supabase (1 Director + 8 phòng × 3 người)
 export const TEAM_ACCOUNTS = [
-  { id: "trinh",  name: "Nguyen Duy Trinh", email: "trinh@workflow.vn",  phone: "+84983523868", role: "director",     title: "Giám đốc",       color: "#9b59b6" },
-  { id: "lien",   name: "Liên Kế toán",     email: "lien@workflow.vn",   phone: "",              role: "accountant",  title: "Kế toán",        color: "#e74c3c" },
-  { id: "tung",   name: "Tùng Tổ trưởng",   email: "tung@workflow.vn",   phone: "",              role: "manager",     title: "Tổ trưởng",      color: "#2980b9" },
-  { id: "tam",    name: "Tâm Tổ phó",       email: "tam@workflow.vn",    phone: "",              role: "manager",     title: "Tổ phó",         color: "#16a085" },
-  { id: "duong",  name: "Đương Tổ phó",     email: "duong@workflow.vn",  phone: "",              role: "manager",     title: "Tổ phó",         color: "#27ae60" },
-  { id: "minh",   name: "Minh Hoàn thiện",  email: "minh@workflow.vn",   phone: "",              role: "staff",       title: "Hoàn thiện",     color: "#3498db" },
-  { id: "lien2",  name: "Liển Hoàn thiện",  email: "lien2@workflow.vn",  phone: "",              role: "staff",       title: "Hoàn thiện",     color: "#1abc9c" },
-  { id: "tuan",   name: "Tuấn Thợ mộc",    email: "tuan@workflow.vn",   phone: "",              role: "staff",       title: "Thợ mộc",        color: "#d35400" },
-  { id: "trang",  name: "Trang Táo đỏ",     email: "trang@workflow.vn",  phone: "",              role: "staff",       title: "Táo đỏ",         color: "#c0392b" },
-  { id: "hai",    name: "Hải Thợ mộc",      email: "hai@workflow.vn",    phone: "",              role: "staff",       title: "Thợ mộc",        color: "#e67e22" },
-  { id: "hoai",   name: "Hoài Táo đỏ",      email: "hoai@workflow.vn",   phone: "",              role: "staff",       title: "Táo đỏ",         color: "#e74c3c" },
+  // Giám đốc
+  { id: "trinh",     name: "Nguyen Duy Trinh", email: "trinh@workflow.vn",   phone: "+84983523868", role: "director", title: "Giám đốc",          color: "#9b59b6" },
+  // Kinh doanh
+  { id: "an_kd",     name: "Nguyễn Văn An",    email: "an.kd@workflow.vn",   phone: "", role: "manager", title: "Trưởng phòng KD",  color: "#6a7fd4" },
+  { id: "binh_kd",   name: "Trần Thị Bình",    email: "binh.kd@workflow.vn", phone: "", role: "manager", title: "Phó phòng KD",     color: "#5b6fc8" },
+  { id: "cuong_kd",  name: "Lê Văn Cường",     email: "cuong.kd@workflow.vn",phone: "", role: "staff",   title: "NV Kinh doanh",    color: "#4d63c4" },
+  // Marketing
+  { id: "dung_mkt",  name: "Phạm Thị Dung",    email: "dung.mkt@workflow.vn",phone: "", role: "manager", title: "Trưởng Marketing", color: "#e67e22" },
+  { id: "ha_mkt",    name: "Hoàng Minh Hà",    email: "ha.mkt@workflow.vn",  phone: "", role: "manager", title: "Phó Marketing",    color: "#d4751e" },
+  { id: "khoa_mkt",  name: "Vũ Đăng Khoa",     email: "khoa.mkt@workflow.vn",phone: "", role: "staff",   title: "NV Marketing",     color: "#c0681a" },
+  // Thiết kế
+  { id: "linh_tk",   name: "Đặng Thị Linh",    email: "linh.tk@workflow.vn", phone: "", role: "manager", title: "Trưởng Thiết kế",  color: "#16a085" },
+  { id: "mai_tk",    name: "Bùi Hồng Mai",     email: "mai.tk@workflow.vn",  phone: "", role: "manager", title: "Phó Thiết kế",     color: "#138e75" },
+  { id: "nam_tk",    name: "Phan Hữu Nam",     email: "nam.tk@workflow.vn",  phone: "", role: "staff",   title: "NV Thiết kế",      color: "#0f7c66" },
+  // Kỹ thuật SX
+  { id: "phong_kt",  name: "Nguyễn Quang Phong",email: "phong.kt@workflow.vn",phone: "", role: "manager", title: "Trưởng KTSX",      color: "#2980b9" },
+  { id: "quan_kt",   name: "Trần Đức Quân",    email: "quan.kt@workflow.vn", phone: "", role: "manager", title: "Phó KTSX",         color: "#246f9f" },
+  { id: "son_kt",    name: "Lê Hoàng Sơn",     email: "son.kt@workflow.vn",  phone: "", role: "staff",   title: "NV KTSX",          color: "#205f8a" },
+  // Sản xuất
+  { id: "tam_sx",    name: "Phạm Văn Tâm",     email: "tam.sx@workflow.vn",  phone: "", role: "manager", title: "Trưởng Sản xuất",  color: "#27ae60" },
+  { id: "uy_sx",     name: "Hoàng Quốc Uy",    email: "uy.sx@workflow.vn",   phone: "", role: "manager", title: "Phó Sản xuất",     color: "#229954" },
+  { id: "vinh_sx",   name: "Vũ Tấn Vinh",      email: "vinh.sx@workflow.vn", phone: "", role: "staff",   title: "NV Sản xuất",      color: "#1d8348" },
+  // Giám sát
+  { id: "anh_gs",    name: "Đặng Tuấn Anh",    email: "anh.gs@workflow.vn",  phone: "", role: "manager", title: "Trưởng Giám sát",  color: "#c0392b" },
+  { id: "bao_gs",    name: "Bùi Gia Bảo",      email: "bao.gs@workflow.vn",  phone: "", role: "manager", title: "Phó Giám sát",     color: "#a83226" },
+  { id: "chi_gs",    name: "Phan Trung Chí",   email: "chi.gs@workflow.vn",  phone: "", role: "staff",   title: "NV Giám sát",      color: "#922b21" },
+  // CSKH
+  { id: "diem_cs",   name: "Nguyễn Thị Diễm",  email: "diem.cs@workflow.vn", phone: "", role: "manager", title: "Trưởng CSKH",      color: "#3aaa72" },
+  { id: "em_cs",     name: "Trần Ngọc Em",     email: "em.cs@workflow.vn",   phone: "", role: "manager", title: "Phó CSKH",         color: "#329963" },
+  { id: "phuc_cs",   name: "Lê Hồng Phúc",     email: "phuc.cs@workflow.vn", phone: "", role: "staff",   title: "NV CSKH",          color: "#2a8855" },
+  // Kế toán
+  { id: "giang_ke",  name: "Phạm Thị Giang",   email: "giang.kt@workflow.vn",phone: "", role: "accountant", title: "Trưởng Kế toán",color: "#e74c3c" },
+  { id: "hong_ke",   name: "Hoàng Thu Hồng",   email: "hong.kt@workflow.vn", phone: "", role: "accountant", title: "Phó Kế toán",   color: "#cf3a2b" },
+  { id: "khanh_ke",  name: "Vũ Khánh Linh",    email: "khanh.kt@workflow.vn",phone: "", role: "accountant", title: "NV Kế toán",    color: "#b73225" },
 ];
 
-// Dev-only accounts — chỉ hiện khi ?dev hoặc đăng nhập với director
-export const DEV_ONLY_ACCOUNTS = [
-  { id: "hung",   name: "Pham Van Hung",     email: "hung@workflow.vn",   phone: "",              role: "sales",       title: "Kinh doanh",     color: "#6a7fd4" },
-  { id: "mai",    name: "Tran Thi Mai",      email: "mai@workflow.vn",    phone: "",              role: "hr",          title: "Nhân sự",        color: "#3aaa72" },
-  { id: "duc",    name: "Le Minh Duc",       email: "duc@workflow.vn",    phone: "",              role: "construction", title: "Thi công",      color: "#e67e22" },
-];
+// Dev-only accounts — bỏ trống, mọi account đều dùng chung
+export const DEV_ONLY_ACCOUNTS = [];
 
 // All accounts (for auth sync, cleanup, etc.)
 export const ALL_ACCOUNTS = [...TEAM_ACCOUNTS, ...DEV_ONLY_ACCOUNTS];
