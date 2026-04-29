@@ -5,16 +5,13 @@ import { supabase } from "../lib/supabase";
 const DEV_IDS = new Set(DEV_ONLY_ACCOUNTS.map(a => a.id));
 
 const GROUP_CATEGORIES = [
-  { key: "work",    icon: "\uD83D\uDCBC", label: "Cong viec",  color: C.accent },
-  { key: "family",  icon: "\uD83C\uDFE0", label: "Gia dinh",   color: "#e67e22" },
-  { key: "friends", icon: "\uD83C\uDF89", label: "Ban be",      color: C.green },
-  { key: "project", icon: "\uD83D\uDCC1", label: "Du an",       color: C.purple },
-  { key: "class",   icon: "\uD83C\uDF93", label: "Lop hoc",     color: "#3498db" },
-  { key: "other",   icon: "\uD83D\uDCAC", label: "Khac",        color: C.muted },
+  { key: "work",    icon: "\uD83D\uDCBC", label: "C\u00F4ng vi\u1EC7c", color: C.accent },
+  { key: "project", icon: "\uD83D\uDCC1", label: "D\u1EF1 \u00E1n",     color: C.purple },
+  { key: "class",   icon: "\uD83C\uDF93", label: "Kh\u00F3a h\u1ECDc",  color: "#3498db" },
 ];
 
 export function getCategoryInfo(key) {
-  return GROUP_CATEGORIES.find(c => c.key === key) || GROUP_CATEGORIES[GROUP_CATEGORIES.length - 1];
+  return GROUP_CATEGORIES.find(c => c.key === key) || GROUP_CATEGORIES[0];
 }
 
 export { GROUP_CATEGORIES };

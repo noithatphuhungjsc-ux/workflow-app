@@ -11,11 +11,14 @@ import { useDepartments, useDepartmentProfiles, useDepartmentCRUD } from "../hoo
 const ROLE_LABELS = { lead: "Trưởng phòng", deputy: "Phó phòng", staff: "Nhân viên" };
 const ROLE_COLORS = { lead: "#9b59b6", deputy: "#3498db", staff: "#7f8c8d" };
 
-function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, onAssign, onRemove, onSetRole, onUpdateDept }) {
+function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, onAssign, onRemove, onSetRole, onUpdateDept, onDeleteDept }) {
   const [editName, setEditName] = useState(dept.name);
   const [editIcon, setEditIcon] = useState(dept.icon || "");
+  const [editCode, setEditCode] = useState(dept.code || "");
+  const [editSort, setEditSort] = useState(dept.sort_order || 0);
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
 
   const unassigned = useMemo(() =>
     allProfiles.filter(p =>
@@ -27,9 +30,22 @@ function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, 
   );
 
   const saveDeptInfo = async () => {
-    const ok = await onUpdateDept(dept.id, { name: editName.trim(), icon: editIcon.trim() || null });
-    if (!ok) alert("Lỗi cập nhật phòng ban — kiểm tra quyền");
+    const ok = await onUpdateDept(dept.id, {
+      name: editName.trim(),
+      icon: editIcon.trim() || null,
+      code: editCode.trim(),
+      sort_order: parseInt(editSort, 10) || 0,
+    });
+    if (!ok) alert("Lỗi cập nhật phòng ban — kiểm tra quyền hoặc trùng mã");
   };
+
+  const doDelete = async () => {
+    const ok = await onDeleteDept(dept.id);
+    if (ok) onClose?.();
+    else alert("Lỗi xóa — kiểm tra quyền hoặc còn ràng buộc dữ liệu");
+  };
+
+  const isDirty = editName !== dept.name || editIcon !== (dept.icon || "") || editCode !== (dept.code || "") || parseInt(editSort, 10) !== (dept.sort_order || 0);
 
   return (
     <div style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(0,0,0,.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={onClose}>
@@ -48,16 +64,48 @@ function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, 
         {isDirector && (
           <div style={{ marginBottom:16, padding:12, background:C.card, borderRadius:12, border:`1px solid ${C.border}` }}>
             <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:6 }}>THÔNG TIN PHÒNG BAN</div>
-            <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+            <div style={{ display:"flex", gap:6, marginBottom:6 }}>
               <input value={editIcon} onChange={e => setEditIcon(e.target.value)} placeholder="Icon" maxLength={2}
                 style={{ width:50, fontSize:18, textAlign:"center", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px", color:C.text, background:C.bg }} />
               <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Tên phòng"
                 style={{ flex:1, fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 10px", color:C.text, background:C.bg }} />
             </div>
-            <button className="tap" onClick={saveDeptInfo} disabled={!editName.trim() || (editName === dept.name && editIcon === (dept.icon || ""))}
-              style={{ padding:"6px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:11, fontWeight:700, opacity: editName.trim() ? 1 : 0.4 }}>
-              Lưu thay đổi
-            </button>
+            <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+              <input value={editCode} onChange={e => setEditCode(e.target.value)} placeholder="Mã (slug, vd: kinh-doanh)"
+                style={{ flex:2, fontSize:11, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", color:C.text, background:C.bg, fontFamily:"monospace" }} />
+              <input type="number" value={editSort} onChange={e => setEditSort(e.target.value)} placeholder="Thứ tự"
+                style={{ width:70, fontSize:12, textAlign:"center", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px", color:C.text, background:C.bg }} />
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              <button className="tap" onClick={saveDeptInfo} disabled={!editName.trim() || !editCode.trim() || !isDirty}
+                style={{ flex:1, padding:"7px 14px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:11, fontWeight:700, opacity: (editName.trim() && editCode.trim() && isDirty) ? 1 : 0.4 }}>
+                Lưu thay đổi
+              </button>
+              <button className="tap" onClick={() => setConfirmDel(true)}
+                style={{ padding:"7px 14px", borderRadius:8, border:`1px solid ${C.red}`, background:"transparent", color:C.red, fontSize:11, fontWeight:700 }}>
+                🗑 Xóa phòng
+              </button>
+            </div>
+            {confirmDel && (
+              <div style={{ marginTop:10, padding:10, background:`${C.red}10`, borderRadius:8, border:`1px solid ${C.red}55` }}>
+                <div style={{ fontSize:12, color:C.red, fontWeight:700, marginBottom:4 }}>⚠️ Xác nhận xóa</div>
+                <div style={{ fontSize:11, color:C.text, lineHeight:1.5, marginBottom:8 }}>
+                  Phòng <b>{dept.name}</b> sẽ bị xóa.
+                  {deptMembers.length > 0 && <> {deptMembers.length} thành viên sẽ chuyển về "chưa có phòng" (không bị mất tài khoản).</>}
+                  {" "}Các bước trong quy trình thuộc phòng này sẽ mất gán phòng (vẫn còn nội dung). KHÔNG hoàn tác được.
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button className="tap" onClick={() => setConfirmDel(false)}
+                    style={{ flex:1, padding:"6px", borderRadius:6, border:`1px solid ${C.border}`, background:C.card, color:C.sub, fontSize:11, fontWeight:600 }}>
+                    Huỷ
+                  </button>
+                  <button className="tap" onClick={doDelete}
+                    style={{ flex:1, padding:"6px", borderRadius:6, border:"none", background:C.red, color:"#fff", fontSize:11, fontWeight:700 }}>
+                    Xóa hẳn
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -143,8 +191,26 @@ function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, 
 export default function DeptTab() {
   const { departments, loading: deptLoading, refresh: refreshDepts } = useDepartments();
   const { profiles, byDept, loading: profLoading, assignMember, removeMember, setRole } = useDepartmentProfiles();
-  const { updateDept } = useDepartmentCRUD(refreshDepts);
+  const { createDept, updateDept, deleteDept } = useDepartmentCRUD(refreshDepts);
   const [activeId, setActiveId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newIcon, setNewIcon] = useState("🏢");
+  const [createErr, setCreateErr] = useState("");
+
+  const submitCreate = async () => {
+    setCreateErr("");
+    if (!newCode.trim() || !newName.trim()) { setCreateErr("Cần nhập mã và tên"); return; }
+    const code = newCode.trim().toLowerCase().replace(/\s+/g, "-");
+    const sort_order = (departments.reduce((m, d) => Math.max(m, d.sort_order || 0), 0)) + 1;
+    const created = await createDept({ code, name: newName.trim(), icon: newIcon.trim() || null, sort_order });
+    if (created) {
+      setAdding(false); setNewCode(""); setNewName(""); setNewIcon("🏢");
+    } else {
+      setCreateErr("Tạo thất bại — có thể trùng mã hoặc thiếu quyền");
+    }
+  };
 
   const userRole = (() => {
     try { return JSON.parse(localStorage.getItem("wf_session") || "{}").role || "staff"; }
@@ -211,6 +277,41 @@ export default function DeptTab() {
             </div>
           );
         })()}
+
+        {/* Tạo phòng ban mới (director only) */}
+        {isDirector && (
+          <div style={{ marginTop:14 }}>
+            {!adding ? (
+              <button className="tap" onClick={() => setAdding(true)}
+                style={{ width:"100%", padding:"12px", borderRadius:12, border:`1px dashed ${C.accent}55`, background:C.accentD, color:C.accent, fontSize:13, fontWeight:700 }}>
+                + Tạo phòng ban mới
+              </button>
+            ) : (
+              <div style={{ padding:14, background:C.card, borderRadius:12, border:`1px solid ${C.accent}66` }}>
+                <div style={{ fontSize:12, fontWeight:700, color:C.accent, marginBottom:10 }}>Phòng ban mới</div>
+                <div style={{ display:"flex", gap:6, marginBottom:6 }}>
+                  <input value={newIcon} onChange={e => setNewIcon(e.target.value)} placeholder="Icon" maxLength={2}
+                    style={{ width:50, fontSize:18, textAlign:"center", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px", color:C.text, background:C.bg }} />
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Tên phòng (vd: Pháp chế)"
+                    style={{ flex:1, fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 10px", color:C.text, background:C.bg }} />
+                </div>
+                <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="Mã (vd: phap-che) — chỉ chữ thường + dấu -"
+                  style={{ width:"100%", fontSize:11, border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 10px", color:C.text, background:C.bg, fontFamily:"monospace", boxSizing:"border-box", marginBottom:8 }} />
+                {createErr && <div style={{ fontSize:11, color:C.red, marginBottom:8 }}>⚠️ {createErr}</div>}
+                <div style={{ display:"flex", gap:6 }}>
+                  <button className="tap" onClick={() => { setAdding(false); setCreateErr(""); }}
+                    style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${C.border}`, background:C.bg, color:C.sub, fontSize:12, fontWeight:600 }}>
+                    Huỷ
+                  </button>
+                  <button className="tap" onClick={submitCreate} disabled={!newName.trim() || !newCode.trim()}
+                    style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:12, fontWeight:700, opacity:(newName.trim() && newCode.trim()) ? 1 : 0.4 }}>
+                    Tạo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {activeDept && (
@@ -224,6 +325,7 @@ export default function DeptTab() {
           onRemove={removeMember}
           onSetRole={setRole}
           onUpdateDept={updateDept}
+          onDeleteDept={deleteDept}
         />
       )}
     </div>
