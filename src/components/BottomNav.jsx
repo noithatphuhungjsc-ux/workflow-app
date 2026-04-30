@@ -1,7 +1,7 @@
 /* BottomNav — Bottom navigation bar + More menu bottom sheet */
 import React from "react";
 
-const MORE_TABS = ["requests","calendar","expense","dashboard","report","dev","attendance","ai"];
+const MORE_TABS = ["requests","calendar","expense","dashboard","report","attendance"];
 
 export default function BottomNav({ tab, setTab, chatUnread, moreMenuOpen, setMoreMenuOpen, settings, isDirector, C, t, hasPermission }) {
   return (

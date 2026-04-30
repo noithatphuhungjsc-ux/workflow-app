@@ -196,7 +196,7 @@ function MainApp({ user, onLogout }) {
     projects, addProject, patchProject, deleteProject, hardDelete,
   } = useStore();
 
-  const TAB_ORDER = ["projects","tasks","dept","requests","inbox","calendar","expense","dashboard","report","ai"];
+  const TAB_ORDER = ["projects","tasks","dept","requests","inbox","calendar","expense","dashboard","report"];
   const [woryOpen, setWoryOpen] = useState(false);
   const [tab, _setTab]        = useState(() => sessionStorage.getItem("wf_tab") || settings.defaultTab || "tasks");
   const [viewScope, setViewScope] = useState("mine"); // "mine" | "team" — director toggle in Việc tôi
