@@ -781,10 +781,16 @@ function MainApp({ user, onLogout }) {
       const q = searchQ.trim().toLowerCase();
       list = list.filter(t => t.title?.toLowerCase().includes(q) || t.assignee?.toLowerCase().includes(q));
     }
-    // Staff: only see tasks owned by them or assigned to them
-    // (RLS already handles this on Supabase side, this is a client-side safety filter)
-    if (isStaff && myName) {
-      list = list.filter(t => !t.assignee || t.assignee === myName || t.ownerId === supaSession?.user?.id || t.assigneeId === supaSession?.user?.id);
+    // "Việc tôi" tab — chỉ task của mình (assigned, owned, hoặc not-assigned mà mình tạo)
+    // Áp cho mọi role kể cả director (director xem tổng thể qua Dashboard / Dự án)
+    const supaId = supaSession?.user?.id;
+    if (myName) {
+      list = list.filter(t =>
+        t.ownerId === supaId ||
+        t.assigneeId === supaId ||
+        (t.assignee && t.assignee === myName) ||
+        (!t.assignee && !t.assigneeId && t.ownerId === supaId)
+      );
     }
     // Project filter
     if (projFilter === "standalone") list = list.filter(t => !t.projectId);

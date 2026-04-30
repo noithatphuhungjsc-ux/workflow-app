@@ -144,54 +144,16 @@ export default function TasksTabContent({
           </button>
         </div>
       )}
-      {/* Project dashboard removed — filters below are sufficient */}
-      <ProjectFilters projects={projects} filter={projFilter} setFilter={setProjFilter} onAdd={() => setNewProjOpen(true)} onOpen={setProjDetail} isStaff={isStaff} myName={myName} onDeleteAll={async () => {
-        if (!window.confirm("Xoa tat ca du an va cong viec lien quan?")) return;
-        const choice = "2";
-        // 1. Collect all member localIds from all projects
-        const allLids = new Set();
-        const DEV_NAME_MAP = Object.fromEntries(TEAM_ACCOUNTS.map(a => [a.name, a.id]));
-        projects.forEach(p => p.members?.forEach(m => { const lid = DEV_NAME_MAP[m.name]; if (lid) allLids.add(lid); }));
-        const myId = (() => { try { return JSON.parse(localStorage.getItem("wf_session") || "{}").id; } catch { return null; } })();
-        if (myId) allLids.add(myId);
-        const projectIds = new Set(projects.map(p => p.id));
-        // 2. Clean ALL members' cloud data
-        await Promise.all([...allLids].map(async (lid) => {
-          try {
-            const ep = await cloudLoad(null, lid, "projects");
-            const cp = Array.isArray(ep?.data) ? ep.data : [];
-            const filteredP = cp.filter(p => !projectIds.has(p.id));
-            if (filteredP.length !== cp.length) await cloudSave(null, lid, "projects", filteredP);
-            const et = await cloudLoad(null, lid, "tasks");
-            const ct = Array.isArray(et?.data) ? et.data : [];
-            if (choice === "2") {
-              const filteredT = ct.filter(t => !projectIds.has(t.projectId));
-              if (filteredT.length !== ct.length) await cloudSave(null, lid, "tasks", filteredT);
-            } else {
-              const updated = ct.map(t => projectIds.has(t.projectId) ? { ...t, projectId: null, stepIndex: null, assignee: null, assigneeId: null } : t);
-              if (JSON.stringify(updated) !== JSON.stringify(ct)) await cloudSave(null, lid, "tasks", updated);
-            }
-          } catch (e) { console.warn("[WF] cleanup member cloud:", e.message); }
-        }));
-        // 3. Delete chats on Supabase
-        if (supabase) {
-          for (const p of projects) {
-            if (p.chatId) {
-              try {
-                await supabase.from("messages").delete().eq("conversation_id", p.chatId);
-                await supabase.from("conversation_members").delete().eq("conversation_id", p.chatId);
-                await supabase.from("conversations").delete().eq("id", p.chatId);
-              } catch (e) { console.warn("[WF] delete project chat:", e.message); }
-            }
-          }
-        }
-        // 4. THEN delete locally
-        if (choice === "1") { tasks.filter(t => t.projectId).forEach(t => patchTask(t.id, { projectId: null, stepIndex: null, assignee: null })); }
-        else { tasks.filter(t => t.projectId).forEach(t => hardDelete(t.id)); }
-        projects.forEach(p => deleteProject(p.id));
-        setProjFilter("all");
-      }} />
-      {filteredTasks.length === 0 && <Empty icon="📋" title={`Chưa có ${t("task",settings).toLowerCase()}`} subtitle="Nhấn + để thêm mục đầu tiên" action="Thêm ngay" onAction={() => setAddOpen(true)} />}
+      {/* ProjectFilters chuyển sang tab Dự án riêng (Phương án A — tách 2 tab) */}
+      {filteredTasks.length === 0 && (
+        <Empty
+          icon="✅"
+          title="Chưa có việc nào của bạn"
+          subtitle="Việc được giao hoặc do bạn tạo sẽ hiện ở đây. Vào tab Dự án để xem tổng thể."
+          action="Tạo việc"
+          onAction={() => setAddOpen(true)}
+        />
+      )}
       {(() => {
         let lastProjectId = "__none__";
         const isAllView = projFilter === "all";
