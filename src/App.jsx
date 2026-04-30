@@ -954,9 +954,9 @@ function MainApp({ user, onLogout }) {
         {tab === "report" && <TabErrorBoundary><ReportTab tasks={tasks} history={history} settings={settings} memory={memory} user={user} /></TabErrorBoundary>}
         {tab === "dashboard" && <TabErrorBoundary><DashboardTab tasks={tasks} expenses={expenses} projects={projects} settings={settings} onOpenTask={t => setSel(t)} /></TabErrorBoundary>}
         {tab === "dev" && <TabErrorBoundary><DevTab user={user} /></TabErrorBoundary>}
-        {tab === "attendance" && <TabErrorBoundary><AttendanceTab userId={userId} settings={settings} /></TabErrorBoundary>}
+        {tab === "attendance" && <TabErrorBoundary><AttendanceTab userId={supaUserId || user.id} settings={settings} /></TabErrorBoundary>}
         {tab === "dept" && <TabErrorBoundary><DeptTab /></TabErrorBoundary>}
-        {tab === "requests" && <TabErrorBoundary><RequestTab userId={userId} settings={settings} onOpenChat={(chatId) => { setOpenConvId(chatId); setTab("inbox"); }} /></TabErrorBoundary>}
+        {tab === "requests" && <TabErrorBoundary><RequestTab userId={supaUserId || user.id} settings={settings} onOpenChat={(chatId) => { setOpenConvId(chatId); setTab("inbox"); }} /></TabErrorBoundary>}
 
         {tab === "ai" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "fadeIn .2s" }}>

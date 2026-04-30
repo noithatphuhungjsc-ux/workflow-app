@@ -30,20 +30,40 @@ const LOCAL_ID_TO_UUID = {
 // but auth.users.id is a random Supabase UUID. canAccess uses this email map
 // to confirm a logged-in user is the rightful owner of a local-id slot.
 const LOCAL_ID_TO_EMAIL = {
-  trinh: "trinh@workflow.vn",
-  lien:  "lien@workflow.vn",
-  hung:  "hung@workflow.vn",
-  mai:   "mai@workflow.vn",
-  duc:   "duc@workflow.vn",
-  tung:  "tung@workflow.vn",
-  tam:   "tam@workflow.vn",
-  duong: "duong@workflow.vn",
-  minh:  "minh@workflow.vn",
-  lien2: "lien2@workflow.vn",
-  tuan:  "tuan@workflow.vn",
-  trang: "trang@workflow.vn",
-  hai:   "hai@workflow.vn",
-  hoai:  "hoai@workflow.vn",
+  // Director
+  trinh:    "trinh@workflow.vn",
+  // Kinh doanh
+  an_kd:    "an.kd@workflow.vn",
+  binh_kd:  "binh.kd@workflow.vn",
+  cuong_kd: "cuong.kd@workflow.vn",
+  // Marketing
+  dung_mkt: "dung.mkt@workflow.vn",
+  ha_mkt:   "ha.mkt@workflow.vn",
+  khoa_mkt: "khoa.mkt@workflow.vn",
+  // Thiết kế
+  linh_tk:  "linh.tk@workflow.vn",
+  mai_tk:   "mai.tk@workflow.vn",
+  nam_tk:   "nam.tk@workflow.vn",
+  // Kỹ thuật SX
+  phong_kt: "phong.kt@workflow.vn",
+  quan_kt:  "quan.kt@workflow.vn",
+  son_kt:   "son.kt@workflow.vn",
+  // Sản xuất
+  tam_sx:   "tam.sx@workflow.vn",
+  uy_sx:    "uy.sx@workflow.vn",
+  vinh_sx:  "vinh.sx@workflow.vn",
+  // Giám sát
+  anh_gs:   "anh.gs@workflow.vn",
+  bao_gs:   "bao.gs@workflow.vn",
+  chi_gs:   "chi.gs@workflow.vn",
+  // CSKH
+  diem_cs:  "diem.cs@workflow.vn",
+  em_cs:    "em.cs@workflow.vn",
+  phuc_cs:  "phuc.cs@workflow.vn",
+  // Kế toán
+  giang_ke: "giang.kt@workflow.vn",
+  hong_ke:  "hong.kt@workflow.vn",
+  khanh_ke: "khanh.kt@workflow.vn",
 };
 
 // Generate a deterministic UUID from local ID (for accounts not yet in mapping)
