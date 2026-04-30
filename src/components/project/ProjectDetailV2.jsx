@@ -6,9 +6,9 @@
    - Giai đoạn: collapse theo phòng ban, mỗi giai đoạn có tasks bên trong
    ================================================================ */
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { C } from "../../constants";
+import { C, PROJECT_COLORS } from "../../constants";
 import { supabase } from "../../lib/supabase";
-import { useDepartments } from "../../hooks/useWorkflows";
+import { useDepartments, useDepartmentProfiles } from "../../hooks/useWorkflows";
 
 const STATUS_LABELS = { todo: "Chờ", inprogress: "Đang", done: "Xong" };
 const STATUS_COLORS = { todo: "#7f8c8d", inprogress: "#3498db", done: "#27ae60" };
@@ -75,13 +75,23 @@ function PhaseCard({ dept, tasks, members, onPatchTask }) {
   );
 }
 
-export default function ProjectDetailV2({ project, onClose, onDelete, isStaff }) {
+export default function ProjectDetailV2({ project: initialProject, onClose, onDelete, isStaff }) {
   const { departments } = useDepartments();
+  const { profiles: allProfiles, byDept } = useDepartmentProfiles();
+  const [project, setProject] = useState(initialProject);
   const [tab, setTab] = useState("phases");
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [confirmDel, setConfirmDel] = useState(false);
+  // Edit info
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  // Add member
+  const [addingMemberDept, setAddingMemberDept] = useState(null);  // dept id when picking
+  const [memberSearch, setMemberSearch] = useState("");
+
+  useEffect(() => { setProject(initialProject); }, [initialProject]);
 
   const fetchData = useCallback(async () => {
     if (!supabase || !project?.id) return;
@@ -125,6 +135,64 @@ export default function ProjectDetailV2({ project, onClose, onDelete, isStaff })
     await supabase.from("projects").delete().eq("id", project.id);
     onDelete?.(project.id);
     onClose?.();
+  };
+
+  // Edit project info
+  const startEditInfo = () => {
+    setEditForm({
+      name: project.name || "",
+      color: project.color || PROJECT_COLORS[0],
+      customer_name: project.customer_name || "",
+      customer_phone: project.customer_phone || "",
+      customer_address: project.customer_address || "",
+    });
+    setEditingInfo(true);
+  };
+  const saveInfo = async () => {
+    if (!supabase || !editForm.name?.trim()) return;
+    const patch = {
+      name: editForm.name.trim(),
+      color: editForm.color,
+      customer_name: editForm.customer_name?.trim() || null,
+      customer_phone: editForm.customer_phone?.trim() || null,
+      customer_address: editForm.customer_address?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("projects").update(patch).eq("id", project.id);
+    if (error) { alert("Lỗi cập nhật: " + error.message); return; }
+    setProject(prev => ({ ...prev, ...patch }));
+    setEditingInfo(false);
+  };
+
+  // Add/remove members
+  const addMember = async (userId, deptId, role = "member") => {
+    if (!supabase) return;
+    // Check duplicate
+    if (members.some(m => m.user_id === userId && m.department_id === deptId)) {
+      alert("Thành viên này đã có trong giai đoạn này");
+      return;
+    }
+    const { data, error } = await supabase.from("project_members")
+      .insert({ project_id: project.id, user_id: userId, department_id: deptId, role })
+      .select().single();
+    if (error) { alert("Lỗi thêm: " + error.message); return; }
+    const profile = allProfiles.find(p => p.id === userId);
+    setMembers(prev => [...prev, { ...data, profile }]);
+    setAddingMemberDept(null);
+    setMemberSearch("");
+  };
+  const removeMember = async (memberId) => {
+    if (!supabase) return;
+    if (!confirm("Xóa thành viên khỏi giai đoạn này?")) return;
+    const { error } = await supabase.from("project_members").delete().eq("id", memberId);
+    if (error) { alert("Lỗi xóa: " + error.message); return; }
+    setMembers(prev => prev.filter(m => m.id !== memberId));
+  };
+  const setMemberRole = async (memberId, newRole) => {
+    if (!supabase) return;
+    const { error } = await supabase.from("project_members").update({ role: newRole }).eq("id", memberId);
+    if (error) { alert("Lỗi đổi vai trò: " + error.message); return; }
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m));
   };
 
   // Group tasks by department
@@ -202,31 +270,137 @@ export default function ProjectDetailV2({ project, onClose, onDelete, isStaff })
 
         {!loading && tab === "members" && (
           <>
-            {members.length === 0 && <div style={{ fontSize:12, color:C.muted, padding:20, textAlign:"center" }}>Không có thành viên</div>}
-            {members.map(m => {
-              const dept = departments.find(d => d.id === m.department_id);
+            {/* Group members by department */}
+            {departments.map(dept => {
+              const inDept = members.filter(m => m.department_id === dept.id);
+              if (inDept.length === 0 && !addingMemberDept) return null;
+              const isAdding = addingMemberDept === dept.id;
+              const candidates = (byDept.get(dept.id) || []).filter(p =>
+                !members.some(m => m.user_id === p.id && m.department_id === dept.id) &&
+                (!memberSearch || (p.display_name || "").toLowerCase().includes(memberSearch.toLowerCase()))
+              );
               return (
-                <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", marginBottom:6, background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
-                  <div style={{ width:32, height:32, borderRadius:"50%", background: m.profile?.avatar_color || C.accent, color:"#fff", fontSize:12, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                    {(m.profile?.display_name || "?").charAt(0).toUpperCase()}
+                <div key={dept.id} style={{ marginBottom:12 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 4px", marginBottom:4 }}>
+                    <span style={{ fontSize:14 }}>{dept.icon}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:C.text, flex:1 }}>{dept.name}</span>
+                    <span style={{ fontSize:10, color:C.muted }}>{inDept.length} người</span>
+                    {!isStaff && (
+                      <button className="tap" onClick={() => { setAddingMemberDept(dept.id); setMemberSearch(""); }}
+                        style={{ padding:"3px 8px", fontSize:10, fontWeight:700, color:C.accent, background:`${C.accent}15`, border:"none", borderRadius:6 }}>
+                        + Thêm
+                      </button>
+                    )}
                   </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.profile?.display_name || "?"}</div>
-                    <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>
-                      {dept ? `${dept.icon} ${dept.name}` : "(toàn dự án)"}
-                      <span style={{ marginLeft:6, color: m.role === "lead" ? C.accent : C.muted, fontWeight:700 }}>· {m.role === "lead" ? "Trưởng" : "Thành viên"}</span>
+                  {inDept.map(m => (
+                    <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", marginBottom:4, background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
+                      <div style={{ width:30, height:30, borderRadius:"50%", background: m.profile?.avatar_color || C.accent, color:"#fff", fontSize:12, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        {(m.profile?.display_name || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:C.text }}>{m.profile?.display_name || "?"}</div>
+                      </div>
+                      {!isStaff && (
+                        <>
+                          <select value={m.role} onChange={e => setMemberRole(m.id, e.target.value)}
+                            style={{ fontSize:10, border:`1px solid ${C.border}`, borderRadius:6, padding:"3px 4px", color:C.text, background:C.bg }}>
+                            <option value="lead">Trưởng</option>
+                            <option value="member">Thành viên</option>
+                          </select>
+                          <button className="tap" onClick={() => removeMember(m.id)}
+                            style={{ padding:"4px 6px", border:"none", background:"none", color:C.red, fontSize:13, cursor:"pointer" }}>×</button>
+                        </>
+                      )}
                     </div>
-                  </div>
+                  ))}
+                  {isAdding && (
+                    <div style={{ padding:10, background:C.card, borderRadius:10, border:`1px solid ${C.accent}55`, marginTop:4 }}>
+                      <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Tìm..." autoFocus
+                        style={{ width:"100%", fontSize:12, border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 8px", color:C.text, background:C.bg, boxSizing:"border-box", marginBottom:6 }} />
+                      <div style={{ maxHeight:140, overflowY:"auto" }}>
+                        {candidates.length === 0 && (
+                          <div style={{ fontSize:11, color:C.muted, padding:6, textAlign:"center" }}>
+                            Không có người trong phòng này (hoặc đã thêm hết)
+                          </div>
+                        )}
+                        {candidates.slice(0, 15).map(p => (
+                          <div key={p.id} className="tap" onClick={() => addMember(p.id, dept.id, "member")}
+                            style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 6px", cursor:"pointer", borderBottom:`1px solid ${C.border}22` }}>
+                            <div style={{ width:24, height:24, borderRadius:"50%", background:p.avatar_color||C.accent, color:"#fff", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                              {(p.display_name||"?").charAt(0).toUpperCase()}
+                            </div>
+                            <span style={{ flex:1, fontSize:11, color:C.text }}>{p.display_name}</span>
+                            <span style={{ fontSize:10, color:C.accent }}>+</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button className="tap" onClick={() => setAddingMemberDept(null)}
+                        style={{ marginTop:6, width:"100%", padding:"5px", border:`1px solid ${C.border}`, background:C.bg, color:C.muted, borderRadius:6, fontSize:11 }}>
+                        Đóng
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
+            {/* Phòng ban chưa được khởi tạo trong dự án — cho phép thêm */}
+            {!isStaff && !addingMemberDept && departments.filter(d => !members.some(m => m.department_id === d.id)).length > 0 && (
+              <div style={{ marginTop:14, padding:"10px 12px", background:`${C.accent}08`, borderRadius:10 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:6 }}>THÊM PHÒNG VÀO DỰ ÁN</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  {departments.filter(d => !members.some(m => m.department_id === d.id)).map(d => (
+                    <button key={d.id} className="tap" onClick={() => { setAddingMemberDept(d.id); setMemberSearch(""); }}
+                      style={{ padding:"6px 10px", fontSize:11, color:C.accent, background:C.card, border:`1px solid ${C.border}`, borderRadius:8 }}>
+                      {d.icon} {d.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
 
         {!loading && tab === "info" && (
           <div>
             <div style={{ background:C.card, borderRadius:10, padding:14, marginBottom:10, border:`1px solid ${C.border}` }}>
-              <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:8 }}>THÔNG TIN DỰ ÁN</div>
+              <div style={{ display:"flex", alignItems:"center", marginBottom:8 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:C.muted, flex:1 }}>THÔNG TIN DỰ ÁN</span>
+                {!isStaff && !editingInfo && (
+                  <button className="tap" onClick={startEditInfo}
+                    style={{ padding:"3px 10px", fontSize:11, fontWeight:700, color:C.accent, background:`${C.accent}15`, border:"none", borderRadius:6 }}>
+                    ✏️ Sửa
+                  </button>
+                )}
+              </div>
+              {editingInfo ? (
+                <div>
+                  <div style={{ fontSize:10, fontWeight:600, color:C.muted, marginTop:6, marginBottom:3 }}>TÊN DỰ ÁN</div>
+                  <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                    style={{ width:"100%", fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 10px", color:C.text, background:C.bg, boxSizing:"border-box", marginBottom:8 }} />
+                  <div style={{ fontSize:10, fontWeight:600, color:C.muted, marginBottom:3 }}>KHÁCH HÀNG</div>
+                  <input value={editForm.customer_name} onChange={e => setEditForm(f => ({ ...f, customer_name: e.target.value }))} placeholder="Tên khách"
+                    style={{ width:"100%", fontSize:12, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", color:C.text, background:C.bg, boxSizing:"border-box", marginBottom:6 }} />
+                  <input value={editForm.customer_phone} onChange={e => setEditForm(f => ({ ...f, customer_phone: e.target.value }))} placeholder="SĐT"
+                    style={{ width:"100%", fontSize:12, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", color:C.text, background:C.bg, boxSizing:"border-box", marginBottom:6 }} />
+                  <input value={editForm.customer_address} onChange={e => setEditForm(f => ({ ...f, customer_address: e.target.value }))} placeholder="Địa chỉ"
+                    style={{ width:"100%", fontSize:12, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", color:C.text, background:C.bg, boxSizing:"border-box", marginBottom:8 }} />
+                  <div style={{ fontSize:10, fontWeight:600, color:C.muted, marginBottom:5 }}>MÀU</div>
+                  <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
+                    {PROJECT_COLORS.map(c => (
+                      <div key={c} className="tap" onClick={() => setEditForm(f => ({ ...f, color: c }))}
+                        style={{ width:22, height:22, borderRadius:"50%", background:c, cursor:"pointer",
+                          border: editForm.color === c ? "3px solid #fff" : "2px solid transparent",
+                          boxShadow: editForm.color === c ? `0 0 0 2px ${c}` : "none" }} />
+                    ))}
+                  </div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button className="tap" onClick={() => setEditingInfo(false)}
+                      style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${C.border}`, background:C.bg, color:C.sub, fontSize:12, fontWeight:600 }}>Huỷ</button>
+                    <button className="tap" onClick={saveInfo} disabled={!editForm.name?.trim()}
+                      style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:12, fontWeight:700, opacity:editForm.name?.trim()?1:0.4 }}>Lưu</button>
+                  </div>
+                </div>
+              ) : (
               <div style={{ fontSize:12, color:C.text, lineHeight:2 }}>
                 <div><b>Tên:</b> {project.name}</div>
                 {project.customer_name && <div><b>Khách hàng:</b> {project.customer_name}</div>}
@@ -235,6 +409,7 @@ export default function ProjectDetailV2({ project, onClose, onDelete, isStaff })
                 <div><b>Trạng thái:</b> {project.status || "active"}</div>
                 {project.created_at && <div><b>Tạo:</b> {new Date(project.created_at).toLocaleDateString("vi-VN")}</div>}
               </div>
+              )}
             </div>
 
             {!isStaff && (
