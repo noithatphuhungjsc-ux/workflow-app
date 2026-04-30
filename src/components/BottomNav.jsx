@@ -1,17 +1,17 @@
 /* BottomNav — Bottom navigation bar + More menu bottom sheet */
 import React from "react";
 
-const MORE_TABS = ["calendar","expense","dashboard","report","dev","attendance","ai"];
+const MORE_TABS = ["requests","calendar","expense","dashboard","report","dev","attendance","ai"];
 
 export default function BottomNav({ tab, setTab, chatUnread, moreMenuOpen, setMoreMenuOpen, settings, isDirector, C, t, hasPermission }) {
   return (
     <>
-      {/* ── BOTTOM NAV (5 tabs: Việc, Phòng ban, Yêu cầu, Chat, Thêm) ── */}
+      {/* ── BOTTOM NAV (5 tabs: Dự án, Việc tôi, Phòng ban, Chat, Thêm) ── */}
       <div className="bottom-nav">
         {[
-          ["tasks","\u{1F4CB}", t("task", settings)],
+          ["projects","\u{1F4C1}","Dự án"],
+          ["tasks","\u{2705}","Việc tôi"],
           ["dept","\u{1F3E2}","Phòng ban"],
-          ["requests","\u{1F4CB}","Yêu cầu"],
           ["inbox","\u{1F4AC}","Chat", chatUnread],
         ].filter(([key]) => {
           const vt = settings.visibleTabs;
@@ -54,6 +54,7 @@ export default function BottomNav({ tab, setTab, chatUnread, moreMenuOpen, setMo
             <div style={{ width:36, height:3, background:C.border, borderRadius:2, margin:"0 auto 14px" }} />
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
               {[
+                ["requests","\u{1F4CB}","Yêu cầu", C.accent],
                 ["calendar","\u{1F4C5}","Lịch", C.accent],
                 ["expense","\u{1F4B0}", t("expense", settings), C.gold],
                 ["attendance","\u{1F552}","Chấm công", C.green],

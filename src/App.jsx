@@ -47,6 +47,7 @@ const RequestTab = React.lazy(() => import("./pages/RequestTab"));
 const NewProjectModal = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.NewProjectModal })));
 const ProjectDetailSheet = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.ProjectDetailSheet })));
 const ProjectDetailV2 = React.lazy(() => import("./components/project/ProjectDetailV2"));
+const ProjectsTab = React.lazy(() => import("./pages/ProjectsTab"));
 const IndustrySetupModal = React.lazy(() => import("./components/IndustrySetupModal"));
 const OnboardingGuide = React.lazy(() => import("./components/OnboardingGuide"));
 const ChangelogView = React.lazy(() => import("./components/ChangelogView").then(m => ({ default: m.default })));
@@ -195,7 +196,7 @@ function MainApp({ user, onLogout }) {
     projects, addProject, patchProject, deleteProject, hardDelete,
   } = useStore();
 
-  const TAB_ORDER = ["tasks","dept","requests","inbox","calendar","expense","dashboard","report","ai"];
+  const TAB_ORDER = ["projects","tasks","dept","requests","inbox","calendar","expense","dashboard","report","ai"];
   const [woryOpen, setWoryOpen] = useState(false);
   const [tab, _setTab]        = useState(() => sessionStorage.getItem("wf_tab") || settings.defaultTab || "tasks");
   const prevTabRef = useRef(tab);
@@ -948,6 +949,7 @@ function MainApp({ user, onLogout }) {
           />
         )}
 
+        {tab === "projects" && <TabErrorBoundary><ProjectsTab projects={projects} tasks={tasks} onOpenProject={(p) => setProjDetail(p)} onCreateNew={() => setNewProjOpen(true)} /></TabErrorBoundary>}
         {tab === "calendar" && <TabErrorBoundary><CalendarTab tasks={tasks} onPress={t => setSel(t)} patchTask={patchTask} /></TabErrorBoundary>}
         {tab === "inbox" && <TabErrorBoundary><InboxTab tasks={tasks} projects={projects} patchTask={patchTask} patchProject={patchProject} settings={settings} user={user} addTask={addTask} openConvId={openConvId} /></TabErrorBoundary>}
         {tab === "expense" && <TabErrorBoundary><ExpenseTab tasks={tasks} expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} settings={settings} user={user} onOpenQR={() => setQrOpen(true)} /></TabErrorBoundary>}
