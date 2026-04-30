@@ -7,6 +7,8 @@
 import { useState, useMemo } from "react";
 import { C } from "../constants";
 import { useDepartments, useDepartmentProfiles, useDepartmentCRUD } from "../hooks/useWorkflows";
+import { useSupabase } from "../contexts/SupabaseContext";
+import AddStaffModal from "../components/AddStaffModal";
 
 const ROLE_LABELS = { lead: "Trưởng phòng", deputy: "Phó phòng", staff: "Nhân viên" };
 const ROLE_COLORS = { lead: "#9b59b6", deputy: "#3498db", staff: "#7f8c8d" };
@@ -190,14 +192,21 @@ function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, 
 
 export default function DeptTab() {
   const { departments, loading: deptLoading, refresh: refreshDepts } = useDepartments();
-  const { profiles, byDept, loading: profLoading, assignMember, removeMember, setRole } = useDepartmentProfiles();
+  const { profiles, byDept, loading: profLoading, assignMember, removeMember, setRole, refresh: refreshProfiles } = useDepartmentProfiles();
   const { createDept, updateDept, deleteDept } = useDepartmentCRUD(refreshDepts);
+  const { session } = useSupabase();
   const [activeId, setActiveId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("🏢");
   const [createErr, setCreateErr] = useState("");
+  const [addStaffOpen, setAddStaffOpen] = useState(false);
+
+  // Check current user is HR (department.code === 'nhan-su')
+  const myProfile = profiles.find(p => p.id === session?.user?.id);
+  const myDept = myProfile ? departments.find(d => d.id === myProfile.department_id) : null;
+  const isHR = myDept?.code === "nhan-su";
 
   const submitCreate = async () => {
     setCreateErr("");
@@ -238,11 +247,19 @@ export default function DeptTab() {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%" }}>
-      <div style={{ padding:"12px 14px", borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ fontSize:15, fontWeight:700, color:C.text }}>🏢 Phòng ban</div>
-        <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
-          {isDirector ? "Quản trị toàn công ty" : "Xem phòng ban"}
+      <div style={{ padding:"12px 14px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:C.text }}>🏢 Phòng ban</div>
+          <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
+            {isDirector ? "Quản trị toàn công ty" : isHR ? "Quản lý nhân sự" : "Xem phòng ban"}
+          </div>
         </div>
+        {(isHR || isDirector) && (
+          <button className="tap" onClick={() => setAddStaffOpen(true)}
+            style={{ padding:"7px 12px", borderRadius:10, border:"none", background:C.accent, color:"#fff", fontSize:12, fontWeight:700 }}>
+            + Thêm nhân sự
+          </button>
+        )}
       </div>
 
       <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
@@ -348,6 +365,13 @@ export default function DeptTab() {
           onSetRole={setRole}
           onUpdateDept={updateDept}
           onDeleteDept={deleteDept}
+        />
+      )}
+
+      {addStaffOpen && (
+        <AddStaffModal
+          onClose={() => setAddStaffOpen(false)}
+          onAdded={() => { refreshProfiles?.(); }}
         />
       )}
     </div>
