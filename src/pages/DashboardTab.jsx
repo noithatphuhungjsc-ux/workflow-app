@@ -6,6 +6,7 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import { C, fmtMoney, todayStr, fmtDate, t, TEAM_ACCOUNTS } from "../constants";
 import { supabase } from "../lib/supabase";
 import { useSupabase } from "../contexts/SupabaseContext";
+import { useDepartments } from "../hooks/useWorkflows";
 
 const BAR_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#3498db", "#9b59b6"];
 
@@ -77,6 +78,41 @@ export default function DashboardTab({ tasks, expenses, projects, settings, onOp
   const { session } = useSupabase();
   const supaUserId = session?.user?.id;
   const isDirector = settings?.userRole === "director";
+  const { departments } = useDepartments();
+  const [v40Tasks, setV40Tasks] = useState([]);
+
+  // Load v40 tasks (Supabase tasks table) for department stats
+  useEffect(() => {
+    if (!supabase) return;
+    (async () => {
+      const { data } = await supabase.from("tasks")
+        .select("id, status, department_id, deadline, project_id")
+        .eq("deleted", false);
+      setV40Tasks(data || []);
+    })();
+  }, [supaUserId]);
+
+  // KPI theo phòng ban
+  const deptStats = useMemo(() => {
+    return departments.map(d => {
+      const t = v40Tasks.filter(x => x.department_id === d.id);
+      const done = t.filter(x => x.status === "done").length;
+      const overdue = t.filter(x => x.status !== "done" && x.deadline && x.deadline < today).length;
+      return { dept: d, total: t.length, done, overdue, pct: t.length > 0 ? Math.round((done / t.length) * 100) : 0 };
+    }).filter(s => s.total > 0);
+  }, [departments, v40Tasks, today]);
+
+  // Active projects (v40)
+  const activeProjects = useMemo(() => {
+    return (projects || [])
+      .filter(p => p.workflow_id && (p.status || "active") === "active")
+      .map(p => {
+        const pTasks = v40Tasks.filter(x => x.project_id === p.id);
+        const done = pTasks.filter(x => x.status === "done").length;
+        return { project: p, total: pTasks.length, done, pct: pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0 };
+      })
+      .sort((a, b) => a.pct - b.pct);  // dự án ít % trước (cần chú ý)
+  }, [projects, v40Tasks]);
 
   /* ── Fetch requests from Supabase ── */
   const [requests, setRequests] = useState([]);
@@ -185,6 +221,57 @@ export default function DashboardTab({ tasks, expenses, projects, settings, onOp
         <KpiCard icon="⏰" label="Quá hạn" value={stats.overdue.length} color={stats.overdue.length > 0 ? C.red : C.green} sub={stats.overdue.length > 0 ? stats.overdue[0]?.title : "Không có"} />
         <KpiCard icon="💰" label={`${t("expense", settings)} tháng`} value={fmtMoney(stats.totalExpense)} sub={settings.monthlyBudget ? `Ngân sách: ${fmtMoney(settings.monthlyBudget)}` : ""} color={settings.monthlyBudget && stats.totalExpense > settings.monthlyBudget ? C.red : C.text} />
       </div>
+
+      {/* v40: Tiến độ theo phòng ban */}
+      {deptStats.length > 0 && (
+        <div style={{ background:"#fff", borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${C.border}` }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:10 }}>🏢 Tiến độ theo phòng ban</div>
+          {deptStats.map(s => (
+            <div key={s.dept.id} style={{ marginBottom:10, lastChild:{marginBottom:0} }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:11, marginBottom:3 }}>
+                <span style={{ color:C.text }}>{s.dept.icon} {s.dept.name}</span>
+                <span style={{ color:C.muted }}>
+                  {s.done}/{s.total} việc
+                  {s.overdue > 0 && <span style={{ color:C.red, marginLeft:6, fontWeight:700 }}>· 🔴 {s.overdue} quá hạn</span>}
+                  <span style={{ color: s.pct === 100 ? C.green : C.accent, fontWeight:700, marginLeft:8 }}>{s.pct}%</span>
+                </span>
+              </div>
+              <div style={{ height:6, background:"#f0eeea", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${s.pct}%`, background: s.pct === 100 ? C.green : C.accent, transition:"width .3s" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* v40: Dự án đang chạy */}
+      {activeProjects.length > 0 && (
+        <div style={{ background:"#fff", borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${C.border}` }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:10 }}>📁 Dự án đang chạy ({activeProjects.length})</div>
+          {activeProjects.slice(0, 6).map(s => (
+            <div key={s.project.id} className="tap" onClick={() => onOpenTask?.({ ...s.project, _project: true })}
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:`1px solid ${C.border}22`, cursor:"pointer" }}>
+              <div style={{ width:6, height:32, borderRadius:3, background: s.project.color || C.accent, flexShrink:0 }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.project.name}</div>
+                {s.project.customer_name && <div style={{ fontSize:10, color:C.muted, marginTop:1 }}>{s.project.customer_name}</div>}
+                <div style={{ height:3, background:"#f0eeea", borderRadius:2, overflow:"hidden", marginTop:4 }}>
+                  <div style={{ height:"100%", width:`${s.pct}%`, background: s.pct === 100 ? C.green : (s.project.color || C.accent) }} />
+                </div>
+              </div>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                <div style={{ fontSize:13, fontWeight:700, color: s.pct === 100 ? C.green : C.accent }}>{s.pct}%</div>
+                <div style={{ fontSize:9, color:C.muted }}>{s.done}/{s.total}</div>
+              </div>
+            </div>
+          ))}
+          {activeProjects.length > 6 && (
+            <div style={{ fontSize:10, color:C.muted, textAlign:"center", marginTop:6 }}>
+              +{activeProjects.length - 6} dự án khác — xem ở tab Dự án
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Task status donut */}
       <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: `1px solid ${C.border}`, marginBottom: 12 }}>

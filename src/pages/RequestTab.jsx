@@ -10,42 +10,72 @@ import RequestList from "../components/request/RequestList";
 import RequestForm from "../components/request/RequestForm";
 import RequestDetail from "../components/request/RequestDetail";
 
-/* Auto-route after final approval: type -> role that processes */
+/* Auto-route after final approval: type -> department code that processes */
 const ROUTING_MAP = {
-  purchase: "accountant",
-  advance: "accountant",
-  payment: "accountant",
-  document: "hr",
-  record: "hr",
+  purchase: "ke-toan",
+  advance: "ke-toan",
+  payment: "ke-toan",
+  document: "nhan-su",
+  record: "nhan-su",
 };
 
-const FULL_CHAIN = ["accountant", "director"];
-
-function getApprovalChain(creatorRole) {
-  return FULL_CHAIN.filter(r => r !== creatorRole);
+/* Approval chain: trưởng phòng người tạo → giám đốc.
+ * Nếu người tạo là trưởng phòng → bỏ qua bước trưởng phòng.
+ * Nếu là giám đốc → tự duyệt luôn. */
+function getApprovalChain(creatorIsDirector, creatorIsLead) {
+  if (creatorIsDirector) return [];
+  if (creatorIsLead) return ["director"];
+  return ["dept_lead", "director"];
 }
 
 function getApprovalStep(request) {
   return (request.approvals || []).filter(a => a.action === "approved").length;
 }
 
-/* Helper: resolve a TEAM_ACCOUNTS role to a Supabase UUID */
-async function resolveProfileByRole(role) {
-  const account = TEAM_ACCOUNTS.find(a => a.role === role);
-  if (!account) return null;
+/* Helper: resolve director (profile.role = 'director') */
+async function resolveDirector() {
   const { data } = await supabase
     .from("profiles")
     .select("id, display_name")
-    .limit(50);
-  if (!data) return null;
-  const match = data.find(
-    p => p.display_name && (
-      p.display_name.toLowerCase() === account.name.toLowerCase() ||
-      p.display_name.toLowerCase().includes(account.name.toLowerCase()) ||
-      account.name.toLowerCase().includes(p.display_name.toLowerCase())
-    )
-  );
-  return match || null;
+    .eq("role", "director")
+    .limit(1);
+  return data?.[0] || null;
+}
+
+/* Helper: resolve trưởng phòng của 1 department code */
+async function resolveDeptLead(deptCode) {
+  if (!deptCode) return null;
+  const { data: dept } = await supabase
+    .from("departments")
+    .select("id")
+    .eq("code", deptCode)
+    .single();
+  if (!dept) return null;
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, display_name")
+    .eq("department_id", dept.id)
+    .eq("dept_role", "lead")
+    .limit(1);
+  return data?.[0] || null;
+}
+
+/* Helper: resolve trưởng phòng của 1 user (theo profile.department_id) */
+async function resolveLeadOfUser(userId) {
+  const { data: u } = await supabase
+    .from("profiles")
+    .select("department_id")
+    .eq("id", userId)
+    .single();
+  if (!u?.department_id) return null;
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, display_name")
+    .eq("department_id", u.department_id)
+    .eq("dept_role", "lead")
+    .neq("id", userId)
+    .limit(1);
+  return data?.[0] || null;
 }
 
 /* Helper: resolve a Supabase UUID to a display name */
@@ -126,8 +156,15 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
     const req = requests.find(r => r.id === id);
     if (!req) return;
 
-    const creatorRole = req.dept_role || "staff";
-    const chain = getApprovalChain(creatorRole);
+    // Look up creator's profile to determine chain
+    const { data: creator } = await supabase
+      .from("profiles")
+      .select("role, dept_role")
+      .eq("id", req.created_by)
+      .single();
+    const creatorIsDirector = creator?.role === "director";
+    const creatorIsLead = creator?.dept_role === "lead";
+    const chain = getApprovalChain(creatorIsDirector, creatorIsLead);
     const currentStep = getApprovalStep(req);
 
     const approvals = [...(req.approvals || [])];
@@ -143,7 +180,9 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
     const nextStepIdx = currentStep + 1;
     if (nextStepIdx < chain.length) {
       const nextRole = chain[nextStepIdx];
-      const nextProfile = await resolveProfileByRole(nextRole);
+      const nextProfile = nextRole === "director"
+        ? await resolveDirector()
+        : await resolveLeadOfUser(req.created_by);
       if (nextProfile) {
         updates.assigned_to = nextProfile.id;
         updates.status = "pending";
@@ -159,9 +198,9 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
       }
     } else {
       updates.status = "approved";
-      const targetRole = ROUTING_MAP[req.type];
-      if (targetRole) {
-        const handler = await resolveProfileByRole(targetRole);
+      const targetDeptCode = ROUTING_MAP[req.type];
+      if (targetDeptCode) {
+        const handler = await resolveDeptLead(targetDeptCode);
         if (handler) {
           updates.assigned_to = handler.id;
           updates.status = "processing";
@@ -230,9 +269,21 @@ export default function RequestTab({ userId, settings, onOpenChat }) {
   const handleCreate = async (form) => {
     if (!supabase || !supaUserId) return;
 
-    const chain = getApprovalChain(userRole);
+    // Lookup current user's profile to determine approval chain
+    const { data: myProfile } = await supabase
+      .from("profiles")
+      .select("role, dept_role")
+      .eq("id", supaUserId)
+      .single();
+    const isDirector = myProfile?.role === "director";
+    const isLead = myProfile?.dept_role === "lead";
+    const chain = getApprovalChain(isDirector, isLead);
     const firstRole = chain[0];
-    const firstApprover = firstRole ? await resolveProfileByRole(firstRole) : null;
+    const firstApprover = !firstRole
+      ? null
+      : firstRole === "director"
+        ? await resolveDirector()
+        : await resolveLeadOfUser(supaUserId);
 
     const { data: reqData, error } = await supabase.from("requests").insert({
       type: form.type,
