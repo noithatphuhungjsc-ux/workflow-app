@@ -9,11 +9,33 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { C, PROJECT_COLORS } from "../../constants";
 import { supabase } from "../../lib/supabase";
 import { useDepartments, useDepartmentProfiles } from "../../hooks/useWorkflows";
+import { useSupabase } from "../../contexts/SupabaseContext";
 
 const STATUS_LABELS = { todo: "Chờ", inprogress: "Đang", done: "Xong" };
 const STATUS_COLORS = { todo: "#7f8c8d", inprogress: "#3498db", done: "#27ae60" };
 
-function PhaseCard({ dept, tasks, members, onPatchTask }) {
+/**
+ * Format deadline thân thiện cho nhân viên:
+ * - Quá hạn → "🔴 Quá X ngày" (đỏ)
+ * - Hôm nay → "📅 Hôm nay" (cam)
+ * - Mai → "📅 Mai" (vàng)
+ * - Sau → "📅 dd/MM" (xám)
+ */
+function formatDeadline(deadline) {
+  if (!deadline) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(deadline); d.setHours(0, 0, 0, 0);
+  const diff = Math.round((d - today) / 86400000);
+  if (diff < 0) return { label: `🔴 Quá ${-diff} ngày`, color: "#e74c3c" };
+  if (diff === 0) return { label: "📅 Hôm nay", color: "#e67e22" };
+  if (diff === 1) return { label: "📅 Mai", color: "#f39c12" };
+  if (diff <= 7) return { label: `📅 ${diff} ngày nữa`, color: "#f1c40f" };
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return { label: `📅 ${dd}/${mm}`, color: "#7f8c8d" };
+}
+
+function PhaseCard({ dept, tasks, members, onPatchTask, currentUserId }) {
   const [open, setOpen] = useState(true);
   const done = tasks.filter(t => t.status === "done").length;
   const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
@@ -47,28 +69,35 @@ function PhaseCard({ dept, tasks, members, onPatchTask }) {
           {tasks.length === 0 && (
             <div style={{ fontSize:11, color:C.muted, textAlign:"center", padding:"10px 0" }}>Chưa có việc</div>
           )}
-          {tasks.map(t => (
-            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 4px", borderBottom:`1px solid ${C.border}22` }}>
-              <button className="tap" onClick={() => onPatchTask(t.id, { status: t.status === "done" ? "todo" : "done" })}
-                style={{ width:20, height:20, borderRadius:6, border:`2px solid ${t.status === "done" ? C.green : C.border}`, background: t.status === "done" ? C.green : "transparent", color:"#fff", fontSize:11, fontWeight:700, padding:0, cursor:"pointer", flexShrink:0 }}>
-                {t.status === "done" && "✓"}
-              </button>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:12, color: t.status === "done" ? C.muted : C.text, textDecoration: t.status === "done" ? "line-through" : "none", fontWeight:500 }}>
-                  {t.title}
-                </div>
-                {(t.assignee_name || t.deadline) && (
-                  <div style={{ fontSize:10, color:C.muted, marginTop:2, display:"flex", gap:6 }}>
-                    {t.assignee_name && <span>👤 {t.assignee_name}</span>}
-                    {t.deadline && <span>📅 {t.deadline}</span>}
+          {tasks.map(t => {
+            const dl = t.status !== "done" ? formatDeadline(t.deadline) : null;
+            const isMine = currentUserId && t.assigned_to === currentUserId;
+            return (
+              <div key={t.id}
+                style={{
+                  display:"flex", alignItems:"center", gap:8, padding:"8px 6px",
+                  borderBottom:`1px solid ${C.border}22`,
+                  background: isMine && t.status !== "done" ? `${C.accent}08` : "transparent",
+                  borderLeft: isMine && t.status !== "done" ? `3px solid ${C.accent}` : "3px solid transparent",
+                  paddingLeft: isMine && t.status !== "done" ? 4 : 6,
+                }}>
+                <button className="tap" onClick={() => onPatchTask(t.id, { status: t.status === "done" ? "todo" : "done" })}
+                  style={{ width:22, height:22, borderRadius:6, border:`2px solid ${t.status === "done" ? C.green : C.border}`, background: t.status === "done" ? C.green : "transparent", color:"#fff", fontSize:12, fontWeight:700, padding:0, cursor:"pointer", flexShrink:0 }}>
+                  {t.status === "done" && "✓"}
+                </button>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, color: t.status === "done" ? C.muted : C.text, textDecoration: t.status === "done" ? "line-through" : "none", fontWeight: isMine ? 600 : 500 }}>
+                    {t.title}
+                    {isMine && t.status !== "done" && <span style={{ marginLeft:6, fontSize:9, fontWeight:700, color:C.accent, padding:"1px 5px", borderRadius:4, background:`${C.accent}15` }}>VIỆC TÔI</span>}
                   </div>
-                )}
+                  <div style={{ fontSize:10, marginTop:3, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                    {t.assignee_name && <span style={{ color:C.muted }}>👤 {t.assignee_name}</span>}
+                    {dl && <span style={{ color: dl.color, fontWeight:700 }}>{dl.label}</span>}
+                  </div>
+                </div>
               </div>
-              <span style={{ fontSize:10, fontWeight:700, color: STATUS_COLORS[t.status], padding:"2px 6px", borderRadius:6, background: `${STATUS_COLORS[t.status]}15` }}>
-                {STATUS_LABELS[t.status] || t.status}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -78,6 +107,8 @@ function PhaseCard({ dept, tasks, members, onPatchTask }) {
 export default function ProjectDetailV2({ project: initialProject, onClose, onDelete, isStaff }) {
   const { departments } = useDepartments();
   const { profiles: allProfiles, byDept } = useDepartmentProfiles();
+  const { session } = useSupabase();
+  const currentUserId = session?.user?.id;
   const [project, setProject] = useState(initialProject);
   const [tab, setTab] = useState("phases");
   const [tasks, setTasks] = useState([]);
@@ -257,13 +288,38 @@ export default function ProjectDetailV2({ project: initialProject, onClose, onDe
 
         {!loading && tab === "phases" && (
           <>
+            {/* Banner việc của tôi trong dự án này */}
+            {(() => {
+              const myTasks = tasks.filter(t => t.assigned_to === currentUserId && t.status !== "done");
+              if (myTasks.length === 0) return null;
+              const today = new Date(); today.setHours(0, 0, 0, 0);
+              const overdue = myTasks.filter(t => t.deadline && new Date(t.deadline) < today).length;
+              const todayCount = myTasks.filter(t => {
+                if (!t.deadline) return false;
+                const d = new Date(t.deadline); d.setHours(0, 0, 0, 0);
+                return d.getTime() === today.getTime();
+              }).length;
+              return (
+                <div style={{ marginBottom:10, padding:"10px 14px", borderRadius:10, background:`${C.accent}10`, border:`1px solid ${C.accent}33` }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:C.accent, marginBottom:3 }}>
+                    👤 Bạn có {myTasks.length} việc trong dự án này
+                  </div>
+                  <div style={{ fontSize:10, color:C.muted, display:"flex", gap:10, flexWrap:"wrap" }}>
+                    {overdue > 0 && <span style={{ color:"#e74c3c", fontWeight:700 }}>🔴 {overdue} quá hạn</span>}
+                    {todayCount > 0 && <span style={{ color:"#e67e22", fontWeight:700 }}>📅 {todayCount} hôm nay</span>}
+                    <span>Việc của bạn được tô viền xanh bên dưới</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {phases.length === 0 && (
               <div style={{ fontSize:12, color:C.muted, padding:20, textAlign:"center" }}>
                 Dự án chưa có giai đoạn (chưa link với quy trình mới)
               </div>
             )}
             {phases.map(p => (
-              <PhaseCard key={p.dept?.id || "_un"} dept={p.dept} tasks={p.tasks} members={p.members} onPatchTask={patchTask} />
+              <PhaseCard key={p.dept?.id || "_un"} dept={p.dept} tasks={p.tasks} members={p.members} onPatchTask={patchTask} currentUserId={currentUserId} />
             ))}
           </>
         )}
