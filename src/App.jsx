@@ -1184,7 +1184,7 @@ function MainApp({ user, onLogout }) {
         if (supabase && supaSession?.user?.id) {
           try {
             const { data: conv } = await supabase.from("conversations")
-              .insert({ type: "group", name: p.name, created_by: supaSession.user.id, category: "project", linked_project_id: String(id) })
+              .insert({ type: "group", name: p.name, created_by: supaSession.user.id, category: "project", linked_project_id: String(p.id) })
               .select().single();
             if (conv) {
               // Add creator + all selected members to chat
@@ -1208,8 +1208,10 @@ function MainApp({ user, onLogout }) {
           } catch (e) { console.warn("Auto-create project chat failed:", e); }
         }
 
-        const createdProj = await addProject(proj);
-        const projId = createdProj?.id || proj.id;
+        // V2 NewProjectModal đã insert project + members + tasks vào Supabase trực tiếp.
+        // Không gọi addProject/addTask nữa để tránh duplicate. Dùng project trả về từ V2.
+        const createdProj = p;
+        const projId = p.id;
 
         // Update chatId on project if chat was created
         if (proj.chatId && createdProj?.id && !createdProj.chatId) {
@@ -1231,7 +1233,8 @@ function MainApp({ user, onLogout }) {
               ...(assignee ? { assignee: assignee.name, assigneeId: assignee.supaId || null } : {}),
             };
             createdTasks.push({ step, assignee: assignee?.name || null });
-            addTask(taskData);
+            // V2 đã tạo task — không gọi addTask để tránh duplicate.
+            // addTask(taskData);
           }
           // Send assignment summary to project chat
           if (proj.chatId && supabase && supaSession?.user?.id && assignableMembers.length > 0) {
