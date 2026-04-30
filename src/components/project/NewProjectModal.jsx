@@ -183,26 +183,35 @@ export default function NewProjectModal({ onAdd, onClose }) {
       }
 
       // 3. Create tasks from workflow_steps (only for non-skipped phases)
+      // Tính deadline tự động: cumulative estimated_days từ ngày hôm nay
       const skippedDepts = new Set(
         phases.filter(p => phaseConfig[p.dept.id]?.skipped).map(p => p.dept.id)
       );
       const wf = workflows.find(w => w.id === workflowId);
-      const taskRows = (wf?.steps || [])
+      const sortedSteps = (wf?.steps || [])
         .filter(s => !skippedDepts.has(s.department_id))
-        .map(s => {
-          const cfg = phaseConfig[s.department_id] || {};
-          return {
-            project_id: project.id,
-            owner_id: userId,
-            assigned_to: cfg.lead_id || null,
-            title: s.name,
-            department_id: s.department_id,
-            workflow_step_id: s.id,
-            workflow_step: s.sort_order,
-            status: "todo",
-            priority: "trung",
-          };
-        });
+        .sort((a, b) => a.sort_order - b.sort_order);
+      const today = new Date();
+      let cumulativeDays = 0;
+      const taskRows = sortedSteps.map(s => {
+        const cfg = phaseConfig[s.department_id] || {};
+        cumulativeDays += (s.estimated_days || 0);
+        const deadlineDate = new Date(today);
+        deadlineDate.setDate(deadlineDate.getDate() + cumulativeDays);
+        const deadlineStr = cumulativeDays > 0 ? deadlineDate.toISOString().split("T")[0] : null;
+        return {
+          project_id: project.id,
+          owner_id: userId,
+          assigned_to: cfg.lead_id || null,
+          title: s.name,
+          department_id: s.department_id,
+          workflow_step_id: s.id,
+          workflow_step: s.sort_order,
+          status: "todo",
+          priority: "trung",
+          deadline: deadlineStr,
+        };
+      });
       if (taskRows.length > 0) {
         const { error: taskErr } = await supabase.from("tasks").insert(taskRows);
         if (taskErr) console.warn("[NewProject] tasks insert:", taskErr.message);

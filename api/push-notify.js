@@ -177,7 +177,108 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.json({ sent: totalSent, checked: allUserData.length, hour: vnHour, period: isMorning ? "morning" : isAfternoon ? "afternoon" : "manual" });
+    // ============================================================
+    // v40: cũng check từ `tasks` Supabase table (project tasks tự sinh)
+    // ============================================================
+    const { data: dueTasks } = await supabase
+      .from("tasks")
+      .select("id, title, deadline, status, priority, assigned_to, owner_id, project_id")
+      .eq("deleted", false)
+      .neq("status", "done")
+      .not("deadline", "is", null);
+
+    const byUser = new Map();
+    for (const t of (dueTasks || [])) {
+      const uid = t.assigned_to || t.owner_id;
+      if (!uid) continue;
+      const bucket = byUser.get(uid) || { today: [], overdue: [], tomorrow: [] };
+      if (t.deadline === todayStr) bucket.today.push(t);
+      else if (t.deadline < todayStr) bucket.overdue.push(t);
+      else if (t.deadline === tomorrowStr) bucket.tomorrow.push(t);
+      byUser.set(uid, bucket);
+    }
+
+    for (const [uid, b] of byUser) {
+      const notifications = [];
+      if (isMorning) {
+        if (b.today.length > 0) {
+          notifications.push({
+            title: `📋 Hôm nay có ${b.today.length} việc dự án`,
+            body: b.today.slice(0, 3).map(t => t.title).join(", ") + (b.today.length > 3 ? ` (+${b.today.length - 3})` : ""),
+            tag: `proj-today-${todayStr}-${uid}`,
+            data: { url: "/?tab=tasks", type: "project_task" },
+          });
+        }
+        if (b.overdue.length > 0) {
+          notifications.push({
+            title: `🔴 ${b.overdue.length} việc dự án quá hạn`,
+            body: b.overdue.slice(0, 3).map(t => t.title).join(", "),
+            tag: `proj-overdue-${todayStr}-${uid}`,
+            data: { url: "/?tab=tasks", type: "project_task" },
+          });
+        }
+        if (b.tomorrow.length > 0) {
+          notifications.push({
+            title: `⏰ Mai đến hạn: ${b.tomorrow.length} việc`,
+            body: b.tomorrow.slice(0, 3).map(t => t.title).join(", "),
+            tag: `proj-tomorrow-${todayStr}-${uid}`,
+            data: { url: "/?tab=tasks", type: "project_task" },
+          });
+        }
+      } else if (isAfternoon) {
+        if (b.today.length > 0 || b.overdue.length > 0) {
+          const total = b.today.length + b.overdue.length;
+          const list = [...b.overdue, ...b.today].slice(0, 3).map(t => t.title).join(", ");
+          notifications.push({
+            title: `⚡ Chiều: còn ${total} việc cần xong`,
+            body: list,
+            tag: `proj-pm-${todayStr}-${uid}`,
+            data: { url: "/?tab=tasks", type: "project_task" },
+          });
+        }
+      } else {
+        // Manual call — gộp lại để test
+        const total = b.today.length + b.overdue.length + b.tomorrow.length;
+        if (total > 0) {
+          notifications.push({
+            title: `📋 Test: ${total} việc dự án (today/overdue/tomorrow)`,
+            body: [...b.today, ...b.overdue, ...b.tomorrow].slice(0, 3).map(t => t.title).join(", "),
+            tag: `proj-test-${Date.now()}-${uid}`,
+          });
+        }
+      }
+      if (notifications.length === 0) continue;
+
+      const { data: subs } = await supabase
+        .from("push_subscriptions")
+        .select("endpoint, keys_p256dh, keys_auth")
+        .eq("user_id", uid);
+      if (!subs?.length) continue;
+      for (const sub of subs) {
+        const pushSub = {
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth },
+        };
+        for (const notif of notifications) {
+          try {
+            await webpush.sendNotification(pushSub, JSON.stringify(notif));
+            totalSent++;
+          } catch (e) {
+            if (e.statusCode === 410 || e.statusCode === 404) {
+              await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+            }
+          }
+        }
+      }
+    }
+
+    return res.json({
+      sent: totalSent,
+      checked: allUserData.length,
+      project_tasks_users: byUser.size,
+      hour: vnHour,
+      period: isMorning ? "morning" : isAfternoon ? "afternoon" : "manual",
+    });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
