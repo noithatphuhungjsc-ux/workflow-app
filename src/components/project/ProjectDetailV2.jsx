@@ -152,7 +152,7 @@ export default function ProjectDetailV2({ project, onClose, onDelete, isStaff })
   const totalPct = tasks.length ? Math.round((totalDone / tasks.length) * 100) : 0;
 
   return (
-    <div style={{ position:"fixed", inset:0, zIndex:900, background:C.bg, display:"flex", flexDirection:"column" }}>
+    <div className="safe-modal-fullscreen" style={{ position:"fixed", inset:0, zIndex:900, background:C.bg, display:"flex", flexDirection:"column" }}>
       {/* Header */}
       <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, background:C.card, flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>

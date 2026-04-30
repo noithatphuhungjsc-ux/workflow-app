@@ -96,7 +96,7 @@ export default function NewChatModal({ userId, onSelect, onClose, initialMode = 
   const catInfo = getCategoryInfo(category);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column" }}>
+    <div className="safe-modal-fullscreen" style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.3)" }} onClick={onClose} />
       <div style={{ position: "relative", margin: "auto", width: "92%", maxWidth: 380, maxHeight: "85vh", background: C.surface, borderRadius: 16, boxShadow: "0 8px 32px rgba(0,0,0,.2)", display: "flex", flexDirection: "column", animation: "fadeIn .2s" }}>
         {/* Header */}

@@ -48,7 +48,7 @@ function DeptDetailModal({ dept, allProfiles, deptMembers, onClose, isDirector, 
   const isDirty = editName !== dept.name || editIcon !== (dept.icon || "") || editCode !== (dept.code || "") || parseInt(editSort, 10) !== (dept.sort_order || 0);
 
   return (
-    <div style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(0,0,0,.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={onClose}>
+    <div className="safe-modal-overlay" style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(0,0,0,.45)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
         style={{ background:C.bg, borderRadius:20, padding:18, width:"100%", maxWidth:480, maxHeight:"90vh", overflowY:"auto" }}>
 

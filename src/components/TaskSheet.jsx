@@ -212,7 +212,7 @@ export default function TaskSheet({ task, onClose }) {
   );
 
   return (
-    <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:1000, display:"flex", flexDirection:"column", animation:"fadeIn .2s" }}>
+    <div className="safe-modal-fullscreen" style={{ position:"fixed", inset:0, background:C.bg, zIndex:1000, display:"flex", flexDirection:"column", animation:"fadeIn .2s" }}>
 
       {/* ── HEADER ── */}
       <div style={{ flexShrink:0, background:C.card, borderBottom:`1px solid ${C.border}` }}>

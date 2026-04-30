@@ -129,6 +129,22 @@ input, select, textarea { outline: none; font-family: inherit; color: inherit; }
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* -- Safe area cho fullscreen modal/sheet (iPhone notch + home indicator) -- */
+.safe-modal-fullscreen {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* -- Safe area cho centered modal (NewProjectModal, DeptDetailModal...) -- */
+.safe-modal-overlay {
+  padding-top: max(16px, env(safe-area-inset-top, 16px));
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+  padding-left: max(16px, env(safe-area-inset-left, 16px));
+  padding-right: max(16px, env(safe-area-inset-right, 16px));
+}
+
 /* -- Responsive cho desktop/tablet -- */
 @media (min-width: 768px) {
   .app-container {
