@@ -7,6 +7,7 @@ export default function TasksTabContent({
   searchQ, setSearchQ,
   selectMode, setSelectMode, selectedIds, setSelectedIds, exitSelectMode,
   pendingDeleteCount, isStaff, isDirector, myName,
+  viewScope, setViewScope,
   patchTask, deleteTask, addTask, hardDelete,
   setSel, setAddOpen, setNewProjOpen, setProjDetail,
   setStatusPickerTask, toggleSelect,
@@ -18,6 +19,23 @@ export default function TasksTabContent({
 }) {
   return (
     <div style={{ animation: "fadeIn .2s" }}>
+      {/* Director scope toggle: Tôi / Cả team */}
+      {isDirector && setViewScope && (
+        <div style={{ display:"flex", gap:6, marginBottom:8, padding:"4px", background:C.card, borderRadius:10, border:`1px solid ${C.border}` }}>
+          <button className="tap" onClick={() => setViewScope("mine")}
+            style={{ flex:1, padding:"7px", borderRadius:8, border:"none", fontSize:12, fontWeight:600,
+              background: viewScope === "mine" ? C.accent : "transparent",
+              color: viewScope === "mine" ? "#fff" : C.muted }}>
+            👤 Việc của tôi
+          </button>
+          <button className="tap" onClick={() => setViewScope("team")}
+            style={{ flex:1, padding:"7px", borderRadius:8, border:"none", fontSize:12, fontWeight:600,
+              background: viewScope === "team" ? C.accent : "transparent",
+              color: viewScope === "team" ? "#fff" : C.muted }}>
+            👥 Cả team
+          </button>
+        </div>
+      )}
       {/* Search bar + edit/delete buttons */}
       <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>

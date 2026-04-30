@@ -1,5 +1,5 @@
 /* ================================================================
-   NewProjectModal — Tạo dự án mới (Đợt 3)
+   NewProjectModal — Tạo dự án mới (Đợt 3, cleanup hardcode A6)
    Flow:
    1. Nhập thông tin (tên, khách hàng, màu)
    2. Chọn quy trình (từ workflow_templates DB)
@@ -11,6 +11,7 @@ import { C, PROJECT_COLORS } from "../../constants";
 import { useSupabase } from "../../contexts/SupabaseContext";
 import { supabase } from "../../lib/supabase";
 import { useWorkflows, useDepartments, useDepartmentProfiles } from "../../hooks/useWorkflows";
+// Note: LOCAL_ID_TO_UUID hardcode đã xóa (A6 cleanup) — giờ dùng auth.users.id qua session.user.id, không cần fallback UUID cũ vì chỉ user thật đã login mới hiển thị.
 
 /* ── Phase row: 1 phòng ban + danh sách bước + chọn members ── */
 function PhaseRow({ dept, steps, profiles, leadId, memberIds, onSetLead, onToggleMember, skipped, onToggleSkip }) {

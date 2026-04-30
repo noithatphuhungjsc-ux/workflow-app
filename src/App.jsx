@@ -199,6 +199,7 @@ function MainApp({ user, onLogout }) {
   const TAB_ORDER = ["projects","tasks","dept","requests","inbox","calendar","expense","dashboard","report","ai"];
   const [woryOpen, setWoryOpen] = useState(false);
   const [tab, _setTab]        = useState(() => sessionStorage.getItem("wf_tab") || settings.defaultTab || "tasks");
+  const [viewScope, setViewScope] = useState("mine"); // "mine" | "team" — director toggle in Việc tôi
   const prevTabRef = useRef(tab);
   const tabDir = useRef("right");
   const setTab = useCallback((t) => {
@@ -782,9 +783,10 @@ function MainApp({ user, onLogout }) {
       list = list.filter(t => t.title?.toLowerCase().includes(q) || t.assignee?.toLowerCase().includes(q));
     }
     // "Việc tôi" tab — chỉ task của mình (assigned, owned, hoặc not-assigned mà mình tạo)
-    // Áp cho mọi role kể cả director (director xem tổng thể qua Dashboard / Dự án)
+    // Director có thể bật viewScope="team" để xem TẤT CẢ task của team
     const supaId = supaSession?.user?.id;
-    if (myName) {
+    const filterMine = !(isDirector && viewScope === "team");
+    if (myName && filterMine) {
       list = list.filter(t =>
         t.ownerId === supaId ||
         t.assigneeId === supaId ||
@@ -944,6 +946,7 @@ function MainApp({ user, onLogout }) {
             searchQ={searchQ} setSearchQ={setSearchQ}
             selectMode={selectMode} setSelectMode={setSelectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds} exitSelectMode={exitSelectMode}
             pendingDeleteCount={pendingDeleteCount} isStaff={isStaff} isDirector={isDirector} myName={myName}
+            viewScope={viewScope} setViewScope={setViewScope}
             patchTask={patchTask} deleteTask={deleteTask} addTask={addTask} hardDelete={hardDelete}
             setSel={setSel} setAddOpen={setAddOpen} setNewProjOpen={setNewProjOpen} setProjDetail={setProjDetail}
             setStatusPickerTask={setStatusPickerTask} toggleSelect={toggleSelect}
