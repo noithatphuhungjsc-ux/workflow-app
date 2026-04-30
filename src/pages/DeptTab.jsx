@@ -246,12 +246,22 @@ export default function DeptTab() {
       </div>
 
       <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
-        {departments.map(d => {
+        {departments.map((d, i) => {
           const members = byDept.get(d.id) || [];
           const lead = members.find(m => m.dept_role === "lead");
+          const isFirst = i === 0;
+          const isLast = i === departments.length - 1;
+          const swap = async (dir) => {
+            const other = departments[i + dir];
+            if (!other) return;
+            await Promise.all([
+              updateDept(d.id, { sort_order: other.sort_order }),
+              updateDept(other.id, { sort_order: d.sort_order }),
+            ]);
+          };
           return (
             <div key={d.id} className="tap" onClick={() => setActiveId(d.id)}
-              style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", marginBottom:8, background:C.card, borderRadius:12, border:`1px solid ${C.border}`, cursor:"pointer" }}>
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", marginBottom:8, background:C.card, borderRadius:12, border:`1px solid ${C.border}`, cursor:"pointer" }}>
               <div style={{ width:42, height:42, borderRadius:12, background:`${C.accent}12`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>{d.icon}</div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:14, fontWeight:600, color:C.text }}>{d.name}</div>
@@ -260,6 +270,18 @@ export default function DeptTab() {
                   {lead && <span> · Trưởng: {lead.display_name}</span>}
                 </div>
               </div>
+              {isDirector && (
+                <div style={{ display:"flex", flexDirection:"column", gap:2 }} onClick={e => e.stopPropagation()}>
+                  <button className="tap" onClick={() => swap(-1)} disabled={isFirst}
+                    style={{ width:26, height:22, padding:0, border:`1px solid ${C.border}`, borderRadius:6, background:isFirst ? "transparent" : C.bg, color:isFirst ? C.muted : C.accent, fontSize:11, fontWeight:700, cursor: isFirst ? "default" : "pointer", opacity: isFirst ? 0.3 : 1 }}>
+                    ↑
+                  </button>
+                  <button className="tap" onClick={() => swap(1)} disabled={isLast}
+                    style={{ width:26, height:22, padding:0, border:`1px solid ${C.border}`, borderRadius:6, background:isLast ? "transparent" : C.bg, color:isLast ? C.muted : C.accent, fontSize:11, fontWeight:700, cursor: isLast ? "default" : "pointer", opacity: isLast ? 0.3 : 1 }}>
+                    ↓
+                  </button>
+                </div>
+              )}
               <span style={{ fontSize:18, color:C.muted }}>›</span>
             </div>
           );
