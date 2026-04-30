@@ -15,6 +15,11 @@ function fromDB(row) {
     status: row.status || "active",
     deadline: row.deadline || null,
     workflow: row.workflow || null,
+    workflow_id: row.workflow_id || null,            // Đợt 4: link tới workflow_templates
+    customer_name: row.customer_name || "",
+    customer_phone: row.customer_phone || "",
+    customer_address: row.customer_address || "",
+    created_at: row.created_at,
     steps: row.steps || [],
     members: row.members || [],
     chatId: row.chat_id || null,

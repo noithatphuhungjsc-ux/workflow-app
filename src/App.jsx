@@ -46,6 +46,7 @@ const DeptTab = React.lazy(() => import("./pages/DeptTab"));
 const RequestTab = React.lazy(() => import("./pages/RequestTab"));
 const NewProjectModal = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.NewProjectModal })));
 const ProjectDetailSheet = React.lazy(() => import("./components/ProjectModals").then(m => ({ default: m.ProjectDetailSheet })));
+const ProjectDetailV2 = React.lazy(() => import("./components/project/ProjectDetailV2"));
 const IndustrySetupModal = React.lazy(() => import("./components/IndustrySetupModal"));
 const OnboardingGuide = React.lazy(() => import("./components/OnboardingGuide"));
 const ChangelogView = React.lazy(() => import("./components/ChangelogView").then(m => ({ default: m.default })));
@@ -1251,8 +1252,22 @@ function MainApp({ user, onLogout }) {
         }
       }} onClose={() => setNewProjOpen(false)} />}
 
-      {/* ── PROJECT DETAIL ── */}
-      {projDetail && <ProjectDetailSheet project={projects.find(p => p.id === projDetail.id) || projDetail} tasks={tasks} patchTask={patchTask} addTask={addTask} patchProject={patchProject} hardDelete={hardDelete} deleteProject={async (id) => {
+      {/* ── PROJECT DETAIL ── route project có workflow_id sang V2 (Đợt 4) */}
+      {projDetail && (() => {
+        const proj = projects.find(p => p.id === projDetail.id) || projDetail;
+        if (proj.workflow_id) {
+          return (
+            <ProjectDetailV2
+              project={proj}
+              isStaff={isStaff}
+              onClose={() => setProjDetail(null)}
+              onDelete={() => setProjDetail(null)}
+            />
+          );
+        }
+        return null;
+      })()}
+      {projDetail && !((projects.find(p => p.id === projDetail.id) || projDetail).workflow_id) && <ProjectDetailSheet project={projects.find(p => p.id === projDetail.id) || projDetail} tasks={tasks} patchTask={patchTask} addTask={addTask} patchProject={patchProject} hardDelete={hardDelete} deleteProject={async (id) => {
         const proj = projects.find(p => p.id === id);
         if (supabase && proj?.chatId) {
           // Delete sub-threads first
