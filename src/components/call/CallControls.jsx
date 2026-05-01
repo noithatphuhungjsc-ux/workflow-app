@@ -1,16 +1,21 @@
 /* CallControls — Mute/camera/end/accept buttons + SVG icons */
 
-/* ── SVG Icons ── */
-const PhoneIcon = ({ size = 24, color = "#fff" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+/* ── SVG Icons — Material Design (filled, classic phone shape) ── */
+const PhoneIcon = ({ size = 26, color = "#fff" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M19.23 15.26l-2.54-.29c-.61-.07-1.21.14-1.64.57l-1.84 1.84c-2.83-1.44-5.15-3.75-6.59-6.58l1.85-1.85c.43-.43.64-1.03.57-1.64l-.29-2.52c-.12-1.01-.97-1.77-1.99-1.77H5.03c-1.13 0-2.07.94-2 2.07.53 8.54 7.36 15.36 15.89 15.89 1.13.07 2.07-.87 2.07-2v-1.73c.01-1.01-.75-1.86-1.76-1.98z"/>
   </svg>
 );
-const PhoneOffIcon = ({ size = 24, color = "#fff" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67"/>
-    <path d="M8.09 9.91l1.27-1.27a2 2 0 01-.45-2.11c.339-.907.573-1.85.7-2.81A2 2 0 0111.61 2h3a2 2 0 012 1.72"/>
-    <line x1="1" y1="1" x2="23" y2="23"/>
+const PhoneOffIcon = ({ size = 26, color = "#fff" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M21.39 18.61c.79-.79.79-2.07 0-2.86-.21-.21-.45-.36-.71-.46l-2.84-.91c-.61-.2-1.27-.04-1.73.42l-1.04 1.04c-1.46-.86-2.89-2-4.07-3.18l-.04-.04c-1.18-1.18-2.32-2.61-3.18-4.07l1.04-1.04c.46-.46.62-1.12.42-1.73l-.91-2.84c-.1-.26-.25-.5-.46-.71-.79-.79-2.07-.79-2.86 0L3.78 4.7c-.61.61-.85 1.49-.62 2.31.99 3.57 3.05 6.94 5.76 9.65 2.71 2.71 6.08 4.77 9.65 5.76.82.23 1.7-.01 2.31-.62l1.51-1.19zM2 4.27l1.27-1.27 18.46 18.46-1.27 1.27z"/>
+    <path d="M2 4.27l2 2 16 16 2 2 1-1L3 3.27z" opacity="0"/>
+  </svg>
+);
+/* Phone with arrow down — for "decline" (different from "end call") */
+const PhoneDeclineIcon = ({ size = 26, color = "#fff" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.88 1.11-2.66 1.85-.18.18-.43.29-.71.29-.28 0-.53-.11-.71-.29L.29 13.08C.11 12.9 0 12.65 0 12.38c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7c4.54 0 8.66 1.78 11.71 4.67.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z" transform="rotate(135 12 12)"/>
   </svg>
 );
 const MicIcon = ({ size = 22, color = "#fff" }) => (
@@ -70,28 +75,31 @@ export default function CallControls({ status, muted, cameraOff, isVideo, toggle
 
       {/* Accept / End row */}
       <div style={{ display: "flex", gap: 40, alignItems: "center" }}>
-        {/* Decline / End */}
+        {/* Decline / End — icon khác nhau theo context */}
         <button className="tap" onClick={endCall}
           style={{
-            width: 64, height: 64, borderRadius: "50%",
+            width: 68, height: 68, borderRadius: "50%",
             background: "#e53e3e", border: "none",
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 12px rgba(229,62,62,.3)",
+            boxShadow: "0 4px 16px rgba(229,62,62,.4)",
           }}>
-          <PhoneOffIcon size={28} />
+          {status === "ringing"
+            ? <PhoneDeclineIcon size={30} />  /* Đang reo: nút từ chối */
+            : <PhoneOffIcon size={30} />        /* Đang gọi: nút tắt */
+          }
         </button>
 
         {/* Accept (incoming ringing only) */}
         {status === "ringing" && (
           <button className="tap" onClick={acceptCall}
             style={{
-              width: 64, height: 64, borderRadius: "50%",
+              width: 68, height: 68, borderRadius: "50%",
               background: "#2ecc71", border: "none",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 2px 12px rgba(46,204,113,.3)",
+              boxShadow: "0 4px 16px rgba(46,204,113,.4)",
               animation: "callPulse 1.5s infinite",
             }}>
-            {isVideo ? <VideoIcon size={28} /> : <PhoneIcon size={28} />}
+            {isVideo ? <VideoIcon size={30} /> : <PhoneIcon size={30} />}
           </button>
         )}
       </div>

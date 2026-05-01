@@ -106,13 +106,13 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     if (p) p.release().catch(() => {});
   }, []);
 
-  const endCall = useCallback(async () => {
+  const endCall = useCallback(async (reason = "hangup") => {
     if (endedRef.current) return;
     endedRef.current = true;
     try {
       channelRef.current?.send({
         type: "broadcast", event: "call-signal",
-        payload: { type: "end", from: userId },
+        payload: { type: "end", from: userId, reason },
       });
     } catch {}
 
@@ -120,9 +120,16 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     if (callMsgIdRef.current) {
       const dur = wasAnswered ? Math.floor((Date.now() - startTimeRef.current) / 1000) : 0;
       const emoji = mode === "video" ? "\u{1F4F9}" : "\u{1F4DE}";
-      const statusLabel = wasAnswered
-        ? `${emoji} Cu\u1ed9c g\u1ecdi ${mode === "video" ? "video" : "tho\u1ea1i"} \u2014 ${Math.floor(dur / 60)}:${(dur % 60).toString().padStart(2, "0")}`
-        : `${emoji} Cu\u1ed9c g\u1ecdi nh\u1ee1`;
+      let statusLabel;
+      if (wasAnswered) {
+        statusLabel = `${emoji} Cu\u1ed9c g\u1ecdi ${mode === "video" ? "video" : "tho\u1ea1i"} \u2014 ${Math.floor(dur / 60)}:${(dur % 60).toString().padStart(2, "0")}`;
+      } else if (reason === "rejected") {
+        statusLabel = `${emoji} Cu\u1ed9c g\u1ecdi b\u1ecb t\u1eeb ch\u1ed1i`;
+      } else if (reason === "no-answer") {
+        statusLabel = `${emoji} Kh\u00f4ng tr\u1ea3 l\u1eddi`;
+      } else {
+        statusLabel = `${emoji} Cu\u1ed9c g\u1ecdi nh\u1ee1`;
+      }
       try {
         await supabase.from("messages")
           .update({ content: statusLabel })
@@ -350,14 +357,19 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
           }
 
           if (payload.type === "end") {
-            log("\u{1F4E5} \u0110\u1ed1i ph\u01b0\u01a1ng k\u1ebft th\u00fac cu\u1ed9c g\u1ecdi");
-            if (isIncoming && !startTimeRef.current) {
-              // Receiver side — call never answered
+            const reason = payload.reason || "hangup";
+            log("📥 Doi phuong: end (" + reason + ")");
+            if (!isIncoming && !startTimeRef.current) {
+              if (reason === "rejected") setError("Đã bị từ chối");
+              else if (reason === "no-answer") setError("Không trả lời");
+              else setError("Cuộc gọi kết thúc");
+            } else if (startTimeRef.current) {
+              setError("Đối phương đã ngắt máy");
             }
             cleanup();
             if (mounted) {
               setStatus("ended");
-              setTimeout(() => onEndRef.current(), 800);
+              setTimeout(() => onEndRef.current(), 1500);
             }
           }
         } catch (e) {
@@ -410,11 +422,11 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
 
         setTimeout(() => {
           if (mounted && !startTimeRef.current) {
-            log("\u23F0 30s timeout \u2014 kh\u00f4ng c\u00f3 ph\u1ea3n h\u1ed3i");
-            setError("Kh\u00f4ng c\u00f3 ph\u1ea3n h\u1ed3i");
-            endCall();
+            log("⏰ 25s timeout");
+            setError("Không trả lời");
+            endCall("no-answer");
           }
-        }, 30000);
+        }, 25000);
 
       } else {
         setStatus("connecting");
@@ -588,7 +600,7 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
         isVideo={isVideo}
         toggleMute={toggleMute}
         toggleCamera={toggleCamera}
-        endCall={endCall}
+        endCall={() => endCall(status === "ringing" ? "rejected" : "hangup")}
         acceptCall={acceptCall}
       />
 
