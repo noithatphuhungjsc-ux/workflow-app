@@ -203,25 +203,51 @@ export default function LoginScreen({ onLogin }) {
             </div>
           )}
 
-          {/* Staff avatars — tap to auto-fill email (dev accounts hidden for staff) */}
-          <div style={{ display:"flex", justifyContent:"center", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+          {/* Staff avatars — gom theo phòng ban (dễ chọn) */}
+          <div style={{ marginBottom:14 }}>
             {(() => {
-              const devIds = new Set(DEV_ONLY_ACCOUNTS.map(a => a.id));
-              const visibleAccounts = Object.values(accounts).filter(a => devMode || !devIds.has(a.id));
-              const roleColors = { director: "#9b59b6", accountant: "#e74c3c", sales: "#6a7fd4", hr: "#3aaa72", construction: "#e67e22", manager: "#2980b9" };
-              return visibleAccounts.map(a => {
-                const role = a.role || "staff";
-                const active = username.toLowerCase() === (a.email || "").toLowerCase();
-                return (
-                  <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
-                    style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, background:"none", border:"none", cursor:"pointer", padding:2, opacity: active ? 1 : 0.6, transform: active ? "scale(1.1)" : "none", transition:"all .15s" }}>
-                    <div style={{ width:32, height:32, borderRadius:"50%", background: roleColors[role] || a.color || C.accent, color:"#fff", fontSize:12, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border: active ? "2.5px solid #c8956c" : "2px solid transparent", boxShadow: active ? "0 2px 8px rgba(200,149,108,.4)" : "none" }}>
-                      {a.name.split(" ").pop().charAt(0)}
-                    </div>
-                    <span style={{ fontSize:7, fontWeight:700, color: active ? "#c8956c" : C.muted, maxWidth:42, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.title || a.name.split(" ").pop()}</span>
-                  </button>
-                );
-              });
+              const visibleAccounts = Object.values(accounts);
+              // Map id suffix → dept label + color
+              const DEPT_GROUPS = [
+                { key: "director", label: "Giám đốc",       color: "#9b59b6", match: (a) => a.role === "director" },
+                { key: "_kd",      label: "Kinh doanh",     color: "#6a7fd4", match: (a) => a.id.endsWith("_kd") },
+                { key: "_mkt",     label: "Marketing",      color: "#e67e22", match: (a) => a.id.endsWith("_mkt") },
+                { key: "_tk",      label: "Thiết kế",       color: "#16a085", match: (a) => a.id.endsWith("_tk") },
+                { key: "_kt",      label: "Kỹ thuật SX",    color: "#2980b9", match: (a) => a.id.endsWith("_kt") },
+                { key: "_sx",      label: "Sản xuất",       color: "#27ae60", match: (a) => a.id.endsWith("_sx") },
+                { key: "_gs",      label: "Giám sát",       color: "#c0392b", match: (a) => a.id.endsWith("_gs") },
+                { key: "_cs",      label: "CSKH",           color: "#3aaa72", match: (a) => a.id.endsWith("_cs") },
+                { key: "_ke",      label: "Kế toán",        color: "#e74c3c", match: (a) => a.id.endsWith("_ke") },
+                { key: "other",    label: "Khác",           color: "#7f8c8d", match: () => true },
+              ];
+              const used = new Set();
+              const grouped = DEPT_GROUPS.map(g => {
+                const items = visibleAccounts.filter(a => !used.has(a.id) && g.match(a));
+                items.forEach(a => used.add(a.id));
+                return { ...g, items };
+              }).filter(g => g.items.length > 0);
+
+              return grouped.map(g => (
+                <div key={g.key} style={{ marginBottom:10 }}>
+                  <div style={{ fontSize:9, fontWeight:700, color:g.color, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>
+                    ● {g.label}
+                  </div>
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                    {g.items.map(a => {
+                      const active = username.toLowerCase() === (a.email || "").toLowerCase();
+                      return (
+                        <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
+                          style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:"none", border:"none", cursor:"pointer", padding:2, opacity: active ? 1 : 0.85, transform: active ? "scale(1.05)" : "none", transition:"all .15s" }}>
+                          <div style={{ width:30, height:30, borderRadius:"50%", background: g.color, color:"#fff", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border: active ? "2.5px solid #c8956c" : "2px solid transparent", boxShadow: active ? "0 2px 8px rgba(200,149,108,.4)" : "none" }}>
+                            {a.name.split(" ").pop().charAt(0)}
+                          </div>
+                          <span style={{ fontSize:8, fontWeight: active ? 700 : 500, color: active ? "#c8956c" : C.muted, maxWidth:50, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.name.split(" ").pop()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
             })()}
           </div>
 
