@@ -194,13 +194,22 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
         localStreamRef.current = stream;
         log("\u2705 \u0110\u00e3 c\u00f3 micro" + (isVideo ? "/camera" : ""));
       } catch (e) {
-        const msg = e.name === "NotAllowedError"
-          ? "\u274C Ch\u01b0a c\u1ea5p quy\u1ec1n micro" + (isVideo ? "/camera" : "")
-          : `\u274C L\u1ed7i thi\u1ebft b\u1ecb: ${e.name}`;
+        let msg;
+        if (e.name === "NotAllowedError") {
+          msg = "\u274C Ch\u01b0a c\u1ea5p quy\u1ec1n micro" + (isVideo ? "/camera" : "") + ". Vui l\u00f2ng c\u1ea5p quy\u1ec1n trong Settings tr\u00ecnh duy\u1ec7t.";
+        } else if (e.name === "NotFoundError") {
+          msg = isVideo
+            ? "\u274C Thi\u1ebft b\u1ecb kh\u00f4ng c\u00f3 camera. Vui l\u00f2ng d\u00f9ng \u0111i\u1ec7n tho\u1ea1i ho\u1eb7c laptop c\u00f3 webcam."
+            : "\u274C Thi\u1ebft b\u1ecb kh\u00f4ng c\u00f3 micro.";
+        } else if (e.name === "NotReadableError") {
+          msg = "\u274C Thi\u1ebft b\u1ecb \u0111ang \u0111\u01b0\u1ee3c \u1ee9ng d\u1ee5ng kh\u00e1c d\u00f9ng. T\u1eaft camera/mic \u1ee9ng d\u1ee5ng kh\u00e1c r\u1ed3i th\u1eed l\u1ea1i.";
+        } else {
+          msg = `\u274C L\u1ed7i thi\u1ebft b\u1ecb: ${e.name}`;
+        }
         log(msg);
         setError(msg);
         setStatus("ended");
-        setTimeout(() => onEndRef.current(), 3000);
+        setTimeout(() => onEndRef.current(), 4000);
         return;
       }
 
