@@ -22,3 +22,14 @@ export async function authHeaders(extra = {}) {
   }
   return base;
 }
+
+/**
+ * Helper: kiểm tra có session đã login chưa.
+ * Dùng để skip fetch tránh 401 noise khi session chưa ready.
+ */
+export async function hasSession() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return !!session?.access_token;
+  } catch { return false; }
+}

@@ -2,7 +2,7 @@
    CLOUD SYNC — Supabase backup & restore
    ================================================================ */
 import { loadJSON } from "./storage";
-import { authHeaders } from "./authHeaders";
+import { authHeaders, hasSession } from "./authHeaders";
 
 const _syncTimers = {};
 const SYNC_KEYS = ["tasks", "expenses", "settings", "memory", "wory_knowledge", "chat_history", "expense_chat", "projects"];
@@ -24,6 +24,7 @@ export async function cloudSave(_supabase, userId, key, data) {
 
 export async function cloudLoad(_supabase, userId, key) {
   if (!userId) return null;
+  if (!(await hasSession())) return null;
   try {
     const url = `/api/cloud-sync?userId=${encodeURIComponent(userId)}${key ? `&key=${encodeURIComponent(key)}` : ""}`;
     const res = await fetch(url, { headers: await authHeaders() });
@@ -49,6 +50,8 @@ export async function cloudSaveAll(_supabase, userId) {
 
 export async function cloudLoadAll(_supabase, userId) {
   if (!userId) return null;
+  // Skip nếu chưa có session — tránh 401 noise khi app vừa load
+  if (!(await hasSession())) return null;
   try {
     const res = await fetch(`/api/cloud-sync?userId=${encodeURIComponent(userId)}`, { headers: await authHeaders() });
     const result = await res.json();
