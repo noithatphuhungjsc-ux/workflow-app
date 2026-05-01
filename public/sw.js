@@ -69,12 +69,21 @@ self.addEventListener('push', (e) => {
     return;
   }
 
-  // Call ended — close the incoming call notification
+  // Call ended — close ringing notification + tell open clients (with reason)
   if (type === 'call_end') {
-    e.waitUntil(
+    const reason = data.reason || 'ended';
+    const conversationId = data.conversationId || '';
+    e.waitUntil(Promise.all([
       self.registration.getNotifications({ tag: 'incoming-call' })
-        .then(notifs => notifs.forEach(n => n.close()))
-    );
+        .then(notifs => notifs.forEach(n => n.close())),
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then(clients => {
+          clients.forEach(c => c.postMessage({
+            type: 'call-ended',
+            reason, conversationId,
+          }));
+        })
+    ]));
     return;
   }
 

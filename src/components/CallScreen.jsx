@@ -137,24 +137,29 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
       } catch {}
     }
 
-    if (!isIncoming) {
-      try {
-        const { data: members } = await supabase
-          .from("conversation_members").select("user_id")
-          .eq("conversation_id", conversationId).neq("user_id", userId);
-        for (const m of (members || [])) {
-          fetch("/api/push-call-end", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              targetUserId: m.user_id,
-              conversationId,
-              reason: wasAnswered ? "ended" : "missed",
-            }),
-          }).catch(() => {});
-        }
-      } catch {}
-    }
+    // ALWAYS gửi push-call-end cho other party (cả caller lẫn receiver)
+    // → mobile mất websocket vẫn nhận được qua FCM push
+    try {
+      const { data: members } = await supabase
+        .from("conversation_members").select("user_id")
+        .eq("conversation_id", conversationId).neq("user_id", userId);
+      // Map reason → push-call-end reason
+      const pushReason = wasAnswered ? "ended"
+        : reason === "rejected" ? "declined"
+        : reason === "no-answer" ? "missed"
+        : "missed";
+      for (const m of (members || [])) {
+        fetch("/api/push-call-end", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetUserId: m.user_id,
+            conversationId,
+            reason: pushReason,
+          }),
+        }).catch(() => {});
+      }
+    } catch {}
 
     cleanup();
     setStatus("ended");
@@ -453,21 +458,35 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, userId, isIncoming, isVideo]);
 
-  /* ── Native call-ended event ── */
+  /* — Native call-ended event */
   useEffect(() => {
     const handler = (e) => {
       const { reason } = e.detail || {};
       console.log("[Call] Native call-ended:", reason);
       if (!endedRef.current) {
-        if (reason === "declined") {
-          setError("\u0110\u00e3 t\u1eeb ch\u1ed1i cu\u1ed9c g\u1ecdi");
-        }
-        endCall();
+        if (reason === "declined") setError("Đã bị từ chối");
+        else if (reason === "missed") setError("Không trả lời");
+        else if (reason === "ended") setError("Đối phương đã ngắt máy");
+        setTimeout(() => endCall(), 1500);
       }
     };
     window.addEventListener("native-call-ended", handler);
     return () => window.removeEventListener("native-call-ended", handler);
   }, [endCall]);
+
+  /* — Service Worker message bridge: FCM call_end -> native-call-ended event */
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const handler = (e) => {
+      if (e.data?.type === "call-ended") {
+        window.dispatchEvent(new CustomEvent("native-call-ended", {
+          detail: { reason: e.data.reason, conversationId: e.data.conversationId },
+        }));
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => navigator.serviceWorker.removeEventListener("message", handler);
+  }, []);
 
   /* ── Proximity sensor ── */
   useEffect(() => {
