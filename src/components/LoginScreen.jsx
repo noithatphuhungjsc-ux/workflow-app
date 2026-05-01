@@ -203,22 +203,24 @@ export default function LoginScreen({ onLogin }) {
             </div>
           )}
 
-          {/* Staff avatars — gom theo phòng ban (dễ chọn) */}
+          {/* Danh sách tài khoản — gom theo phòng ban, hiện đầy đủ tên + chức vụ + email */}
           <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, color:"#999", marginBottom:8, textAlign:"center", fontStyle:"italic" }}>
+              Bấm vào tài khoản để tự fill email · Mật khẩu mặc định: <b>111111</b>
+            </div>
             {(() => {
               const visibleAccounts = Object.values(accounts);
-              // Map id suffix → dept label + color
               const DEPT_GROUPS = [
-                { key: "director", label: "Giám đốc",       color: "#9b59b6", match: (a) => a.role === "director" },
-                { key: "_kd",      label: "Kinh doanh",     color: "#6a7fd4", match: (a) => a.id.endsWith("_kd") },
-                { key: "_mkt",     label: "Marketing",      color: "#e67e22", match: (a) => a.id.endsWith("_mkt") },
-                { key: "_tk",      label: "Thiết kế",       color: "#16a085", match: (a) => a.id.endsWith("_tk") },
-                { key: "_kt",      label: "Kỹ thuật SX",    color: "#2980b9", match: (a) => a.id.endsWith("_kt") },
-                { key: "_sx",      label: "Sản xuất",       color: "#27ae60", match: (a) => a.id.endsWith("_sx") },
-                { key: "_gs",      label: "Giám sát",       color: "#c0392b", match: (a) => a.id.endsWith("_gs") },
-                { key: "_cs",      label: "CSKH",           color: "#3aaa72", match: (a) => a.id.endsWith("_cs") },
-                { key: "_ke",      label: "Kế toán",        color: "#e74c3c", match: (a) => a.id.endsWith("_ke") },
-                { key: "other",    label: "Khác",           color: "#7f8c8d", match: () => true },
+                { key: "director", icon:"👑", label: "Giám đốc",     color: "#9b59b6", match: (a) => a.role === "director" },
+                { key: "_kd",      icon:"💼", label: "Kinh doanh",   color: "#6a7fd4", match: (a) => a.id.endsWith("_kd") },
+                { key: "_mkt",     icon:"📣", label: "Marketing",    color: "#e67e22", match: (a) => a.id.endsWith("_mkt") },
+                { key: "_tk",      icon:"📐", label: "Thiết kế",     color: "#16a085", match: (a) => a.id.endsWith("_tk") },
+                { key: "_kt",      icon:"⚙️", label: "Kỹ thuật SX",  color: "#2980b9", match: (a) => a.id.endsWith("_kt") },
+                { key: "_sx",      icon:"🪚", label: "Sản xuất",     color: "#27ae60", match: (a) => a.id.endsWith("_sx") },
+                { key: "_gs",      icon:"👁", label: "Giám sát",     color: "#c0392b", match: (a) => a.id.endsWith("_gs") },
+                { key: "_cs",      icon:"💬", label: "CSKH",         color: "#3aaa72", match: (a) => a.id.endsWith("_cs") },
+                { key: "_ke",      icon:"💰", label: "Kế toán",      color: "#e74c3c", match: (a) => a.id.endsWith("_ke") },
+                { key: "other",    icon:"👤", label: "Khác",         color: "#7f8c8d", match: () => true },
               ];
               const used = new Set();
               const grouped = DEPT_GROUPS.map(g => {
@@ -228,24 +230,39 @@ export default function LoginScreen({ onLogin }) {
               }).filter(g => g.items.length > 0);
 
               return grouped.map(g => (
-                <div key={g.key} style={{ marginBottom:10 }}>
-                  <div style={{ fontSize:9, fontWeight:700, color:g.color, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>
-                    ● {g.label}
+                <div key={g.key} style={{ marginBottom:14 }}>
+                  {/* Header phòng ban */}
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6, padding:"4px 0", borderBottom:`1.5px solid ${g.color}` }}>
+                    <span style={{ fontSize:14 }}>{g.icon}</span>
+                    <span style={{ fontSize:11, fontWeight:700, color:g.color, textTransform:"uppercase", letterSpacing:.5 }}>{g.label}</span>
+                    <span style={{ fontSize:10, color:"#999", marginLeft:"auto" }}>{g.items.length} người</span>
                   </div>
-                  <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                    {g.items.map(a => {
-                      const active = username.toLowerCase() === (a.email || "").toLowerCase();
-                      return (
-                        <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
-                          style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:"none", border:"none", cursor:"pointer", padding:2, opacity: active ? 1 : 0.85, transform: active ? "scale(1.05)" : "none", transition:"all .15s" }}>
-                          <div style={{ width:30, height:30, borderRadius:"50%", background: g.color, color:"#fff", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border: active ? "2.5px solid #c8956c" : "2px solid transparent", boxShadow: active ? "0 2px 8px rgba(200,149,108,.4)" : "none" }}>
-                            {a.name.split(" ").pop().charAt(0)}
-                          </div>
-                          <span style={{ fontSize:8, fontWeight: active ? 700 : 500, color: active ? "#c8956c" : C.muted, maxWidth:50, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.name.split(" ").pop()}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+
+                  {/* Cards 1-cột — đầy đủ thông tin */}
+                  {g.items.map(a => {
+                    const active = username.toLowerCase() === (a.email || "").toLowerCase();
+                    return (
+                      <button key={a.id} className="tap" onClick={() => { setUsername(a.email || a.id); setError(""); }}
+                        style={{
+                          display:"flex", alignItems:"center", gap:10,
+                          width:"100%", padding:"8px 10px", marginBottom:4,
+                          background: active ? `${g.color}15` : "#fafaf8",
+                          border: active ? `1.5px solid ${g.color}` : "1px solid #eee",
+                          borderRadius:10, cursor:"pointer",
+                          textAlign:"left", transition:"all .15s",
+                        }}>
+                        <div style={{ width:36, height:36, borderRadius:"50%", background: g.color, color:"#fff", fontSize:14, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          {a.name.split(" ").pop().charAt(0)}
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:600, color:"#222", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.name}</div>
+                          <div style={{ fontSize:11, color:g.color, fontWeight:600, marginTop:1 }}>{a.title || g.label}</div>
+                          <div style={{ fontSize:10, color:"#999", marginTop:1, fontFamily:"monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.email || a.id}</div>
+                        </div>
+                        {active && <span style={{ fontSize:14, color:g.color }}>✓</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               ));
             })()}
