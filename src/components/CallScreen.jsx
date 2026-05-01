@@ -488,6 +488,32 @@ export default function CallScreen({ conversationId, userId, peerName, isIncomin
     return () => navigator.serviceWorker.removeEventListener("message", handler);
   }, []);
 
+  /* ── Poll fallback: caller polls message status every 3s
+        cover trường hợp mobile mất websocket + FCM không đến ── */
+  useEffect(() => {
+    if (isIncoming) return; // chỉ caller poll
+    const id = setInterval(async () => {
+      if (!callMsgIdRef.current || endedRef.current) return;
+      try {
+        const { data } = await supabase.from("messages")
+          .select("content").eq("id", callMsgIdRef.current).single();
+        if (!data?.content) return;
+        const c = data.content;
+        if (c.includes("từ chối") || c.includes("Không trả lời") ||
+            c.includes("nhỡ") || c.includes("— 0:") ||
+            (c.includes("Cuộc gọi") && c.includes("—") && !c.includes("— 0:00"))) {
+          log("\u{1F4CA} Poll: " + c);
+          if (c.includes("từ chối")) setError("Đã bị từ chối");
+          else if (c.includes("Không trả lời")) setError("Không trả lời");
+          else if (c.includes("nhỡ")) setError("Cuộc gọi nhỡ");
+          else setError("Cuộc gọi kết thúc");
+          setTimeout(() => endCall("hangup"), 1500);
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(id);
+  }, [isIncoming, endCall, log]);
+
   /* ── Proximity sensor ── */
   useEffect(() => {
     const p = getProximity();
