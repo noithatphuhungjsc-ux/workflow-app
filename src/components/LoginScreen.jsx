@@ -5,22 +5,24 @@ import { useState, useEffect } from "react";
 import { C, TEAM_ACCOUNTS, DEV_ONLY_ACCOUNTS, ALL_ACCOUNTS, DEFAULT_PASSWORD } from "../constants";
 import { hashPassword, loadAccounts, saveAccounts, generateOTP, maskPhone } from "../services";
 
-const ACCOUNTS_VERSION = 10; // v10: 25 accounts (1 director + 24 test by department)
+const ACCOUNTS_VERSION = 11; // v11: REPLACE not merge (clear old roles like Tổ trưởng/Tổ phó/Hoàn thiện/Thợ mộc/Táo đỏ)
 const DEFAULT_ACCOUNTS = ALL_ACCOUNTS.map(a => ({ ...a, pw: DEFAULT_PASSWORD }));
 
-// Init default accounts with hashed passwords
+// Init default accounts with hashed passwords.
+// IMPORTANT: khi bump VERSION, REPLACE hoàn toàn (không merge) để xóa account cũ.
 async function initAccounts() {
   const savedVer = parseInt(localStorage.getItem("wf_accounts_ver") || "0", 10);
   const existing = loadAccounts();
   if (existing && savedVer >= ACCOUNTS_VERSION) return existing;
-  const accounts = existing || {};
+  // Version bumped — start fresh, không merge old accounts (chứa role cũ)
+  const accounts = {};
   for (const a of DEFAULT_ACCOUNTS) {
     accounts[a.id] = {
       id: a.id,
       name: a.name,
       email: a.email || "",
       pwHash: await hashPassword(a.pw),
-      twoFA: accounts[a.id]?.twoFA || false,
+      twoFA: false,
       phone: a.phone,
       role: a.role || "staff",
       title: a.title || "",
