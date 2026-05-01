@@ -1,27 +1,21 @@
 /* ================================================================
-   EXPENSE TAB — Orchestrator
-   Delegates to: ExpenseOverview, ExpenseList, ExpenseForm
+   EXPENSE TAB — Phiên bản gọn (1 view)
+   - Header compact + thống kê 3 ô (Hôm nay / Tháng / Chưa chi)
+   - Filter: tháng dropdown + category pills
+   - List + nút "+ Thêm" inline
+   - Wory chi tiêu vẫn dùng floating button chung
    ================================================================ */
 import { useState, useCallback, useMemo, useRef } from "react";
-import { C, EXPENSE_CATEGORIES, PAYMENT_SOURCES, fmtMoney, todayStr, MONTH_NAMES, t } from "../constants";
-import { loadJSON } from "../services";
-import ExpenseOverview from "../components/expense/ExpenseOverview";
+import { C, EXPENSE_CATEGORIES, fmtMoney, todayStr, MONTH_NAMES, t } from "../constants";
 import ExpenseList from "../components/expense/ExpenseList";
-import ExpenseForm from "../components/expense/ExpenseForm";
 
 export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExpense, settings, user, onOpenQR }) {
-  // Industry preset override expense categories
   const CATS = settings.industryExpenseCategories || EXPENSE_CATEGORIES;
-  const [subTab, setSubTab] = useState("overview"); // overview | list | wory
   const [filterCat, setFilterCat] = useState("all");
   const [filterMonth, setFilterMonth] = useState(() => {
     const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [woryReport, setWoryReport] = useState(() => loadJSON("expense_wory_report", null));
-  const [woryLoading, setWoryLoading] = useState(false);
   const [listLimit, setListLimit] = useState(30);
-
-  // Undo delete expense
   const [undoExpense, setUndoExpense] = useState(null);
   const undoTimerRef = useRef(null);
 
@@ -38,7 +32,7 @@ export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExp
     if (undoExpense) { addExpense(undoExpense); setUndoExpense(null); clearTimeout(undoTimerRef.current); }
   }, [undoExpense, addExpense]);
 
-  // Merge: standalone expenses + task expenses
+  // Merge standalone + task expenses
   const allExpenses = useMemo(() => {
     const standalone = expenses.map(e => ({
       id: e.id, type: "standalone", taskId: e.taskId || null, taskTitle: e.taskTitle || "",
@@ -49,7 +43,7 @@ export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExp
     const fromTasks = [];
     tasks.filter(t => t.expense?.amount > 0 && !t.deleted && !standaloneTaskIds.has(t.id)).forEach(t => {
       const items = t.expense.items;
-      if (items && items.length > 0) {
+      if (items?.length > 0) {
         items.forEach(item => {
           if (item.amount > 0) fromTasks.push({
             id: `${t.id}-${item.id}`, type: "task", taskId: t.id, taskTitle: t.title,
@@ -69,40 +63,21 @@ export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExp
     return [...standalone, ...fromTasks].sort((a, b) => b.date.localeCompare(a.date));
   }, [tasks, expenses]);
 
-  // Filter by month
-  const monthExpenses = useMemo(() => {
-    return allExpenses.filter(e => e.date?.startsWith(filterMonth));
-  }, [allExpenses, filterMonth]);
-
-  // Filter by category
+  const monthExpenses = useMemo(() => allExpenses.filter(e => e.date?.startsWith(filterMonth)), [allExpenses, filterMonth]);
   const filtered = filterCat === "all" ? monthExpenses : monthExpenses.filter(e => e.category === filterCat);
 
-  // Stats
   const totalMonth = monthExpenses.reduce((s, e) => s + e.amount, 0);
-  const totalPaid = monthExpenses.filter(e => e.paid).reduce((s, e) => s + e.amount, 0);
-  const totalUnpaid = totalMonth - totalPaid;
-  const budget = settings?.monthlyBudget || 0;
-  const budgetPct = budget > 0 ? Math.min(Math.round(totalMonth / budget * 100), 100) : 0;
-
-  // Group by category
+  const totalToday = allExpenses.filter(e => e.date === todayStr()).reduce((s, e) => s + e.amount, 0);
+  const totalUnpaid = monthExpenses.filter(e => !e.paid).reduce((s, e) => s + e.amount, 0);
   const byCat = useMemo(() => {
-    const map = {};
-    monthExpenses.forEach(e => { if (!map[e.category]) map[e.category] = 0; map[e.category] += e.amount; });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+    const m = {};
+    monthExpenses.forEach(e => { m[e.category] = (m[e.category] || 0) + e.amount; });
+    return m;
   }, [monthExpenses]);
 
-  // Group by source
-  const bySource = useMemo(() => {
-    const map = {};
-    monthExpenses.forEach(e => { if (!map[e.source]) map[e.source] = 0; map[e.source] += e.amount; });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [monthExpenses]);
+  const budget = settings.monthlyBudget || 0;
+  const budgetPct = budget > 0 ? Math.min(100, Math.round((totalMonth / budget) * 100)) : 0;
 
-  // Today
-  const todayExpenses = allExpenses.filter(e => e.date === todayStr());
-  const totalToday = todayExpenses.reduce((s, e) => s + e.amount, 0);
-
-  // Month selector
   const months = useMemo(() => {
     const ms = [];
     const d = new Date();
@@ -114,77 +89,81 @@ export default function ExpenseTab({ tasks, expenses = [], addExpense, deleteExp
   }, []);
   const monthLabel = (m) => {
     const [y, mo] = m.split("-");
-    return `${MONTH_NAMES[parseInt(mo) - 1]} ${y}`;
+    return `T${parseInt(mo)}/${y.slice(2)}`;
   };
 
   return (
     <div style={{ animation: "fadeIn .2s" }}>
-      {/* Header */}
-      <div style={{ background: `linear-gradient(135deg,${C.goldD},rgba(212,144,10,0.08))`, borderRadius: 14, border: `1px solid ${C.gold}33`, padding: "12px 16px", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontSize: 28 }}>💰</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{t("expense", settings)}</div>
-            <div style={{ fontSize: 12, color: C.sub }}>{monthLabel(filterMonth)}</div>
+      {/* Header gọn */}
+      <div style={{ background:`linear-gradient(135deg,${C.goldD},${C.gold}11)`, borderRadius:12, padding:"10px 14px", marginBottom:10, border:`1px solid ${C.gold}22` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:22 }}>💰</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{t("expense", settings)}</div>
+            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+              style={{ marginTop:2, fontSize:11, color:C.muted, background:"transparent", border:"none", padding:0, cursor:"pointer" }}>
+              {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.gold }}>{fmtMoney(totalMonth)}</div>
-            {budget > 0 && <div style={{ fontSize: 10, color: budgetPct > 80 ? C.red : C.muted }}>{budgetPct}% ngân sách</div>}
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontSize:18, fontWeight:800, color:C.gold }}>{fmtMoney(totalMonth)}</div>
+            {budget > 0 && <div style={{ fontSize:9, color: budgetPct > 80 ? C.red : C.muted }}>{budgetPct}% / {fmtMoney(budget)}</div>}
           </div>
         </div>
         {budget > 0 && (
-          <div style={{ height: 4, background: C.border, borderRadius: 2, marginTop: 8, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${budgetPct}%`, background: budgetPct > 80 ? C.red : budgetPct > 50 ? C.gold : C.green, borderRadius: 2, transition: "width .3s" }} />
+          <div style={{ height:3, background:C.border, borderRadius:2, marginTop:6, overflow:"hidden" }}>
+            <div style={{ height:"100%", width:`${budgetPct}%`, background: budgetPct > 80 ? C.red : budgetPct > 50 ? C.gold : C.green, transition:"width .3s" }} />
           </div>
         )}
       </div>
 
-      {/* Sub tabs */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-        {[["overview", "Tổng quan"], ["list", "Chi tiết"], ["wory", "💬 Ghi chép"]].map(([k, l]) => (
-          <button key={k} className="tap" onClick={() => setSubTab(k)}
-            style={{ flex: 1, background: subTab === k ? C.gold : C.card, color: subTab === k ? "#fff" : C.sub,
-              border: `1px solid ${subTab === k ? C.gold : C.border}`, borderRadius: 10, padding: "7px 4px", fontSize: 11, fontWeight: 600 }}>
-            {l}
-          </button>
-        ))}
+      {/* 3 KPI mini cards */}
+      <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+        <div style={{ flex:1, padding:"8px 10px", background:C.card, borderRadius:10, border:`1px solid ${C.border}`, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:C.muted, fontWeight:600, marginBottom:2 }}>HÔM NAY</div>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{fmtMoney(totalToday)}</div>
+        </div>
+        <div style={{ flex:1, padding:"8px 10px", background:C.card, borderRadius:10, border:`1px solid ${C.border}`, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:C.muted, fontWeight:600, marginBottom:2 }}>SỐ KHOẢN</div>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{monthExpenses.length}</div>
+        </div>
+        <div style={{ flex:1, padding:"8px 10px", background:totalUnpaid > 0 ? `${C.red}10` : C.card, borderRadius:10, border:`1px solid ${totalUnpaid > 0 ? C.red+"33" : C.border}`, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:C.muted, fontWeight:600, marginBottom:2 }}>CHƯA CHI</div>
+          <div style={{ fontSize:13, fontWeight:700, color: totalUnpaid > 0 ? C.red : C.text }}>{fmtMoney(totalUnpaid)}</div>
+        </div>
       </div>
 
-      {/* Month selector */}
-      <div className="no-scrollbar" style={{ display: "flex", gap: 4, marginBottom: 12, overflowX: "auto" }}>
-        {months.map(m => (
-          <button key={m} className="tap" onClick={() => setFilterMonth(m)}
-            style={{ padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, flexShrink: 0,
-              background: filterMonth === m ? C.gold + "20" : C.card,
-              color: filterMonth === m ? C.gold : C.muted,
-              border: `1px solid ${filterMonth === m ? C.gold + "66" : C.border}` }}>
-            {monthLabel(m)}
+      {/* Top categories quick-glance */}
+      {Object.keys(byCat).length > 0 && (
+        <div className="no-scrollbar" style={{ display:"flex", gap:6, marginBottom:10, overflowX:"auto", paddingBottom:2 }}>
+          <button className="tap" onClick={() => setFilterCat("all")}
+            style={{ flexShrink:0, padding:"5px 10px", fontSize:11, borderRadius:8, border:"none",
+              background: filterCat === "all" ? C.gold : C.card, color: filterCat === "all" ? "#fff" : C.muted, fontWeight:600 }}>
+            Tất cả ({monthExpenses.length})
           </button>
-        ))}
-      </div>
-
-      {subTab === "overview" && (
-        <ExpenseOverview CATS={CATS} totalToday={totalToday} totalPaid={totalPaid} totalUnpaid={totalUnpaid} totalMonth={totalMonth} byCat={byCat} bySource={bySource} />
+          {Object.entries(byCat).sort((a,b) => b[1] - a[1]).map(([cat, total]) => {
+            const info = CATS[cat] || { icon: "📦", label: cat, color: C.muted };
+            const active = filterCat === cat;
+            return (
+              <button key={cat} className="tap" onClick={() => setFilterCat(active ? "all" : cat)}
+                style={{ flexShrink:0, padding:"5px 10px", fontSize:11, borderRadius:8, border:"none",
+                  background: active ? info.color : C.card, color: active ? "#fff" : C.muted, fontWeight:600 }}>
+                {info.icon} {info.label} <span style={{ opacity:.7 }}>· {fmtMoney(total)}</span>
+              </button>
+            );
+          })}
+        </div>
       )}
 
-      {subTab === "list" && (
-        <ExpenseList
-          CATS={CATS} filtered={filtered} monthExpenses={monthExpenses} filterCat={filterCat} setFilterCat={setFilterCat}
-          listLimit={listLimit} setListLimit={setListLimit} handleDeleteExpense={handleDeleteExpense}
-          addExpense={addExpense} onOpenQR={onOpenQR} settings={settings}
-        />
-      )}
+      {/* List — reuse component */}
+      <ExpenseList
+        CATS={CATS} filtered={filtered} monthExpenses={monthExpenses}
+        filterCat={filterCat} setFilterCat={setFilterCat}
+        listLimit={listLimit} setListLimit={setListLimit}
+        handleDeleteExpense={handleDeleteExpense} addExpense={addExpense}
+        onOpenQR={onOpenQR} settings={settings}
+      />
 
-      {subTab === "wory" && (
-        <ExpenseForm
-          CATS={CATS} allExpenses={allExpenses} byCat={byCat} totalMonth={totalMonth} totalToday={totalToday}
-          totalPaid={totalPaid} totalUnpaid={totalUnpaid} budget={budget} budgetPct={budgetPct}
-          settings={settings} user={user} addExpense={addExpense}
-          woryReport={woryReport} setWoryReport={setWoryReport} woryLoading={woryLoading} setWoryLoading={setWoryLoading}
-        />
-      )}
-
-      {/* Undo delete toast */}
       {undoExpense && (
         <div className="undo-toast">
           <span style={{ fontSize: 13 }}>Đã xóa khoản chi</span>
