@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { C } from "../constants";
 import { useChat } from "../hooks/useChat";
 import CallScreen from "./CallScreen";
+import CallMembersPicker from "./call/CallMembersPicker";
 import { supabase } from "../lib/supabase";
 import ProjectInfoModal from "./ProjectInfoModal";
 import ChatHeader from "./chat/ChatHeader";
@@ -362,7 +363,20 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
   };
 
   /* ─── HELPERS ─── */
-  const startCall = (mode = "audio") => setCallState({ isIncoming: false, mode });
+  const [callPickerMode, setCallPickerMode] = useState(null); // null | "video" — group only
+  const startCall = (mode = "audio") => {
+    if (convType === "group") {
+      // Group → mở picker chọn members trước
+      setCallPickerMode("video");
+      return;
+    }
+    // DM 1-1 → gọi luôn như cũ
+    setCallState({ isIncoming: false, mode });
+  };
+  const handleStartGroupCall = (selectedIds) => {
+    setCallPickerMode(null);
+    setCallState({ isIncoming: false, mode: "video", participantIds: selectedIds });
+  };
 
   const getName = (senderId) => {
     if (senderId === userId) return null;
@@ -408,10 +422,21 @@ export default function ChatRoom({ conversationId, userId, convName, convType = 
         projectTasks={projectTasks}
       />
 
+      {/* Group call members picker */}
+      {callPickerMode && (
+        <CallMembersPicker
+          conversationId={conversationId}
+          currentUserId={userId}
+          onStart={handleStartGroupCall}
+          onClose={() => setCallPickerMode(null)}
+        />
+      )}
+
       {/* Call Screen */}
       {callState && (
         <CallScreen conversationId={conversationId} userId={userId} peerName={convName}
           isIncoming={callState.isIncoming} mode={callState.mode || "audio"}
+          participantIds={callState.participantIds}
           onEnd={() => setCallState(null)} />
       )}
 
